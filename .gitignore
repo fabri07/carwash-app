@@ -1,0 +1,19 @@
+.DS_Store
+.env
+.env.local
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+.next/
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local-only: contienen datos reales del negocio y de clientes (Ley 25.326).
+# No se versionan ni se publican. Ver README.
+docs/spec/
+docs/legacy/
+graphify-out/
