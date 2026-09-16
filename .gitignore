@@ -1,6 +1,9 @@
 .DS_Store
 .env
-.env.local
+.env.*
+!.env.example
+# frontend/.env.local.example también es plantilla versionada.
+!.env.*.example
 __pycache__/
 *.py[cod]
 .venv/
@@ -17,3 +20,6 @@ htmlcov/
 docs/spec/
 docs/legacy/
 graphify-out/
+
+# Override local de docker compose (ver docker-compose.override.example.yml).
+docker-compose.override.yml

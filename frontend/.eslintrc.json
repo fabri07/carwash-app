@@ -1,0 +1,25 @@
+{
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "overrides": [
+    {
+      "files": [
+        "src/stores/**/*.{ts,tsx}",
+        "src/lib/**/*.{ts,tsx}",
+        "src/features/auth/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "localStorage",
+            "message": "ADR-0009: prohibido en auth; las credenciales viven en cookie HttpOnly."
+          },
+          {
+            "name": "sessionStorage",
+            "message": "ADR-0009: prohibido en auth; las credenciales viven en cookie HttpOnly."
+          }
+        ]
+      }
+    }
+  ]
+}

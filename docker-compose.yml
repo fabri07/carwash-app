@@ -1,0 +1,134 @@
+# Infraestructura LOCAL (dueño: deploy). Portado de Véktor (backend/docker-compose.yml)
+# sin Celery.
+#
+# REGLA: ningún archivo por defecto puede alcanzar una base remota. Las URLs de
+# base del servicio `backend` están en `environment:`, que en Compose le GANA a
+# `env_file:`. Aunque alguien pegue la URL de producción en backend/.env, el
+# stack local sigue hablando con el Postgres de este archivo.
+#
+# Es el truco de Véktor, invertido a propósito: allá el .env apuntaba a
+# producción y un override gitignoreado lo pisaba con el local — sin el override,
+# `make dev` le pegaba a prod. Acá el default es local, y apuntar a otra base es
+# el caso excepcional, explícito, con docker-compose.override.example.yml.
+
+services:
+  # ── PostgreSQL 16 ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-carwash}
+      POSTGRES_USER: ${POSTGRES_USER:-carwash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-carwash}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-carwash} -d ${POSTGRES_DB:-carwash}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Roles de Postgres (one-shot, idempotente) ───────────────────────────────
+  # Crea carwash_owner (migra) y carwash_app (runtime, NOSUPERUSER NOBYPASSRLS)
+  # con el MISMO script versionado que usan CI y Railway. Corre en cada `up`; si
+  # los roles ya existen solo re-afirma atributos. El usuario de POSTGRES_USER es
+  # el superusuario del contenedor y solo se usa acá y en los tests `postgres`.
+  db-roles:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/scripts/create_roles.sh:/create_roles.sh:ro
+    environment:
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-carwash}:${POSTGRES_PASSWORD:-carwash}@postgres:5432/${POSTGRES_DB:-carwash}
+      CARWASH_OWNER_PASSWORD: ${CARWASH_OWNER_PASSWORD:-carwash_owner_test}
+      # Las dos claves tienen que coincidir con APP_ROLE_PASSWORD / OWNER_ROLE_PASSWORD
+      # de app/tests/conftest_pg.py: los roles son del CLUSTER, no de la base, así que
+      # `make test-pg` loguea con estas claves. Son claves LOCALES, nunca de un ambiente.
+      CARWASH_APP_PASSWORD: ${CARWASH_APP_PASSWORD:-carwash_app_test}
+    command: ["sh", "/create_roles.sh"]
+    restart: "no"
+
+  # ── Redis 7 ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend API ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      # `dev` y no `runtime`: trae pytest/ruff/mypy para `make shell` y corre
+      # como root, así el bind mount de ./backend no choca con el uid de appuser.
+      target: dev
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    volumes:
+      - ./backend:/app
+      # El .venv del host (macOS, 3.14) no puede tapar el de la imagen (Linux, 3.12).
+      - /app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-roles:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: local
+      # Dos URLs, dos ROLES y dos esquemas, a propósito — igual que en Railway:
+      #   DATABASE_URL       asyncpg  + carwash_app   → la API (RLS activo)
+      #   DATABASE_URL_SYNC  psycopg2 + carwash_owner → alembic y el preflight
+      # Localmente la app NO corre como superusuario: si lo hiciera, RLS no se
+      # notaría y un bug de aislamiento pasaría en local y reventaría en staging.
+      DATABASE_URL: postgresql+asyncpg://carwash_app:${CARWASH_APP_PASSWORD:-carwash_app_test}@postgres:5432/${POSTGRES_DB:-carwash}
+      DATABASE_URL_SYNC: postgresql+psycopg2://carwash_owner:${CARWASH_OWNER_PASSWORD:-carwash_owner_test}@postgres:5432/${POSTGRES_DB:-carwash}
+      REDIS_URL: redis://redis:6379/0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # ── Test runner (bajo profile: no arranca con `make dev`) ────────────────────
+  # `docker compose --profile test run --rm test` — suite rápida en SQLite
+  # in-memory, en la misma imagen Linux + Python 3.12 que el CI.
+  test:
+    build:
+      context: ./backend
+      target: dev
+    command: pytest --cov=app --cov-report=term-missing
+    environment:
+      APP_ENV: test
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+      DATABASE_URL_SYNC: ""
+      JWT_SECRET_KEY: local-test-secret-not-for-production
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+    profiles:
+      - test
+
+volumes:
+  postgres_data:
+  redis_data:

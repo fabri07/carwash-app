@@ -1,0 +1,58 @@
+# ADR-0007 — formato y chequeos desde el commit 1 (dueño: deploy).
+#
+#   uvx pre-commit install          # lo hace `make setup`
+#   uvx pre-commit run --all-files  # lo corre también .github/workflows/ci-precommit.yml
+#
+# Esto es una CONVENIENCIA local, no la compuerta. La compuerta es el CI: un hook
+# salteado con --no-verify muere igual en el workflow.
+#
+# La versión de ruff está pineada a la MISMA del uv.lock del backend (0.8.6).
+# Si difieren, el hook y `ruff format --check` del CI pueden discrepar en el
+# formato y pelearse commit a commit. Al subir ruff en pyproject.toml, subir este
+# `rev` en el mismo cambio.
+
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff-format
+        files: ^backend/
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+        exclude: ^(backend/openapi\.json|frontend/src/types/api\.generated\.ts)$
+      - id: trailing-whitespace
+        exclude: ^(backend/openapi\.json|frontend/src/types/api\.generated\.ts)$
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+        exclude: ^frontend/package-lock\.json$
+
+  # Frontend: hooks locales que usan las versiones de prettier/eslint del
+  # package-lock del frontend, no una copia aparte (mirrors-prettier está
+  # archivado y fijaría otra versión). Requieren `npm ci` en frontend/.
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (frontend)
+        entry: bash -c 'cd frontend && npx --no-install prettier --write --ignore-unknown "${@#frontend/}"' --
+        language: system
+        files: ^frontend/
+        exclude: ^frontend/(package-lock\.json|src/types/api\.generated\.ts)$
+      - id: eslint
+        name: eslint (frontend)
+        entry: sh -c 'cd frontend && npm run lint --silent'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs)$
+        pass_filenames: false

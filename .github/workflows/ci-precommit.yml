@@ -1,0 +1,66 @@
+name: CI — pre-commit
+
+# Este workflow NO está en el manifiesto de portado: es una decisión de T2.
+# Motivo: A1 de FASE-2-ACEPTACION.md exige tres comandos, y el tercero
+# (`uv run pre-commit run --all-files`) cruza backend y frontend. ci-backend.yml
+# y ci-frontend.yml tienen filtros `paths:` a nivel de workflow, así que ninguno
+# de los dos puede alojarlo sin dejar la mitad del árbol sin cubrir.
+#
+# ADR-0007 lo dice explícito: "el pre-commit es una conveniencia local, NO la
+# compuerta. La compuerta es el CI. Un hook salteado con --no-verify tiene que
+# morir en el workflow igual." Esto es ese workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-precommit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: pre-commit run --all-files (A1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      # Node hace falta porque los hooks de prettier y eslint son `language:
+      # system` y llaman a npx/npm dentro de frontend/.
+      - name: Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci (para los hooks de prettier/eslint)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Cache de entornos de pre-commit
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-precommit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-precommit-
+
+      - name: pre-commit run --all-files
+        run: uvx pre-commit run --all-files --show-diff-on-failure

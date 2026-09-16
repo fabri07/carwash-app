@@ -1,0 +1,205 @@
+name: CI — Backend
+
+# Portado de ~/dev/vektor/Vektor/.github/workflows/ci-backend.yml.
+# Cubre las comprobaciones A1, A2, A3, A4, A5, A6, A7, A8 y la mitad backend de
+# A10 de docs/adr/FASE-2-ACEPTACION.md. Cada paso dice cuál cubre.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci-backend.yml"
+
+concurrency:
+  group: ci-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Formato · Lint · Tipos · Tests · Migraciones
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    # Postgres 16 REAL, no SQLite. Está acá por tres razones que SQLite no puede
+    # cubrir:
+    #   1. RLS no existe en SQLite (ADR-0002): los tests de A7 y A8 no tienen
+    #      dónde correr sin esto.
+    #   2. `alembic upgrade head` contra Postgres valida la CADENA de migraciones.
+    #      `Base.metadata.create_all()` valida el ORM, que no es lo mismo: una
+    #      migración que no aplica en Postgres pasa desapercibida con create_all.
+    #   3. Los primitivos de exclusión mutua de Postgres son no-op en SQLite.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: carwash
+          POSTGRES_PASSWORD: carwash
+          POSTGRES_DB: carwash
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Env compartido por todos los pasos. Los pasos que necesitan pegarle a
+    # Postgres pisan DATABASE_URL a nivel de paso.
+    env:
+      APP_ENV: test
+      JWT_SECRET_KEY: ci-test-secret-key-not-for-production
+      CORS_ORIGINS: http://localhost:3000
+      REDIS_URL: redis://localhost:6379/0
+      # La suite rápida corre sobre SQLite in-memory (conftest.py). No hace falta
+      # un servicio de Redis: el conftest inyecta FakeRedis.
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # ── 2. Python 3.12 ───────────────────────────────────────────────────────
+      # El pin es explícito y tiene que coincidir con .python-version,
+      # requires-python de pyproject.toml y python:3.12-slim del Dockerfile
+      # (ADR-0007, punto 5). El Python del sistema de desarrollo es 3.14 y rompe
+      # deps: sin pin, local y CI divergen desde el día 1.
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      # `--frozen`: si uv.lock no corresponde a pyproject.toml, el CI corta acá y
+      # no "arregla" el lock por su cuenta. Un lock desactualizado es un cambio
+      # que tiene que verse en el diff.
+      - name: Instalar dependencias
+        run: uv sync --frozen --dev
+
+      # ── 3. Formato (A1) — ADR-0007 ───────────────────────────────────────────
+      # BLOQUEANTE y ANTES del linter, a propósito. Este es exactamente el paso
+      # que Véktor nunca pudo agregar (ci-backend.yml:69-70 corre solo
+      # `ruff check .`), y por eso hoy tiene 231.346 líneas que no se pueden
+      # formatear nunca. Acá cuesta cero porque el repo arranca vacío.
+      - name: ruff format --check (A1)
+        run: uv run ruff format --check .
+
+      - name: ruff check (A1)
+        run: uv run ruff check .
+
+      # ── 4. Tipos (A2) ────────────────────────────────────────────────────────
+      - name: mypy --strict (A2)
+        run: uv run mypy app
+
+      # ── 5. Suite rápida con cobertura (A3) + verificadores de ADR (A4) ───────
+      # El piso de cobertura NO se pasa por flag: sale de [tool.coverage.report]
+      # en backend/pyproject.toml, que es su ÚNICA fuente (ADR-0008, punto 2).
+      # Véktor lo tenía repetido en el workflow, en el Makefile, en el README y
+      # en su CLAUDE.md, y los cuatro se desincronizaron.
+      # app/tests/meta/ (A4) corre dentro de esta misma invocación.
+      - name: pytest — suite completa + cobertura (A3, A4)
+        run: uv run pytest --cov=app --cov-report=term-missing
+
+      # ── 6a. Roles de Postgres (H4) ───────────────────────────────────────────
+      # El MISMO script versionado que usan docker compose y Railway. Sin esto el
+      # CI migraría y correría la app como el superusuario del service, y RLS no
+      # se notaría: un superusuario atraviesa todas las políticas.
+      # Las claves coinciden con APP_ROLE_PASSWORD / OWNER_ROLE_PASSWORD de
+      # conftest_pg.py: los roles son del cluster y los tests loguean con ellas.
+      - name: Postgres — roles carwash_owner / carwash_app (H4)
+        env:
+          ADMIN_DATABASE_URL: postgresql://carwash:carwash@localhost:5432/carwash
+          CARWASH_OWNER_PASSWORD: carwash_owner_test
+          CARWASH_APP_PASSWORD: carwash_app_test
+        run: sh scripts/create_roles.sh
+
+      # ── 6b. Migraciones contra Postgres real (A5) ────────────────────────────
+      # `create_all` prueba el ORM, NO la cadena de migraciones. Esto corre desde
+      # una base vacía, igual que el deploy, y con el rol DUEÑO (carwash_owner),
+      # igual que el preDeployCommand: si una migración necesitara superusuario,
+      # falla acá y no en el primer deploy a staging.
+      # El `downgrade base && upgrade head` es parte del criterio: una migración
+      # que no se puede revertir es una migración que no se puede ensayar.
+      # `alembic check` cierra el círculo: sin deriva entre modelos y esquema.
+      - name: Alembic — preflight, upgrade, check, ida y vuelta (A5)
+        env:
+          # DATABASE_URL_SYNC le gana a DATABASE_URL en alembic_url.py. El
+          # preflight imprime `user: carwash_owner`: si dice otra cosa, algo pisa.
+          DATABASE_URL_SYNC: postgresql+psycopg2://carwash_owner:carwash_owner_test@localhost:5432/carwash
+          DATABASE_URL: postgresql+asyncpg://carwash_app:carwash_app_test@localhost:5432/carwash
+        run: |
+          uv run python scripts/migrate_preflight.py
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      # ── 7. Tests marcados `postgres`, SECUENCIALES (A6, A7, A8) ──────────────
+      # -n 0 (secuencial) no es una preferencia de estilo: es una lección cara de
+      # Véktor. A diferencia de la suite SQLite —donde cada worker de xdist tiene
+      # su propia base in-memory— acá TODOS los workers comparten el MISMO
+      # Postgres. El test de idempotencia de migraciones (A6) hace un
+      # downgrade/upgrade real: dropea y re-agrega una columna. En paralelo, otro
+      # worker puede consultar esa columna justo en la ventana en la que no
+      # existe → UndefinedColumnError espurio, no determinístico. En Véktor se
+      # reprodujo y se confirmó; la corrida secuencial es 100% estable.
+      #
+      # --no-cov: subconjunto acotado. La cobertura la mide el paso 5.
+      - name: pytest — Postgres real, secuencial (A6, A7, A8)
+        env:
+          # Contrato con conftest_pg.py: postgresql:// SIN driver, con el
+          # superusuario del service (prepara y limpia datos). Lo que se afirma
+          # sobre aislamiento se afirma con un engine propio como carwash_app.
+          PG_TEST_URL: postgresql://carwash:carwash@localhost:5432/carwash
+          # Explícito aunque GitHub ya lo setea: con CI, un Postgres inalcanzable
+          # FALLA en vez de saltear. Un test de RLS salteado en verde es peor que
+          # uno en rojo.
+          CI: "true"
+        run: uv run pytest app/tests -m postgres --no-cov -v -n 0
+
+      # ── 8. Deriva del contrato OpenAPI (A10, mitad backend) — ADR-0013 ───────
+      # Si el openapi.json commiteado no coincide con el que genera el código, el
+      # commit está incompleto. Es un fallo de CI, no un descubrimiento en
+      # runtime: el frontend tipa contra este artefacto.
+      - name: OpenAPI — sin deriva (A10)
+        run: |
+          uv run python -m app.cli.dump_openapi
+          git diff --exit-code openapi.json
+
+  docker:
+    name: Docker — build de verificación
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Job aparte del de tests: no necesita Postgres y corre en paralelo.
+      # Sin push: solo verifica que la imagen que va a Railway se construye.
+      - name: Docker — verify build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          target: runtime
+          push: false
+          tags: carwash-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,104 @@
+name: CI — Frontend
+
+# Portado de ~/dev/vektor/Vektor/.github/workflows/ci-frontend.yml.
+# Cubre A1 (mitad frontend), A2 (mitad frontend), A3 (mitad frontend), la mitad
+# frontend de A9 y A10 de docs/adr/FASE-2-ACEPTACION.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+      # backend/openapi.json está acá a propósito: el paso de deriva de tipos
+      # (ADR-0013) regenera src/types/api.generated.ts DESDE ese archivo. Si el
+      # backend cambia el contrato y el frontend no lo hace, sin este filtro el
+      # CI del frontend ni siquiera corre y la deriva entra en verde.
+      - "backend/openapi.json"
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+      - "backend/openapi.json"
+
+concurrency:
+  group: ci-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Tests · Contrato · Tipos · Lint · Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      # ── 1. Jest PRIMERO (A3) ─────────────────────────────────────────────────
+      # El orden es deliberado y se hereda tal cual de Véktor. Los tests van
+      # ANTES de tsc/lint/build porque son lo más barato de correr y lo que más
+      # se rompe.
+      #
+      # En Véktor este paso no existió hasta 2026-08-26, y su ausencia costó 8
+      # días con 9 suites en rojo sin que nadie se enterara: un cambio de copy
+      # tocó rótulos en 19 archivos y rompió 46 tests que el CI nunca ejecutó
+      # (ci-frontend.yml:40-47 de Véktor documenta el incidente).
+      #
+      # `--ci`: un snapshot nuevo falla en vez de escribirse solo.
+      # `--runInBand`: los runners tienen 2 vCPU y con workers jest da fallas
+      # falsas. SIN `--passWithNoTests` a propósito: una suite que desaparece por
+      # accidente tiene que verse igual que una que falla.
+      #
+      # test:cov aplica coverageThreshold.global = 80 en las cuatro métricas
+      # (ADR-0008). El número vive en jest.config.ts, que es del frontend.
+      - name: Jest — suite completa con cobertura (A3)
+        run: npm run test:cov -- --ci --runInBand
+
+      # ── 2. Deriva de los tipos generados (A10) — ADR-0013 ────────────────────
+      # El frontend no adivina tipos. Si regenerar desde backend/openapi.json
+      # produce un archivo distinto del commiteado, el commit está incompleto.
+      # Va antes de tsc: no tiene sentido tipar contra un contrato vencido.
+      - name: Tipos generados — sin deriva (A10)
+        run: |
+          npm run gen:api
+          git diff --exit-code src/types/api.generated.ts
+
+      # ── 3. TypeScript (A2) ───────────────────────────────────────────────────
+      # Con api.generated.ts recién regenerado, este paso EN VERDE es la prueba
+      # de que cliente y servidor hablan el mismo idioma (ADR-0013, punto 4).
+      - name: tsc --noEmit (A2)
+        run: npm run type-check
+
+      # ── 4. Lint y formato (A1) — ADR-0007 ────────────────────────────────────
+      - name: ESLint (A1)
+        run: npm run lint
+
+      - name: Prettier --check (A1)
+        run: npx prettier --check .
+
+      # ── 5. Build de producción (A10) ─────────────────────────────────────────
+      - name: Next.js — build
+        env:
+          # Apunta a staging a propósito: un build de CI nunca debe poder hablar
+          # con la API de producción (ADR-0012, punto 2).
+          NEXT_PUBLIC_API_URL: https://api-staging.carwash.app
+          NEXT_PUBLIC_SW_ENABLED: "true"
+          NEXT_PUBLIC_COOKIE_NAME_PREFIX: "stg_"
+        run: npm run build

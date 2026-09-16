@@ -1,0 +1,7 @@
+node_modules
+.next
+coverage
+package-lock.json
+src/types/api.generated.ts
+coverage
+next-env.d.ts

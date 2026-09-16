@@ -14,8 +14,11 @@ alcance, la pregunta es: *si esto falta, ¿lo obliga a abrir la planilla?* Si s�
 
 ## Estado actual
 
-**Fase 1 (spec) completa.** No hay código de aplicación todavía — el repo es documentación y las
-copias del sistema legacy. La Fase 2 (infraestructura) es la primera que produce código propio.
+**Fases 1 (spec) y 2 (infraestructura) completas en código.** Hay backend (FastAPI, auth con cookies
+httpOnly, RLS en todas las tablas) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA),
+sin nada del dominio del lavadero todavía. Contrato de la fase: `docs/adr/` (13 ADRs),
+`docs/adr/PORT-MANIFEST.md` y `docs/adr/FASE-2-ACEPTACION.md`. El checkpoint humano de F2 (registrarse
+en la URL desplegada) depende de configurar GitHub, Railway y Vercel.
 
 Roadmap completo de 8 fases: `docs/ROADMAP.md`.
 
@@ -131,12 +134,17 @@ antes de implementar:
 
 ## Comandos
 
-Todavía no hay aplicación. Desde la Fase 2:
+El `Makefile` está en la raíz (`make help` lista todo):
 
 ```bash
-cd backend  && make check && make test-cov   # ruff + mypy strict + pytest ≥80%
-cd frontend && npm test && npm run type-check && npm run build
+make check          # formato, ruff/eslint, mypy strict + tsc, pre-commit
+make test-cov       # pytest ≥80% + jest con cobertura
+make test-pg        # migraciones y tests RLS contra Postgres real (docker)
+make openapi-check  # openapi.json y tipos del frontend al día
+cd frontend && npm run build
 ```
+
+Si el puerto 5432 está ocupado (el Postgres de Véktor), `POSTGRES_PORT=5434 make test-pg`.
 
 ## Idioma
 
