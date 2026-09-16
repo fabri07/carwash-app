@@ -24,18 +24,18 @@
 #   COOKIE_NAME_PREFIX         stg_                           "" (vacía, pero definida)
 #       Tiene que coincidir con NEXT_PUBLIC_COOKIE_NAME_PREFIX del proyecto de
 #       Vercel del mismo ambiente (deploy-*.yml lo verifica del lado de Vercel).
-#   COOKIE_DOMAIN              .carwash.app                   .carwash.app
-#   CORS_ORIGINS               https://staging.carwash.app    https://app.carwash.app
+#   COOKIE_DOMAIN              .carwashdetailapp.com          .carwashdetailapp.com
+#   CORS_ORIGINS               https://staging.carwashdetailapp.com    https://app.carwashdetailapp.com
 #   SEED_STAGING_PASSWORD      ≥ 12 caracteres                (no se define en prod)
 #       Sin default: seed_staging.py falla si falta. Se re-aplica en cada deploy.
 #   SENTRY_DSN                 opcional                       opcional
 #
 # ── DECISIÓN PENDIENTE DEL DUEÑO (no tomada en T2) ───────────────────────────
-# Staging y producción comparten el dominio registrable carwash.app. El prefijo
+# Staging y producción comparten el dominio registrable carwashdetailapp.com. El prefijo
 # `stg_` evita que las cookies de un ambiente PISEN las del otro, pero no que el
 # navegador le mande las cookies de staging a producción (y viceversa) cuando
-# COOKIE_DOMAIN es `.carwash.app`, ni aísla staging de un XSS en prod. La solución
-# de fondo es mover staging a otro dominio registrable (p. ej. carwash-staging.app).
+# COOKIE_DOMAIN es `.carwashdetailapp.com`, ni aísla staging de un XSS en prod. La solución
+# de fondo es mover staging a otro dominio registrable (p. ej. carwashdetailapp-staging.com).
 # Cuesta un dominio y re-configurar DNS/Vercel/CORS. Lo decide el dueño.
 #
 # ── Paso MANUAL, una vez por environment: crear los roles ────────────────────
@@ -57,8 +57,8 @@
 # el rate limit rotando el header. Ensayo contra staging:
 #
 #   for i in $(seq 1 20); do
-#     curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api-staging.carwash.app/v1/auth/login \
-#       -H 'Content-Type: application/json' -H 'Origin: https://staging.carwash.app' \
+#     curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api-staging.carwashdetailapp.com/v1/auth/login \
+#       -H 'Content-Type: application/json' -H 'Origin: https://staging.carwashdetailapp.com' \
 #       -H "X-Real-IP: 203.0.113.$i" -d '{"email":"nadie@x.invalid","password":"incorrecta"}'
 #   done
 #

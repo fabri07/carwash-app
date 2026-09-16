@@ -98,7 +98,7 @@ jobs:
         env:
           # Apunta a staging a propósito: un build de CI nunca debe poder hablar
           # con la API de producción (ADR-0012, punto 2).
-          NEXT_PUBLIC_API_URL: https://api-staging.carwash.app
+          NEXT_PUBLIC_API_URL: https://api-staging.carwashdetailapp.com
           NEXT_PUBLIC_SW_ENABLED: "true"
           NEXT_PUBLIC_COOKIE_NAME_PREFIX: "stg_"
         run: npm run build

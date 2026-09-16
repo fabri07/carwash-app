@@ -8,8 +8,8 @@
 # hacer, y sin ese chequeo A11 no está aprobado: el script falla, no lo saltea.
 set -eu
 
-STAGING_API="${STAGING_API:-https://api-staging.carwash.app}"
-PROD_API="${PROD_API:-https://api.carwash.app}"
+STAGING_API="${STAGING_API:-https://api-staging.carwashdetailapp.com}"
+PROD_API="${PROD_API:-https://api.carwashdetailapp.com}"
 
 if [ -f .env ]; then
   set -a
@@ -60,7 +60,7 @@ trap 'rm -f "$jar"' EXIT
 
 body=$(jq -n --arg e "$CHECK_ENVS_EMAIL" --arg p "$CHECK_ENVS_PASSWORD" '{email:$e, password:$p}')
 curl -fsS -o /dev/null -c "$jar" -X POST "$STAGING_API/v1/auth/login" \
-  -H 'Content-Type: application/json' -H "Origin: https://staging.carwash.app" \
+  -H 'Content-Type: application/json' -H "Origin: https://staging.carwashdetailapp.com" \
   -d "$body" || fail "no se pudo iniciar sesión en staging"
 
 # En staging la cookie lleva el prefijo del ambiente (COOKIE_NAME_PREFIX=stg_, M3).

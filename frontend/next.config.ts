@@ -4,7 +4,7 @@ import { withSentryConfig } from "@sentry/nextjs/config";
 /**
  * Origen de la API. La CSP necesita conocerlo en tiempo de build para poder
  * permitir el `connect-src` — si queda en `'self'`, el fetch a
- * `api.carwash.app` lo bloquea el navegador y el síntoma es un error de red
+ * `api.carwashdetailapp.com` lo bloquea el navegador y el síntoma es un error de red
  * indistinguible de "el backend está caído".
  */
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";

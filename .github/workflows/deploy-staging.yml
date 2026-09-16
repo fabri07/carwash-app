@@ -56,7 +56,7 @@ jobs:
         run: |
           set -eu
           for i in $(seq 1 30); do
-            if curl -fsS https://api-staging.carwash.app/health -o /tmp/health.json; then break; fi
+            if curl -fsS https://api-staging.carwashdetailapp.com/health -o /tmp/health.json; then break; fi
             echo "esperando a que staging responda ($i/30)"; sleep 10
           done
           cat /tmp/health.json
