@@ -23,3 +23,6 @@ graphify-out/
 
 # Override local de docker compose (ver docker-compose.override.example.yml).
 docker-compose.override.yml
+
+# Vercel CLI: `vercel link` y `vercel pull` guardan acá los IDs y los .env del proyecto.
+.vercel/
