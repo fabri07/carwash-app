@@ -195,6 +195,16 @@ jobs:
       # Sin push: solo verifica que la imagen que va a Railway se construye.
       # El cache `type=gha` necesita el driver docker-container de buildx: con el
       # driver `docker` por defecto el build falla con "Cache export is not supported".
+      # Un build que pasa acá puede fallar en Railway: Railway exige que todo cache
+      # mount lleve `id=s/<service-id>-<ruta>`, y el service-id cambia entre staging
+      # y producción. El primer deploy de staging se cayó por esto con este job en verde.
+      - name: Dockerfile sin cache mounts (Railway los rechaza)
+        run: |
+          if grep -n 'mount=type=cache' backend/Dockerfile; then
+            echo "backend/Dockerfile usa RUN --mount=type=cache: Railway rechaza el build"
+            exit 1
+          fi
+
       - name: Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
