@@ -11,6 +11,7 @@ conteos se leen con el superusuario, que es el único testigo que ve todos los t
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -94,3 +95,47 @@ async def test_seed_exige_password(pg_admin_engine, pg_clean):
     corta = _correr_seed("corta")
     assert corta.returncode == 1
     assert all(n == 0 for n in (await _conteos(pg_admin_engine)).values())
+
+
+async def test_seed_completa_el_dominio_de_un_staging_sembrado_en_fase_2(pg_admin_engine, pg_clean):
+    """Staging ya tiene los tenants de la Fase 2 (usuarios y dummies, sin dominio): re-correr
+    el seed les agrega el lavadero sin duplicar lo que ya estaba (A9)."""
+    from app.utils.security import hash_password  # noqa: PLC0415
+
+    sys.path.insert(0, str(BACKEND / "scripts"))
+    import seed_staging  # noqa: PLC0415
+
+    async with pg_admin_engine.begin() as conn:
+        for spec in seed_staging.TENANTS:
+            tenant_id = uuid.uuid4()
+            await conn.execute(
+                text("INSERT INTO tenants (id, name) VALUES (:id, :name)"),
+                {"id": tenant_id, "name": spec["name"]},
+            )
+            for email, role in ((spec["owner"], "OWNER"), (spec["staff"], "STAFF")):
+                await conn.execute(
+                    text(
+                        "INSERT INTO users (id, tenant_id, email, password_hash, role) "
+                        "VALUES (:id, :t, :email, :hash, :role)"
+                    ),
+                    {
+                        "id": uuid.uuid4(),
+                        "t": tenant_id,
+                        "email": email,
+                        "hash": hash_password("x"),
+                        "role": role,
+                    },
+                )
+
+    corrida = _correr_seed(PASSWORD_PRIMERA)
+    assert corrida.returncode == 0, corrida.stdout + corrida.stderr
+    assert "dominio sembrado" in corrida.stdout
+    conteos = await _conteos(pg_admin_engine)
+    assert conteos["tenants"] == len(seed_staging.TENANTS)
+    vacias = [
+        t for t, n in conteos.items() if n == 0 and t not in {"dummy_resources", "idempotency_keys"}
+    ]
+    assert not vacias, f"el seed no completó: {vacias}"
+    async with pg_admin_engine.connect() as conn:
+        por_tenant = await conn.scalar(text("SELECT count(DISTINCT tenant_id) FROM job_events"))
+    assert por_tenant == len(seed_staging.TENANTS)
