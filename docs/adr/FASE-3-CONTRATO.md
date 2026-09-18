@@ -604,5 +604,11 @@ cambia una tabla.
 | A4 | El contrato nombra la excepción `InvalidTransition`; ruff N818 pide sufijo `Error`. | Se mantiene el nombre del contrato con `noqa` y motivo. |
 | A5 | `test_modelo_tenant.py` (F2) exigía una sola FK sobre `tenant_id`; X4 agrega las compuestas. | El test verifica una sola FK **a `tenants`** y que las demás sean compuestas. |
 
+| A6 | **Bug del contrato:** `length(btrim(metadata->>'reason')) > 0` da NULL si falta `reason`, y un CHECK con NULL **pasa**: la reversión sin motivo entraba. Igual en `cancellations.resolution_reason`. | `length(btrim(coalesce(…, ''))) > 0`. Lo encontró el agente Esquema; hay test. |
+| A7 | X8 le quita `UPDATE` a `carwash_app` sobre `job_events`, y el test genérico de T1 hacía un `UPDATE` esperando 0 filas. | Para las tablas append-only el test exige `permission denied` en `UPDATE` y `DELETE`, aun sobre filas propias. |
+| A8 | "Vivo" en los únicos parciales. | Siempre suma `voided_at IS NULL`, salvo `cancellations(booking_id)` e `idempotency_key`: anular no libera la clave. |
+| A9 | `seed_staging.py` y `test_aislamiento_tenants_pg.py` (F2) exigen datos en **toda** tabla de tenant y no tenían dueño en §6. | `seed_staging.py` + su test: agente **Servicios** (siembra con los servicios, datos sintéticos). El poblador por tabla y el test de F2: **Tester-aislamiento** de T3. |
+| A10 | Un agente copió un teléfono y una patente **reales** de `docs/spec/` en un test (no llegó a publicarse: se reescribió el commit). | Hook de pre-commit `pii-del-spec` (`scripts/check_pii_del_spec.py`): corta si un teléfono o patente del spec o del legacy aparece en un archivo versionado. Todo dato de test es sintético. |
+
 **Pregunta 11 para el dueño:** si se anula un cobro después de cerrar el job (cobro mal cargado,
 contracargo), ¿se reabre el job (`COBRADO → FINALIZADO`) o se registra aparte?

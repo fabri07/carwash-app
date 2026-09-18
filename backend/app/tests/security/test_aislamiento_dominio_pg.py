@@ -98,12 +98,30 @@ async def test_b_no_lee_ni_modifica_la_fila_de_a(pg_session_factory, dos_lavader
             text(f"SELECT count(*) FROM {tabla} WHERE id = :id"), {"id": filas_a[tabla]}
         )
         assert leida == 0
+        if tabla in APPEND_ONLY:
+            return  # sin permiso de UPDATE: lo prueba el test de abajo
         # `SET id = id`: vale para toda tabla, también las que no tienen updated_at.
-        # En job_events el trigger append-only no llega a dispararse: no hay fila visible.
         tocadas = await session.execute(
             text(f"UPDATE {tabla} SET id = id WHERE id = :id"), {"id": filas_a[tabla]}
         )
         assert tocadas.rowcount == 0
+
+
+@pytest.mark.parametrize("tabla", sorted(APPEND_ONLY))
+async def test_el_runtime_no_puede_modificar_una_tabla_append_only(
+    pg_session_factory, dos_lavaderos, tabla
+):
+    # Más fuerte que "0 filas": `carwash_app` no tiene UPDATE ni DELETE (X8), ni sobre
+    # las filas propias. El trigger es la segunda red, para el dueño.
+    _, _, tenant_b, filas_b = dos_lavaderos
+    for sentencia in (f"UPDATE {tabla} SET id = id", f"DELETE FROM {tabla}"):
+        async with pg_session_factory() as session:
+            with pytest.raises(DBAPIError, match="permission denied"):
+                async with session.begin():
+                    await set_tenant_context(session, tenant_b)
+                    await session.execute(
+                        text(f"{sentencia} WHERE id = :id"), {"id": filas_b[tabla]}
+                    )
 
 
 @pytest.mark.parametrize("tabla", sorted(TABLAS_TENANT))
