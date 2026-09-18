@@ -1,0 +1,35 @@
+# docker-compose.override.example.yml — EJEMPLO, no se usa por defecto.
+#
+# Para activarlo: copiarlo a docker-compose.override.yml (gitignoreado).
+# Compose lo mergea solo sobre docker-compose.yml.
+#
+# ── Por qué existe, y por qué está invertido respecto de Véktor ───────────────
+# En Véktor el .env apuntaba a Neon PRODUCCIÓN y el override (gitignoreado)
+# pisaba DATABASE_URL con el Postgres local. Consecuencia: SIN el override,
+# `make dev` o un seed le pegaban a la base de producción. Un archivo que falta
+# no avisa.
+#
+# Acá es al revés: docker-compose.yml fija la base LOCAL en `environment:` (que
+# le gana a `env_file:`), así que ningún .env puede desviar el stack. Este
+# override es el caso EXCEPCIONAL y explícito: apuntar el backend local a otra
+# base (por ejemplo, un Postgres de staging para reproducir un bug con los datos
+# sintéticos). Nunca a producción: no hay motivo local para tocarla.
+#
+# ── Trampa secundaria: el esquema de la URL no es intercambiable ──────────────
+# La app usa `postgresql+asyncpg://`; alembic y scripts/migrate_preflight.py
+# usan `postgresql+psycopg2://` (alembic_url.py convierte `postgresql://` plano,
+# pero NO convierte `+asyncpg`). Si solo pisás DATABASE_URL con un `+asyncpg`,
+# alembic falla; si lo pisás con uno plano, la app falla. Pisá LAS DOS, como abajo.
+# Y con el ROL correcto en cada una: DATABASE_URL con carwash_app (runtime, sin
+# BYPASSRLS), DATABASE_URL_SYNC con carwash_owner (migraciones). Nunca un
+# superusuario en DATABASE_URL: con él RLS no se nota.
+#
+# Y al terminar: borrar docker-compose.override.yml. Mientras exista, `make dev`
+# habla con la base de este archivo.
+
+services:
+  backend:
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://carwash_app:CLAVE@HOST:5432/BASE
+      DATABASE_URL_SYNC: postgresql+psycopg2://carwash_owner:CLAVE@HOST:5432/BASE

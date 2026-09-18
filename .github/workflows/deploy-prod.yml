@@ -1,0 +1,136 @@
+name: Deploy — Producción
+
+# ADR-0012, punto 4: producción se despliega SOLO desde un tag `v*` y a través
+# del GitHub Environment `production`, que tiene revisor requerido (se configura
+# en Settings → Environments; este archivo no puede crearlo).
+#
+# El trigger es exactamente `push: tags: [v*]` y nada más — sin
+# workflow_dispatch, sin ramas. backend/app/tests/meta/test_pipeline_de_deploy.py
+# compara esta sección por igualdad: agregar un disparador manual "por las dudas"
+# abre un camino a prod que no pasa por staging, y el test lo pone en rojo.
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── ADR-0012, punto 5: ninguna migración llega a prod sin haber corrido en
+  # staging. Compara el head de alembic del código taggeado contra la revisión
+  # APLICADA en la base de staging. Si no coinciden, corta antes del deploy.
+  verificar-migracion-en-staging:
+    name: Verificar migración en staging
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Instalar dependencias
+        run: uv sync --frozen --dev
+
+      - name: Instalar Railway CLI
+        run: npm install -g @railway/cli@5.57.6
+
+      # `alembic heads` lee solo los archivos de migración (no toca ninguna base).
+      #
+      # `railway run` NO ejecuta dentro de Railway: corre el comando en ESTE runner
+      # con las variables del servicio inyectadas. DATABASE_URL_SYNC apunta al host
+      # privado (*.railway.internal), inalcanzable desde GitHub, así que la
+      # consulta usa DATABASE_URL_SYNC_PUBLIC: la misma base y el mismo rol dueño,
+      # por el TCP proxy público de Railway. Esa variable se define a mano en el
+      # servicio api-staging (ver railway.toml). La URL nunca es secreto de GitHub.
+      - name: Head del tag == revisión aplicada en staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+        run: |
+          set -eu
+          heads=$(uv run alembic heads | awk '{print $1}')
+          n=$(printf '%s\n' "$heads" | grep -c . || true)
+          [ "$n" = "1" ] || { echo "hay $n heads de alembic (se esperaba 1): $heads"; exit 1; }
+          echo "head del código: $heads"
+
+          # shellcheck disable=SC2016
+          current=$(railway run --service api-staging --environment staging -- \
+            sh -c ': "${DATABASE_URL_SYNC_PUBLIC:?falta DATABASE_URL_SYNC_PUBLIC en api-staging}"; DATABASE_URL_SYNC="$DATABASE_URL_SYNC_PUBLIC" uv run alembic current' 2>&1) \
+            || { echo "$current"; echo "no se pudo leer la revisión de staging"; exit 1; }
+          echo "staging reporta:"; echo "$current"
+          printf '%s\n' "$current" | grep -q "^$heads" \
+            || { echo "la migración $heads NO está aplicada en staging: se corta el deploy a prod"; exit 1; }
+
+  deploy:
+    name: API + App producción
+    needs: verificar-migracion-en-staging
+    runs-on: ubuntu-latest
+    # String plano, no mapping: el test de pipeline lo compara por igualdad.
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Instalar CLIs
+        run: npm install -g @railway/cli@5.57.6 vercel@59.19.1
+
+      # Mismo fail-safe que staging: preDeployCommand → migrate.sh con `set -eu`.
+      # Si la migración falla, Railway aborta y la versión anterior sigue sirviendo.
+      - name: API — Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_PROD }}
+        working-directory: backend
+        run: railway up --service api --environment production --ci
+
+      - name: App — Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_PROD }}
+        run: |
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          # M3: el prefijo de cookie del frontend TIENE que coincidir con el
+          # COOKIE_NAME_PREFIX del backend de producción. Si no, el middleware de Next
+          # busca una cookie que la API nunca emite y la sesión "no existe".
+          # Se exige que la variable esté DEFINIDA (aunque sea vacía) con el valor esperado.
+          envfile=.vercel/.env.production.local
+          grep -q '^NEXT_PUBLIC_COOKIE_NAME_PREFIX=' "$envfile" \
+            || { echo "falta NEXT_PUBLIC_COOKIE_NAME_PREFIX en el proyecto de Vercel de producción"; exit 1; }
+          got=$(sed -n 's/^NEXT_PUBLIC_COOKIE_NAME_PREFIX=//p' "$envfile" | tr -d '"')
+          [ "$got" = "" ] \
+            || { echo "NEXT_PUBLIC_COOKIE_NAME_PREFIX='$got', se esperaba '' en producción"; exit 1; }
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Smoke — /health se identifica como production
+        run: |
+          set -eu
+          for i in $(seq 1 30); do
+            if curl -fsS https://api.carwashdetailapp.com/health -o /tmp/health.json; then break; fi
+            echo "esperando a que prod responda ($i/30)"; sleep 10
+          done
+          cat /tmp/health.json
+          [ "$(jq -r .env /tmp/health.json)" = "production" ] \
+            || { echo "prod no se identifica como production"; exit 1; }

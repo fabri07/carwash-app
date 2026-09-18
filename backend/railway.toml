@@ -1,0 +1,91 @@
+# Portado de Véktor (backend/railway.toml). Aplica a los DOS servicios de
+# Railway — `api-staging` (environment staging) y `api` (environment
+# production) — que corren la misma imagen con variables distintas.
+#
+# ADR-0012: cada environment tiene su PROPIA base, su propio JWT_SECRET_KEY y su
+# propio APP_ENV. Ninguna variable se comparte entre ambientes. Las variables
+# viven en el panel de Railway, no acá: este archivo no lleva secretos.
+#
+# ── Variables por servicio (todas OBLIGATORIAS salvo que diga lo contrario) ────
+#
+#   variable                   api-staging                    api (production)
+#   APP_ENV                    staging                        production
+#       Obligatoria y SIN default: ni la imagen ni este archivo lo suponen, y
+#       migrate.sh corta el deploy si falta. El backend aborta si no es explícito.
+#   DATABASE_URL               postgresql://carwash_app:…@<host privado>/<base>
+#       Runtime. Rol carwash_app: NOSUPERUSER, NOBYPASSRLS, no dueño. El backend
+#       aborta el arranque en staging/prod si el rol tiene privilegios de más.
+#   DATABASE_URL_SYNC          postgresql+psycopg2://carwash_owner:…@<host privado>/<base>
+#       Migraciones (preDeployCommand). Rol dueño carwash_owner.
+#   DATABASE_URL_SYNC_PUBLIC   igual que DATABASE_URL_SYNC    (no se define en prod)
+#       pero por el TCP proxy PÚBLICO. Solo staging: la usa deploy-prod.yml para
+#       verificar desde GitHub que el head de alembic ya corrió en staging.
+#   JWT_SECRET_KEY             propio, ≥ 32 caracteres        propio, ≥ 32 caracteres
+#   COOKIE_NAME_PREFIX         stg_                           "" (vacía, pero definida)
+#       Tiene que coincidir con NEXT_PUBLIC_COOKIE_NAME_PREFIX del proyecto de
+#       Vercel del mismo ambiente (deploy-*.yml lo verifica del lado de Vercel).
+#   COOKIE_DOMAIN              .carwashdetailapp.com          .carwashdetailapp.com
+#   CORS_ORIGINS               https://staging.carwashdetailapp.com    https://app.carwashdetailapp.com
+#   SEED_STAGING_PASSWORD      ≥ 12 caracteres                (no se define en prod)
+#       Sin default: seed_staging.py falla si falta. Se re-aplica en cada deploy.
+#   SENTRY_DSN                 opcional                       opcional
+#
+# ── DECISIÓN PENDIENTE DEL DUEÑO (no tomada en T2) ───────────────────────────
+# Staging y producción comparten el dominio registrable carwashdetailapp.com. El prefijo
+# `stg_` evita que las cookies de un ambiente PISEN las del otro, pero no que el
+# navegador le mande las cookies de staging a producción (y viceversa) cuando
+# COOKIE_DOMAIN es `.carwashdetailapp.com`, ni aísla staging de un XSS en prod. La solución
+# de fondo es mover staging a otro dominio registrable (p. ej. carwashdetailapp-staging.com).
+# Cuesta un dominio y re-configurar DNS/Vercel/CORS. Lo decide el dueño.
+#
+# ── Paso MANUAL, una vez por environment: crear los roles ────────────────────
+# Railway entrega un Postgres con un superusuario (`postgres`). Antes del primer
+# deploy de cada environment, desde una máquina con psql:
+#
+#   ADMIN_DATABASE_URL='<DATABASE_PUBLIC_URL del servicio Postgres de ese environment>' \
+#   CARWASH_OWNER_PASSWORD='<generada>' CARWASH_APP_PASSWORD='<generada>' \
+#     sh backend/scripts/create_roles.sh
+#
+# Después, cargar DATABASE_URL (carwash_app) y DATABASE_URL_SYNC (carwash_owner)
+# con esas contraseñas. NO usar la variable DATABASE_URL que Railway ofrece por
+# referencia del servicio Postgres: es la del superusuario, y con ella RLS no se
+# nota. El script es idempotente: re-correrlo rota contraseñas sin romper nada.
+#
+# ── Verificación MANUAL pendiente (M6): el edge sobrescribe X-Real-IP ────────
+# deps.client_ip confía en X-Real-IP en producción. Eso solo es seguro si el edge
+# de Railway PISA el header que manda el cliente. Si no lo pisa, cualquiera evade
+# el rate limit rotando el header. Ensayo contra staging:
+#
+#   for i in $(seq 1 20); do
+#     curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api-staging.carwashdetailapp.com/v1/auth/login \
+#       -H 'Content-Type: application/json' -H 'Origin: https://staging.carwashdetailapp.com' \
+#       -H "X-Real-IP: 203.0.113.$i" -d '{"email":"nadie@x.invalid","password":"incorrecta"}'
+#   done
+#
+# PASA si aparece 429 al superar el límite de login, aunque cada request declare
+# otra IP (el edge la pisó: todas cuentan como la IP real). FALLA si nunca aparece
+# 429 (cada IP inventada tuvo su propio cupo). Anotar el resultado en el acta de T4.
+#
+# ── Regla de promoción (mecánica, no recomendación) ──────────────────────────
+# merge a main → staging (.github/workflows/deploy-staging.yml); tag v* +
+# aprobación → prod (.github/workflows/deploy-prod.yml), que antes verifica que el
+# head de alembic ya esté aplicado en staging. Los environments de Railway NO
+# deben tener auto-deploy desde GitHub activado: el único camino es el workflow.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Fail-safe: corre UNA vez antes de que la versión nueva reciba tráfico. Si
+# falla (set -eu en migrate.sh), Railway aborta el deploy y la versión vieja
+# sigue sirviendo. A14 lo ensaya contra staging.
+preDeployCommand = "sh scripts/migrate.sh"
+startCommand = "sh scripts/start.sh"
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"
+
+# Overrides por environment de Railway. Staging es el ensayo, no un ambiente de
+# carga: una réplica alcanza y abarata el costo explícito que ADR-0012 acepta.
+[environments.staging.deploy]
+numReplicas = 1

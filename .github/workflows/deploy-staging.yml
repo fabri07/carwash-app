@@ -1,0 +1,105 @@
+name: Deploy — Staging
+
+# ADR-0012, punto 4: merge a `main` → deploy automático a staging.
+# No existe en Véktor (`grep -rni staging` sobre su .github/ da cero).
+#
+# La regla de promoción es mecánica, no una recomendación: este es el ÚNICO
+# camino automático a un ambiente desplegado, y deploy-prod.yml solo se dispara
+# por tag. No hay forma de llegar a producción sin haber pasado por acá.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Un deploy a la vez. Sin cancel-in-progress: cortar un deploy a la mitad deja
+  # el preDeployCommand en un estado que nadie sabe describir.
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: API staging (Railway)
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Instalar Railway CLI
+        run: npm install -g @railway/cli@5.57.6
+
+      # `railway up` construye con el Dockerfile y dispara el deploy. El
+      # preDeployCommand de railway.toml (sh scripts/migrate.sh) corre UNA vez,
+      # antes de que la versión nueva reciba tráfico. Si la migración falla, el
+      # `set -eu` de migrate.sh corta, Railway aborta y la versión vieja sigue
+      # sirviendo. Ese es el fail-safe que A14 ensaya a mano.
+      - name: Deploy a Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+        working-directory: backend
+        run: railway up --service api-staging --environment staging --ci
+
+      # El seed sintético NO se corre acá: va dentro de scripts/migrate.sh
+      # (preDeployCommand), gateado por APP_ENV=staging, para que corra en el
+      # mismo contenedor, después de las migraciones y antes del tráfico.
+      # Datos inventados, nunca de producción (ADR-0012, punto 3).
+
+      # Smoke mínimo: el ambiente tiene que saber quién es. Si /health dice
+      # cualquier cosa que no sea "staging", algo apuntó mal y no queremos
+      # enterarnos recién cuando corra `make check-envs` (A11).
+      - name: Smoke — /health se identifica como staging
+        run: |
+          set -eu
+          for i in $(seq 1 30); do
+            if curl -fsS https://api-staging.carwashdetailapp.com/health -o /tmp/health.json; then break; fi
+            echo "esperando a que staging responda ($i/30)"; sleep 10
+          done
+          cat /tmp/health.json
+          [ "$(jq -r .env /tmp/health.json)" = "staging" ] \
+            || { echo "staging no se identifica como staging"; exit 1; }
+          [ "$(jq -r .commit /tmp/health.json)" = "${GITHUB_SHA}" ] \
+            || echo "AVISO: el commit de /health no es el de este push (¿deploy en curso?)"
+
+  frontend:
+    name: App staging (Vercel)
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Instalar Vercel CLI
+        run: npm install -g vercel@59.19.1
+
+      # El proyecto de staging es un proyecto de Vercel distinto del de prod, con
+      # sus propias variables (ADR-0012, punto 2). `--prod` acá significa "la
+      # rama productiva DEL PROYECTO DE STAGING", no producción.
+      - name: Build y deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_STAGING }}
+        run: |
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          # M3: el prefijo de cookie del frontend TIENE que coincidir con el
+          # COOKIE_NAME_PREFIX del backend de staging. Si no, el middleware de Next
+          # busca una cookie que la API nunca emite y la sesión "no existe".
+          # Se exige que la variable esté DEFINIDA (aunque sea vacía) con el valor esperado.
+          envfile=.vercel/.env.production.local
+          grep -q '^NEXT_PUBLIC_COOKIE_NAME_PREFIX=' "$envfile" \
+            || { echo "falta NEXT_PUBLIC_COOKIE_NAME_PREFIX en el proyecto de Vercel de staging"; exit 1; }
+          got=$(sed -n 's/^NEXT_PUBLIC_COOKIE_NAME_PREFIX=//p' "$envfile" | tr -d '"')
+          [ "$got" = "stg_" ] \
+            || { echo "NEXT_PUBLIC_COOKIE_NAME_PREFIX='$got', se esperaba 'stg_' en staging"; exit 1; }
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
