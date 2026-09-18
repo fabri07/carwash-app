@@ -44,16 +44,21 @@ def _fks_entre_tenants(tabla: Table) -> list[ForeignKeyConstraint]:
     ]
 
 
+def _columna_hija(fk: ForeignKeyConstraint) -> str:
+    # No `fk.columns[1]`: el orden de las columnas de la FK no es parte del contrato.
+    return next(c.name for c in fk.columns if c.name != "tenant_id")
+
+
 CASOS_FK = [
     pytest.param(
         tabla.name,
-        fk.columns[1].name,
+        _columna_hija(fk),
         fk.referred_table.name,
-        id=f"{tabla.name}.{fk.columns[1].name}",
+        id=f"{tabla.name}.{_columna_hija(fk)}",
     )
     for tabla in TABLAS_TENANT.values()
     for fk in _fks_entre_tenants(tabla)
-    if len(fk.columns) == 2
+    if len(fk.columns) == 2 and "tenant_id" in fk.column_keys
 ]
 
 
@@ -183,9 +188,13 @@ async def test_una_fila_de_b_no_apunta_a_un_padre_de_a(
                     )
 
 
-def test_hay_casos_de_fk_para_cada_tabla_hija():
+async def test_hay_casos_de_fk_para_cada_tabla_hija():
     # Si la parametrización quedara vacía (p. ej. porque las FKs no son compuestas),
     # el test de arriba pasaría sin probar nada.
     hijas = {tabla.name for tabla in TABLAS_TENANT.values() if _fks_entre_tenants(tabla)}
     assert hijas, "no hay FKs entre tablas de tenant: ¿se migró el dominio?"
     assert {c.values[0] for c in CASOS_FK} == hijas
+    # Y ninguna FK queda afuera por no ser compuesta: la comparación de arriba es por tabla,
+    # así que una tabla con una FK compuesta y otra simple pasaba igual.
+    todas = sum(len(_fks_entre_tenants(t)) for t in TABLAS_TENANT.values())
+    assert len(CASOS_FK) == todas, "hay FKs entre tablas de tenant que no son compuestas (X4)"

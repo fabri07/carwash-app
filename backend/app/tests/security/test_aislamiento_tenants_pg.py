@@ -21,43 +21,46 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import (
+    Insert,
+    PrimaryKeyConstraint,
+    Table,
+    UniqueConstraint,
+    insert,
+    select,
+    text,
+)
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+import app.persistence.models  # noqa: F401
 from app.persistence.db.base import Base
 from app.persistence.db.tenant_context import set_tenant_context
 from app.tests.conftest_pg import PG_TEST_URL, _as_app_role, _with_driver
+from app.tests.security._poblar_dominio import RECETAS, poblar
 from app.utils.cookies import ACCESS_COOKIE
 from app.utils.security import create_access_token
 
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 
 TABLAS_TENANT = sorted(t.name for t in Base.metadata.tables.values() if "tenant_id" in t.c)
+#: Append-only (FASE-3-CONTRATO X8): el runtime solo tiene SELECT e INSERT.
+APPEND_ONLY = {"job_events"}
 PASSWORD = "correct-horse-battery"
 
 
 @pytest.fixture
 async def sembrado(pg_admin_engine, pg_tenant_a, pg_tenant_b, pg_user_factory):
-    """Una fila por tenant en cada tabla con tenant."""
-    ids: dict[str, dict[str, uuid.UUID]] = {"a": {}, "b": {}}
+    """EXACTAMENTE una fila por tenant en cada tabla con tenant (vía `poblar`, F3).
+
+    El usuario lo crea `pg_user_factory` (email conocido y password real) para que los
+    tests de login puedan autenticarse; `poblar` lo reusa en vez de crear otro.
+    """
+    ids: dict[str, dict[str, uuid.UUID]] = {}
     for lado, tenant in (("a", pg_tenant_a), ("b", pg_tenant_b)):
-        ids[lado]["tenant"] = tenant
-        ids[lado]["users"] = await pg_user_factory(tenant, f"owner-{lado}@rls.example.com")
-        async with pg_admin_engine.begin() as conn:
-            ids[lado]["dummy_resources"] = uuid.uuid4()
-            await conn.execute(
-                text("INSERT INTO dummy_resources (id, tenant_id, name) VALUES (:i, :t, :n)"),
-                {"i": ids[lado]["dummy_resources"], "t": tenant, "n": f"de {lado}"},
-            )
-            ids[lado]["idempotency_keys"] = uuid.uuid4()
-            await conn.execute(
-                text(
-                    "INSERT INTO idempotency_keys (id, tenant_id, key, action) "
-                    "VALUES (:i, :t, 'k', 'x')"
-                ),
-                {"i": ids[lado]["idempotency_keys"], "t": tenant},
-            )
+        usuario = await pg_user_factory(tenant, f"owner-{lado}@rls.example.com")
+        filas = await poblar(pg_admin_engine, tenant, user_id=usuario)
+        ids[lado] = {"tenant": tenant, **filas}
     return ids
 
 
@@ -77,8 +80,10 @@ def _cookies(user_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, str]:
 
 
 async def test_las_tablas_cubiertas_son_las_esperadas():
-    # si aparece una tabla con tenant nueva, los tests de abajo la recorren sola
+    # si aparece una tabla con tenant nueva, los tests de abajo la recorren sola; y si
+    # `poblar` no sabe llenarla, `sembrado` falla con el nombre (no la saltea)
     assert set(TABLAS_TENANT) >= {"users", "dummy_resources", "idempotency_keys"}
+    assert set(TABLAS_TENANT) == set(RECETAS)
 
 
 @pytest.mark.parametrize("tabla", TABLAS_TENANT)
@@ -127,29 +132,55 @@ async def test_con_tenant_a_solo_se_ve_a(pg_session_factory, sembrado, tabla):
         )
 
 
-def _insert_en(tabla: str) -> str:
-    return {
-        "users": "INSERT INTO users (id, tenant_id, email, password_hash, role) "
-        "VALUES (:i, :t, 'intruso@rls.example.com', 'x', 'OWNER')",
-        "dummy_resources": "INSERT INTO dummy_resources (id, tenant_id, name) "
-        "VALUES (:i, :t, 'intruso')",
-        "idempotency_keys": "INSERT INTO idempotency_keys (id, tenant_id, key, action) "
-        "VALUES (:i, :t, 'intrusa', 'x')",
-    }[tabla]
+def _unicos_globales(tabla: Table) -> set[str]:
+    """Columnas con un único que NO incluye `tenant_id` (hoy solo `users.email`)."""
+    columnas: set[str] = set()
+    for restriccion in tabla.constraints:
+        if isinstance(restriccion, UniqueConstraint | PrimaryKeyConstraint):
+            nombres = {c.name for c in restriccion.columns}
+            if "tenant_id" not in nombres:
+                columnas |= nombres
+    for indice in tabla.indexes:
+        nombres = {c.name for c in indice.columns}
+        if indice.unique and "tenant_id" not in nombres:
+            columnas |= nombres
+    return columnas - {"id"}
+
+
+async def _insert_en(
+    admin: AsyncEngine, tabla: str, *, molde: uuid.UUID, nuevo: uuid.UUID, tenant: uuid.UUID
+) -> Insert:
+    """INSERT de una copia válida de la fila `molde` con otro `id` y `tenant_id`.
+
+    Sale de la metadata y de una fila real sembrada por `poblar`, no de un dict a mano: una
+    tabla nueva queda cubierta sola. Los valores se leen con el superusuario y viajan como
+    literales (no `INSERT … SELECT`), así el intento no depende de que el rol de runtime
+    pueda leer el molde (p. ej. sin contexto). Los únicos globales se cambian para que lo
+    único que pueda rechazar la fila sea la política.
+    """
+    t = Base.metadata.tables[tabla]
+    async with admin.connect() as conn:
+        fila = dict((await conn.execute(select(t).where(t.c.id == molde))).mappings().one())
+    for columna in _unicos_globales(t):
+        fila[columna] = f"intruso-{nuevo.hex[:12]}@ejemplo.invalid"
+    fila.update(id=nuevo, tenant_id=tenant)
+    return insert(t).values(**fila)
 
 
 @pytest.mark.parametrize("tabla", TABLAS_TENANT)
 async def test_insert_con_tenant_de_b_rechazado_por_with_check(
     pg_session_factory, pg_admin_engine, sembrado, tabla
 ):
+    a, b = sembrado["a"], sembrado["b"]
     nuevo = uuid.uuid4()
+    sentencia = await _insert_en(
+        pg_admin_engine, tabla, molde=a[tabla], nuevo=nuevo, tenant=b["tenant"]
+    )
     async with pg_session_factory() as session:
         with pytest.raises(DBAPIError, match="row-level security"):
             async with session.begin():
-                await set_tenant_context(session, sembrado["a"]["tenant"])
-                await session.execute(
-                    text(_insert_en(tabla)), {"i": nuevo, "t": sembrado["b"]["tenant"]}
-                )
+                await set_tenant_context(session, a["tenant"])
+                await session.execute(sentencia)
     assert await _tenant_de_fila(pg_admin_engine, tabla, nuevo) is None
 
 
@@ -158,8 +189,10 @@ async def test_update_que_muda_fila_propia_a_b_rechazado(
     pg_session_factory, pg_admin_engine, sembrado, tabla
 ):
     a, b = sembrado["a"], sembrado["b"]
+    # Append-only (X8, A7): el runtime no tiene UPDATE, ni sobre lo propio. Más fuerte que RLS.
+    esperado = "permission denied" if tabla in APPEND_ONLY else "row-level security"
     async with pg_session_factory() as session:
-        with pytest.raises(DBAPIError, match="row-level security"):
+        with pytest.raises(DBAPIError, match=esperado):
             async with session.begin():
                 await set_tenant_context(session, a["tenant"])
                 await session.execute(
@@ -169,32 +202,32 @@ async def test_update_que_muda_fila_propia_a_b_rechazado(
     assert await _tenant_de_fila(pg_admin_engine, tabla, a[tabla]) == a["tenant"]
 
 
-async def test_update_sobre_filas_de_b_no_toca_nada(pg_engine, pg_admin_engine, sembrado):
+async def _foto(admin: AsyncEngine, tabla: str, fila_id: uuid.UUID) -> str | None:
+    async with admin.connect() as conn:
+        return await conn.scalar(
+            text(f"SELECT row_to_json(t)::text FROM {tabla} AS t WHERE id = :i"), {"i": fila_id}
+        )
+
+
+@pytest.mark.parametrize("tabla", sorted(set(TABLAS_TENANT) - APPEND_ONLY))
+async def test_update_sobre_filas_de_b_no_toca_nada(pg_engine, pg_admin_engine, sembrado, tabla):
+    """Toda tabla escribible: el UPDATE sobre la fila de B afecta 0 filas y la fila, vista por
+    el superusuario, queda idéntica. `SET id = id` vale para toda tabla; `dummy_resources` y
+    `users` conservan además el UPDATE "de verdad" que tenía el test de F2."""
     a, b = sembrado["a"], sembrado["b"]
+    antes = await _foto(pg_admin_engine, tabla, b[tabla])
+    sentencias = [f"UPDATE {tabla} SET id = id WHERE id = :i"]
+    if tabla == "dummy_resources":
+        sentencias.append("UPDATE dummy_resources SET name = 'pisado' WHERE id = :i")
+    if tabla == "users":
+        sentencias.append("UPDATE users SET token_version = 99 WHERE id = :i")
     async with pg_engine.connect() as conn, conn.begin():
         await conn.execute(text(f"SET LOCAL app.tenant_id = '{a['tenant']}'"))
-        r = await conn.execute(
-            text("UPDATE dummy_resources SET name = 'pisado' WHERE id = :i"),
-            {"i": b["dummy_resources"]},
-        )
-        assert r.rowcount == 0
-        r = await conn.execute(
-            text("UPDATE users SET token_version = 99 WHERE id = :i"), {"i": b["users"]}
-        )
-        assert r.rowcount == 0
-    async with pg_admin_engine.connect() as conn:
-        assert (
-            await conn.scalar(
-                text("SELECT name FROM dummy_resources WHERE id = :i"), {"i": b["dummy_resources"]}
-            )
-            == "de b"
-        )
-        assert (
-            await conn.scalar(
-                text("SELECT token_version FROM users WHERE id = :i"), {"i": b["users"]}
-            )
-            == 0
-        )
+        for sentencia in sentencias:
+            r = await conn.execute(text(sentencia), {"i": b[tabla]})
+            assert r.rowcount == 0, sentencia
+    assert antes is not None
+    assert await _foto(pg_admin_engine, tabla, b[tabla]) == antes
 
 
 async def test_el_rol_de_runtime_no_puede_borrar_filas(pg_engine, sembrado):
@@ -320,12 +353,13 @@ async def test_el_guc_viejo_sin_tenant_no_escribe(pg_session_factory, pg_admin_e
                 {"i": b["users"]},
             )
             assert r.rowcount == 0
+        sentencia = await _insert_en(
+            pg_admin_engine, "users", molde=b["users"], nuevo=uuid.uuid4(), tenant=b["tenant"]
+        )
         with pytest.raises(DBAPIError, match="row-level security"):
             async with session.begin():
                 await session.execute(text("SET LOCAL app.identity_lookup = 'on'"))
-                await session.execute(
-                    text(_insert_en("users")), {"i": uuid.uuid4(), "t": b["tenant"]}
-                )
+                await session.execute(sentencia)
     async with pg_admin_engine.connect() as conn:
         assert (
             await conn.scalar(
