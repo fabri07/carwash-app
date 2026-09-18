@@ -200,7 +200,7 @@ jobs:
       # y producción. El primer deploy de staging se cayó por esto con este job en verde.
       - name: Dockerfile sin cache mounts (Railway los rechaza)
         run: |
-          if grep -n 'mount=type=cache' backend/Dockerfile; then
+          if grep -nE '^[^#]*--mount=type=cache' backend/Dockerfile; then
             echo "backend/Dockerfile usa RUN --mount=type=cache: Railway rechaza el build"
             exit 1
           fi
