@@ -588,3 +588,21 @@ sin migración destructiva.
 8. Tasas reales de comisión de débito y crédito del Point.
 9. ¿Existen las ventanas manuales de lunes a jueves (`DISPONIBILIDAD_SEMANAL` vacía)?
 10. Apertura y cierre de caja: ¿hacen falta?
+
+---
+
+## Adenda de T2 (2026-09-18) — aclaraciones, no cambios de alcance
+
+Huecos que el agente Dominio encontró al implementar §2. Se cierran del lado conservador; ninguno
+cambia una tabla.
+
+| # | Hueco | Resolución |
+|---|---|---|
+| A1 | Anular un cobro de un job `COBRADO`/`RETIRADO` puede dejar saldo > 0, y no hay transición de vuelta: `jobs.status` mentiría. | `JobService.void_payment` lo **rechaza** si el job está en `COBRADO`/`RETIRADO` y el saldo resultante sería > 0 (anular un cobro duplicado, que deja saldo 0, sí se puede). Reabrir un cobro es la pregunta 11. |
+| A2 | §2.4 dejaba cerrar cualquier caso con `RETENIDA`, pero C-14 dice que retener una cancelación a tiempo o tardía es regla nueva. | `RETENIDA` **solo desde `EN_REVISION`** (cancelación posterior al turno). `DEVUELTA` y `REPROGRAMADA` desde cualquier caso abierto. Tabla `DEPOSIT_RESOLUTIONS` en `app/domain/deposit.py`. |
+| A3 | `PRICE_ADJUSTED` no decía desde qué estados. | `PRESENTE`, `EN_PROCESO`, `FINALIZADO`: un ajuste después de cobrar tiene el mismo problema que A1. |
+| A4 | El contrato nombra la excepción `InvalidTransition`; ruff N818 pide sufijo `Error`. | Se mantiene el nombre del contrato con `noqa` y motivo. |
+| A5 | `test_modelo_tenant.py` (F2) exigía una sola FK sobre `tenant_id`; X4 agrega las compuestas. | El test verifica una sola FK **a `tenants`** y que las demás sean compuestas. |
+
+**Pregunta 11 para el dueño:** si se anula un cobro después de cerrar el job (cobro mal cargado,
+contracargo), ¿se reabre el job (`COBRADO → FINALIZADO`) o se registra aparte?
