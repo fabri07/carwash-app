@@ -192,3 +192,15 @@ def test_client_ip_avisa_una_sola_vez_si_falta_el_header(settings_env, monkeypat
     assert deps.client_ip(req) == "10.0.0.1"
     assert deps._aviso_sin_x_real_ip_emitido is True
     assert deps.client_ip(req) == "10.0.0.1"
+
+
+@pytest.mark.parametrize("variable", ["GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA"])
+def test_el_commit_sale_de_la_variable_que_fija_el_workflow(monkeypatch, variable):
+    # Los deploys van por `railway up`, que no inyecta RAILWAY_GIT_COMMIT_SHA: el
+    # workflow fija GIT_COMMIT_SHA. Se aceptan las dos por si un servicio se conecta a Git.
+    from app.config.settings import Settings  # noqa: PLC0415
+
+    monkeypatch.delenv("GIT_COMMIT_SHA", raising=False)
+    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
+    monkeypatch.setenv(variable, "abc123")
+    assert Settings(_env_file=None).GIT_COMMIT == "abc123"

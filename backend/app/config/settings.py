@@ -9,7 +9,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 AppEnv = Literal["local", "test", "staging", "production"]
@@ -24,8 +24,13 @@ class Settings(BaseSettings):
 
     APP_ENV: AppEnv = "local"
     DEBUG: bool = False
-    #: SHA del commit desplegado; Railway lo inyecta como RAILWAY_GIT_COMMIT_SHA.
-    GIT_COMMIT: str = Field(default="unknown", validation_alias="RAILWAY_GIT_COMMIT_SHA")
+    #: SHA del commit desplegado. `railway up` (nuestro único camino de deploy) NO inyecta
+    #: RAILWAY_GIT_COMMIT_SHA: eso es solo para servicios conectados a un repo. Los
+    #: workflows lo fijan en GIT_COMMIT_SHA antes del deploy, y el smoke lo exige.
+    GIT_COMMIT: str = Field(
+        default="unknown",
+        validation_alias=AliasChoices("GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA"),
+    )
 
     DATABASE_URL: str = "postgresql+asyncpg://carwash_app:carwash_app_test@localhost:5432/carwash"
     REDIS_URL: str = "redis://localhost:6379/0"
