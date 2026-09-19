@@ -26,7 +26,7 @@ En la columna **Destino**, `igual` quiere decir *la misma ruta relativa, dentro 
    - `backend` → todo `backend/**` **excepto** lo que este manifiesto asigna a `deploy`.
    - `frontend` → todo `frontend/**` **excepto** lo que este manifiesto asigna a `deploy`.
    - `deploy` → `.github/**`, la raíz del repo, `backend/Dockerfile`, `backend/railway.toml`,
-     `backend/scripts/**`, `vercel.json`.
+     `backend/scripts/**`, `frontend/vercel.json`.
 3. **`backend/scripts/` es de `deploy`, entero.** El backend no crea esa carpeta. Lo que el backend
    necesite correr como comando va en `backend/app/cli/`.
 4. **`docs/**` no es de nadie en T2.** Es de T1 (esto) y T4.

@@ -26,9 +26,14 @@ WORKDIR /build
 # Solo los manifiestos primero: la capa de dependencias se cachea mientras el
 # lock no cambie. `--frozen` falla si uv.lock no corresponde a pyproject.toml.
 # `--no-install-project`: la app se usa desde /app vía PYTHONPATH, no instalada.
+#
+# Sin `RUN --mount=type=cache`: Railway rechaza el build si el cache mount no
+# lleva `id=s/<service-id>-<ruta>`, y el service-id es distinto en staging y en
+# producción, así que no hay un id que sirva para los dos. El primer deploy de
+# staging (merge del PR #1) falló por esto a los 7 segundos, sin compilar nada.
+# UV_NO_CACHE evita que el caché de uv quede dentro de la capa.
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+RUN UV_NO_CACHE=1 uv sync --frozen --no-dev --no-install-project
 
 # ── Stage 2: dev / test — incluye el grupo dev (pytest, ruff, mypy) ──────────
 FROM python:3.12-slim AS dev
@@ -50,8 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project
+RUN UV_NO_CACHE=1 uv sync --frozen --no-install-project
 
 COPY . .
 
