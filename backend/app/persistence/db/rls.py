@@ -120,3 +120,48 @@ def grant_app_role(tables: list[str]) -> list[str]:
         _if_app_role(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}"),
         _if_app_role(f"GRANT SELECT, INSERT, UPDATE ON {joined} TO {APP_ROLE}"),
     ]
+
+
+def grant_app_role_append_only(tables: list[str]) -> list[str]:
+    """Tablas append-only (FASE-3-CONTRATO X8): el runtime solo lee e inserta.
+
+    Primero se REVOCA todo lo demás: re-aplicar la migración deja el permiso en su forma
+    canónica aunque alguien lo haya ampliado a mano. El trigger `<tabla>_append_only`
+    cubre además al dueño, que por serlo no pasa por los GRANT.
+    """
+    joined = ", ".join(tables)
+    return [
+        _if_app_role(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}"),
+        _if_app_role(f"REVOKE UPDATE, DELETE, TRUNCATE ON {joined} FROM {APP_ROLE}"),
+        _if_app_role(f"GRANT SELECT, INSERT ON {joined} TO {APP_ROLE}"),
+    ]
+
+
+def append_only_trigger(table: str) -> list[str]:
+    """Trigger `BEFORE UPDATE OR DELETE` que rechaza toda modificación, aun del dueño (X8).
+
+    `TRUNCATE` no dispara triggers de fila: queda para limpiar bases de test y solo lo puede
+    hacer el dueño (el runtime no tiene el permiso).
+    """
+    fn = f"{table}_append_only"
+    return [
+        f"""
+        CREATE OR REPLACE FUNCTION {fn}() RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $fn$
+        BEGIN
+            RAISE EXCEPTION '{table} es append-only: % no está permitido', TG_OP
+                USING HINT = 'una corrección es un evento nuevo, nunca un UPDATE';
+        END
+        $fn$
+        """,
+        f"DROP TRIGGER IF EXISTS {fn} ON {table}",
+        f"CREATE TRIGGER {fn} BEFORE UPDATE OR DELETE ON {table} "
+        f"FOR EACH ROW EXECUTE FUNCTION {fn}()",
+    ]
+
+
+def drop_append_only_trigger(table: str) -> list[str]:
+    fn = f"{table}_append_only"
+    return [f"DROP TRIGGER IF EXISTS {fn} ON {table}", f"DROP FUNCTION IF EXISTS {fn}()"]

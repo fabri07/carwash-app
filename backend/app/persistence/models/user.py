@@ -7,10 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.domain.roles import ROLE_ENUM_NAME, Role
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.db.mixins import enum_values
+from app.persistence.models._constraints import parent_key, voidable_table_args
 
 
 class User(TenantScopedModel):
     __tablename__ = "users"
+    #: `UNIQUE (tenant_id, id)`: F3 apunta a usuarios con FKs compuestas (responsable,
+    #: actor de cada evento). Cambio aditivo sobre la tabla de F2 (migración 0002).
+    __table_args__ = voidable_table_args(parent_key())
 
     #: Único global: el login es por email solo, sin elegir tenant.
     email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)

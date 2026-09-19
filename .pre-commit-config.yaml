@@ -56,3 +56,11 @@ repos:
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs)$
         pass_filenames: false
+      # docs/spec y docs/legacy tienen datos reales y son local-only. Este hook corta si
+      # un teléfono o una patente de ahí aparece en un archivo versionado (en F3 un
+      # agente copió uno en un test). Sin esas carpetas (CI) no compara nada.
+      - id: pii-del-spec
+        name: sin teléfonos ni patentes reales del spec
+        entry: python3 scripts/check_pii_del_spec.py
+        language: system
+        exclude: ^docs/(spec|legacy)/
