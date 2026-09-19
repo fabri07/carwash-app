@@ -34,7 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services._base import (
     ServiceBase,
+    alive_unique,
     as_aware,
+    first_match,
     require_instant,
     require_key,
 )
@@ -42,10 +44,11 @@ from app.application.services._payments import PaymentInput, create_payment, voi
 from app.application.services.errors import (
     CatalogIncoherentError,
     IdempotencyKeyReusedError,
+    QuoteAlreadyUsedError,
 )
 from app.domain.booking_state import BookingAction, next_booking_status
 from app.domain.delay import arrival_delay_min
-from app.domain.deposit import balance_due, total_agreed
+from app.domain.deposit import balance_due, net_paid, total_agreed
 from app.domain.enums import (
     Channel,
     DirtLevel,
@@ -69,7 +72,13 @@ from app.persistence.db._savepoint import (
     unique_violation_classifier,
 )
 from app.persistence.models.agenda import Booking
-from app.persistence.models.job import JOB_EVENTS_IDEMPOTENCY_UNIQUE, Job, JobEvent, JobInspection
+from app.persistence.models.job import (
+    JOB_EVENTS_IDEMPOTENCY_UNIQUE,
+    JOBS_QUOTE_UNIQUE,
+    Job,
+    JobEvent,
+    JobInspection,
+)
 from app.persistence.models.money import Payment
 from app.persistence.repositories.agenda import BookingRepository
 from app.persistence.repositories.catalog import (
@@ -94,6 +103,9 @@ _EVENT_KEY = unique_violation_classifier(
     constraint=JOB_EVENTS_IDEMPOTENCY_UNIQUE,
     columns=("job_events.tenant_id", "job_events.idempotency_key"),
 )
+
+#: Una cotización se usa en un solo job (F3): la red final ante la carrera.
+_QUOTE = alive_unique("jobs", "quote_id")
 
 _J = JobStatus
 _E = JobEventType
@@ -137,12 +149,16 @@ class JobService(ServiceBase):
         return await self._balance(await self._require(self._jobs, job_id))
 
     async def _balance(self, job: Job, *, without: uuid.UUID | None = None) -> int:
+        total = total_agreed(job.base_price_cents, job.surcharge_cents, job.discount_cents)
+        return balance_due(total, await self._lines(job, without=without))
+
+    async def _lines(
+        self, job: Job, *, without: uuid.UUID | None = None
+    ) -> list[tuple[PaymentKind, int, bool]]:
         payments = await self._payments.list_for_job(job.id, self._tenant_id)
-        lines = [
+        return [
             (p.kind, p.amount_cents, p.voided_at is not None) for p in payments if p.id != without
         ]
-        total = total_agreed(job.base_price_cents, job.surcharge_cents, job.discount_cents)
-        return balance_due(total, lines)
 
     # ── Piezas comunes ────────────────────────────────────────────────────────
 
@@ -236,13 +252,19 @@ class JobService(ServiceBase):
         """`JOB_RECEIVED` (∅ → `PRESENTE`, siempre: **[corregir]** R-O-001).
 
         **Con turno** (`booking_id`): idempotente por turno (si ya tiene job, lo devuelve);
-        snapshots de servicio, precio y seña del turno; `A_COTIZAR` exige la cotización
-        `ACEPTADO` y toma su precio; `arrival_delay_min` con signo; turno → `RECIBIDO`; las
-        señas del turno pasan a apuntar al job. El vehículo es el del turno o el que se pasa
-        (la web no exige patente, el job sí).
+        snapshots de servicio, precio y seña del turno. El camino de la cotización lo decide
+        el **snapshot del turno** (F13), no el `pricing_mode` vivo del servicio: un turno con
+        `quote_id` exige esa cotización `ACEPTADO` (y solo esa: un `quote_id` distinto se
+        rechaza, F3) y toma su precio; si no, el `price_cents` del turno.
+        `arrival_delay_min` con signo; turno → `RECIBIDO`; las señas del turno pasan a apuntar
+        al job. El vehículo es el del turno o el que se pasa (la web no exige patente, el job sí).
 
         **Walk-in**: exige vehículo, tamaño, servicio y canal; precio del catálogo, o de la
-        cotización `ACEPTADO` que se pase si el servicio es `A_COTIZAR`.
+        cotización `ACEPTADO` que se pase si el servicio es `A_COTIZAR`. La cotización tiene que
+        ser **suelta** (`booking_id IS NULL`, F3): la de un turno se usa recibiendo el turno.
+
+        Una cotización se usa en **un** job vivo (`ux_jobs_tenant_id_quote_id`, F3): reusarla
+        es `QuoteAlreadyUsedError`, también ante la carrera.
         """
         await self._enter()
         key = require_key(idempotency_key)
@@ -255,7 +277,7 @@ class JobService(ServiceBase):
             await self._require(VehicleRepository(self._session), vehicle_id)
         if booking_id is not None:
             return await self._receive_booking(
-                key, arrived_at, booking_id, vehicle_id, resource_id, responsible, notes
+                key, arrived_at, booking_id, vehicle_id, resource_id, quote_id, responsible, notes
             )
         return await self._receive_walk_in(
             key,
@@ -280,12 +302,27 @@ class JobService(ServiceBase):
         return await self._require(self._jobs, event.job_id, include_voided=True)
 
     async def _accepted_quote_price(
-        self, quote_id: uuid.UUID | None, service_id: uuid.UUID, vehicle_size_id: uuid.UUID
+        self,
+        quote_id: uuid.UUID | None,
+        service_id: uuid.UUID,
+        vehicle_size_id: uuid.UUID,
+        *,
+        booking_id: uuid.UUID | None,
     ) -> int:
-        """`A_COTIZAR` no se recibe sin cotización `ACEPTADO` (D-006, C-17)."""
+        """`A_COTIZAR` no se recibe sin cotización `ACEPTADO` (D-006, C-17).
+
+        `booking_id`: el turno que se recibe, o `None` en un walk-in. La cotización tiene que
+        ser la de ese turno, y la de un walk-in tiene que ser suelta (F3).
+        """
         if quote_id is None:
             raise GuardFailedError("a quoted service needs an accepted quote to be received")
         quote = await self._require(QuoteRepository(self._session), quote_id)
+        if booking_id is None and quote.booking_id is not None:
+            raise GuardFailedError(
+                "the quote belongs to a booking: receive the booking, not a walk-in"
+            )
+        if booking_id is not None and quote.booking_id != booking_id:
+            raise GuardFailedError("the quote is not the booking's quote")
         if quote.status != QuoteStatus.ACEPTADO:
             raise GuardFailedError(f"the quote is {quote.status}, not ACEPTADO")
         if quote.service_id != service_id or quote.vehicle_size_id != vehicle_size_id:
@@ -300,6 +337,7 @@ class JobService(ServiceBase):
         booking_id: uuid.UUID,
         vehicle_id: uuid.UUID | None,
         resource_id: uuid.UUID | None,
+        quote_id: uuid.UUID | None,
         responsible: uuid.UUID,
         notes: str | None,
     ) -> Job:
@@ -314,13 +352,17 @@ class JobService(ServiceBase):
             return existing  # recibir es idempotente por turno (**[corregir]** R-O-010)
 
         booking_target = next_booking_status(booking.status, BookingAction.RECEIVE)
-        service = await self._require(
-            ServiceRepository(self._session), booking.service_id, include_voided=True
-        )
+        if quote_id is not None and quote_id != booking.quote_id:
+            raise GuardFailedError("the quote is not the booking's quote")
+        # F13: el snapshot del turno decide, no el `pricing_mode` vivo del servicio (el
+        # catálogo puede cambiar entre la reserva y la llegada).
         price = booking.price_cents
-        if service.pricing_mode == PricingMode.A_COTIZAR:
+        if booking.quote_id is not None:
             price = await self._accepted_quote_price(
-                booking.quote_id, booking.service_id, booking.vehicle_size_id
+                booking.quote_id,
+                booking.service_id,
+                booking.vehicle_size_id,
+                booking_id=booking.id,
             )
         if price is None:
             raise GuardFailedError("the booking has no price to receive it with")
@@ -352,11 +394,13 @@ class JobService(ServiceBase):
             notes=notes,
         )
         try:
-            async with guarded_savepoint(self._session, _EVENT_KEY):
+            async with guarded_savepoint(self._session, first_match(_EVENT_KEY, _QUOTE)):
                 self._session.add(job)
                 await self._session.flush()
                 await self._record_received(job, key, arrived_at, booking=booking)
         except SavepointConflictError as exc:
+            if exc.constraint == JOBS_QUOTE_UNIQUE:
+                raise QuoteAlreadyUsedError("the quote is already used by another job") from exc
             # Con el turno bloqueado, un reenvío de ESTE turno ya se devolvió arriba: la
             # clave la usó otra operación.
             raise IdempotencyKeyReusedError(key) from exc
@@ -414,7 +458,9 @@ class JobService(ServiceBase):
             await self._require(CustomerRepository(self._session), customer_id)
         service = await self._require(ServiceRepository(self._session), service_id)
         if service.pricing_mode == PricingMode.A_COTIZAR:
-            price = await self._accepted_quote_price(quote_id, service_id, vehicle_size_id)
+            price = await self._accepted_quote_price(
+                quote_id, service_id, vehicle_size_id, booking_id=None
+            )
         else:
             row = await ServicePriceRepository(self._session).find_for(
                 service_id, vehicle_size_id, self._tenant_id
@@ -442,16 +488,20 @@ class JobService(ServiceBase):
             notes=notes,
         )
         try:
-            async with guarded_savepoint(self._session, _EVENT_KEY):
+            async with guarded_savepoint(self._session, first_match(_EVENT_KEY, _QUOTE)):
                 self._session.add(job)
                 await self._session.flush()
                 await self._record_received(job, key, arrived_at, booking=None)
-        except SavepointConflictError:
-            # Carrera: otro reenvío con la misma clave comiteó primero. Gana el suyo.
+        except SavepointConflictError as exc:
+            # Carrera: otro reenvío con la misma clave comiteó primero. Gana el suyo (el
+            # único de la cotización puede saltar antes que el de la clave: el job se inserta
+            # primero, por eso se mira la clave antes de culpar a la cotización).
             replayed = await self._replayed_receive(key)
-            if replayed is None:  # pragma: no cover  # solo si la ganadora hizo rollback
-                raise
-            return replayed
+            if replayed is not None:
+                return replayed
+            if exc.constraint == JOBS_QUOTE_UNIQUE:
+                raise QuoteAlreadyUsedError("the quote is already used by another job") from exc
+            raise  # pragma: no cover  # clave ajena que la ganadora revirtió
         return job
 
     # ── Transiciones ──────────────────────────────────────────────────────────
@@ -541,6 +591,9 @@ class JobService(ServiceBase):
         Un `FINALIZADO` no se cancela (**[corregir]** R-O-016, C-7). El turno pasa a
         `CANCELADO_DEMORA` y se emite `DEPOSIT_RETAINED` con las señas cobradas (aunque sean
         0: la auditoría queda completa y la reversión tiene contra qué ir).
+
+        F2: con cobros `SALDO` vivos (netos de devoluciones) se rechaza: primero se anulan o se
+        devuelven. Si no, esa plata quedaría atrapada en un job que ya no cobra ni anula.
         """
         await self._enter()
         key = require_key(idempotency_key)
@@ -551,6 +604,16 @@ class JobService(ServiceBase):
         apply_event(job.status, _E.JOB_CANCELLED_DELAY)
         scheduled_at = as_aware(job.scheduled_at) if job.scheduled_at is not None else None
         delay = check_delay_cancellation(scheduled_at, occurred_at, tolerance_min)
+        payments = await self._payments.list_for_job(job.id, self._tenant_id)
+        live = [p for p in payments if p.voided_at is None]
+        balance_paid = sum(p.amount_cents for p in live if p.kind == PaymentKind.SALDO) - sum(
+            p.amount_cents for p in live if p.kind == PaymentKind.DEVOLUCION
+        )
+        if balance_paid > 0:
+            raise GuardFailedError(
+                "the job has live balance payments: void or refund them before cancelling "
+                "for delay"
+            )
         booking = await self._lock_booking_of(job)
         assert booking is not None  # scheduled_at NN ⇒ el job vino de un turno
         booking_target = next_booking_status(booking.status, BookingAction.JOB_CANCELLED_DELAY)
@@ -561,7 +624,7 @@ class JobService(ServiceBase):
             job, _E.JOB_CANCELLED_DELAY, key=key, occurred_at=occurred_at, metadata=metadata
         )
         booking.status = booking_target
-        retained = deposits_paid(await self._payments.list_for_job(job.id, self._tenant_id))
+        retained = deposits_paid(payments)
         await self._record(
             job,
             _E.DEPOSIT_RETAINED,
@@ -613,6 +676,14 @@ class JobService(ServiceBase):
         `SALDO` entra a caja; `DEVOLUCION` sale (resta del pagado). La seña es del turno
         (`BookingService.confirm_deposit`). Comisión con la tasa snapshot del medio. Si deja
         saldo 0 en `FINALIZADO`, encadena `JOB_SETTLED`. No en `CANCELADO_DEMORA`.
+
+        Guardas de importe:
+
+        - `SALDO` no supera el saldo pendiente (F8; el contrato deja "rechazar o confirmar" y
+          la confirmación explícita es UI de F7). En `COBRADO`/`RETIRADO` el pendiente es 0.
+        - `DEVOLUCION` no supera lo pagado neto vivo del job (F1), y en `COBRADO`/`RETIRADO`
+          no puede dejar saldo > 0 (la guarda A1 de `void_payment`). Devolver un saldo a
+          favor (negativo) hasta 0 sí se puede.
         """
         await self._enter()
         key = require_key(payment.idempotency_key)
@@ -624,6 +695,7 @@ class JobService(ServiceBase):
         if event is not None:
             return await self._payment_of(event)
         apply_event(job.status, _E.PAYMENT_RECORDED)
+        await self._check_amount(job, kind, payment.amount_cents)
         method = await self._require(
             PaymentMethodRepository(self._session), payment.payment_method_id
         )
@@ -650,6 +722,30 @@ class JobService(ServiceBase):
         await self._settle_if_paid(job, key, payment.occurred_at)
         await self._session.flush()
         return recorded
+
+    async def _check_amount(self, job: Job, kind: PaymentKind, amount_cents: int) -> None:
+        """Guardas de importe de `record_payment` (F1 y F8). El importe `<= 0` lo rechaza
+        `create_payment`."""
+        if amount_cents <= 0:
+            return
+        lines = await self._lines(job)
+        total = total_agreed(job.base_price_cents, job.surcharge_cents, job.discount_cents)
+        paid = net_paid(lines)
+        due = total - paid
+        if kind == PaymentKind.SALDO:
+            if amount_cents > due:
+                raise InvalidAmountError(
+                    f"payment {amount_cents} exceeds the balance due {max(due, 0)}"
+                )
+            return
+        if amount_cents > paid:
+            raise InvalidAmountError(
+                f"refund {amount_cents} exceeds the net paid on the job {max(paid, 0)}"
+            )
+        if job.status in _SETTLED_STATUSES and due + amount_cents > 0:
+            raise GuardFailedError(
+                f"this refund would leave a {job.status} job with a balance due (A1)"
+            )
 
     async def _payment_of(self, event: JobEvent) -> Payment:
         payment_id = uuid.UUID(str(event.event_metadata["payment_id"]))

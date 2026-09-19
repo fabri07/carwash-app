@@ -300,10 +300,18 @@ def _unique_alive(table: str, *columns: str, where: str | None = None) -> None:
     )
 
 
+#: Cuánto espera un lock antes de abortar (F10 de T3). La migración toma `ACCESS EXCLUSIVE`
+#: sobre `tenants` y `users` (y sobre `job_events` al bajar): detrás de una transacción
+#: colgada esperaría sin límite, y mientras espera encola a todo el que lea esas tablas, los
+#: logins incluidos. Mejor que el deploy falle visible y se reintente.
+LOCK_TIMEOUT = "SET LOCAL lock_timeout = '5s'"
+
+
 # ── Upgrade ───────────────────────────────────────────────────────────────────
 
 
 def upgrade() -> None:
+    op.execute(LOCK_TIMEOUT)  # primero: ver LOCK_TIMEOUT
     require_btree_gist(op.get_bind())
 
     for name, values in ENUMS.items():
@@ -637,6 +645,8 @@ def upgrade() -> None:
     ):
         _index(t, column)
     _unique_alive(t, "booking_id", where="booking_id IS NOT NULL")
+    # Una cotización se usa en UN job vivo (F3 de T3): la red ante la carrera.
+    _unique_alive(t, "quote_id", where="quote_id IS NOT NULL")
     _unique_alive(t, "legacy_id", where="legacy_id IS NOT NULL")
 
     t = "job_events"
@@ -821,6 +831,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(LOCK_TIMEOUT)  # primero: ver LOCK_TIMEOUT
     # Las políticas, índices, CHECKs y el EXCLUDE caen con cada tabla.
     for statement in drop_append_only_trigger("job_events"):
         op.execute(statement)

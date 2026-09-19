@@ -612,3 +612,28 @@ cambia una tabla.
 
 **Pregunta 11 para el dueño:** si se anula un cobro después de cerrar el job (cobro mal cargado,
 contracargo), ¿se reabre el job (`COBRADO → FINALIZADO`) o se registra aparte?
+
+## Adenda de T3 (2026-09-18) — ronda única de arreglos
+
+Hallazgos del revisor adversarial y de `/code-review` sobre el diff de la fase. Ninguno crítico ni de
+fuga entre lavaderos. Todos resueltos con un test que falló primero; ninguno quedó diferido salvo la
+pregunta 12.
+
+| # | Regla |
+|---|---|
+| A11 | Una `DEVOLUCION` no supera lo pagado neto vivo del job, y en `COBRADO`/`RETIRADO` no puede dejar saldo > 0 (A1 extendida a `record_payment`). |
+| A12 | Un `SALDO` no supera el saldo pendiente: un job no se sobrepaga por cobro. Un saldo a favor solo nace de un ajuste de precio. |
+| A13 | `cancel_for_delay` exige que los `SALDO` vivos menos las `DEVOLUCION` vivas den 0: la plata no queda atrapada en `CANCELADO_DEMORA`. |
+| A14 | Una cotización se usa en **un** job vivo (`ux_jobs_tenant_id_quote_id`). Un walk-in solo acepta cotizaciones sin turno; un turno, solo la suya. |
+| A15 | `confirm_late` exige precio (un turno a cotizar vencido no se confirma tarde); exige la seña si `deposit_required_cents > 0` y la rechaza si es 0. |
+| A16 | `record_deposit_after_slot_lost`: la seña que llega después de perder el horario se registra en el turno `VENCIDO` y abre una cancelación `OPERATIVA` con `REPROGRAMACION_O_DEVOLUCION_PENDIENTE`. Una por turno. |
+| A17 | Una cotización con `expires_at <= now` no se acepta (mismo comparador que los holds). |
+| A18 | `cancel_by_client(now=…)` usa la hora **del server**: la clasificación decide si la seña se puede retener. |
+| A19 | La recepción de un turno decide el camino de cotización por el **snapshot** del turno, no por el `pricing_mode` vivo del servicio. |
+| A20 | Reenviar el mismo cierre de una seña no tiene efectos (cola offline). |
+| A21 | La migración 0002 corre con `lock_timeout = 5s`: toma `ACCESS EXCLUSIVE` sobre `tenants` y `users`, y no puede colgar los logins. |
+| A22 | Vencer holds usa `FOR UPDATE SKIP LOCKED` (se reprodujo un deadlock 40P01 entre dos holds vencidos del mismo puesto). |
+| A23 | El seed de staging usa teléfonos `+549110000xxxx` y patentes `ZZ0xxZZ`: pasan los CHECK y no pueden ser de una persona real. |
+
+**Pregunta 12 para el dueño:** una devolución con tarjeta, ¿recupera la comisión del medio de pago?
+Hoy se calcula comisión también sobre la devolución (decisión de F7).

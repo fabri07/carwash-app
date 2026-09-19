@@ -28,6 +28,7 @@ from app.domain.enums import (
     JobEventType,
     JobStatus,
     PaymentKind,
+    PricingMode,
 )
 from app.domain.exceptions import (
     GuardFailedError,
@@ -35,7 +36,7 @@ from app.domain.exceptions import (
     InvalidDatetimeError,
     InvalidTransition,
 )
-from app.persistence.models import Booking, CashMovement, JobEvent, Payment
+from app.persistence.models import Booking, CashMovement, Job, JobEvent, Payment, Service
 from app.tests.application._armado import (
     AHORA,
     COMISION_CREDITO_BPS,
@@ -391,8 +392,18 @@ async def test_la_clave_de_una_sena_no_sirve_para_un_cobro(lav):
 
 
 async def test_devolucion_resta_y_sale_de_caja(lav):
-    job = await lav.finalizado()
-    await lav.jobs.record_payment(job.id, lav.pago(2_500_000))  # cobró de más
+    # Un saldo a favor ya no nace de cobrar de más (F8): nace de un descuento posterior.
+    job = await lav.walk_in()
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+    await lav.jobs.adjust_price(
+        job.id,
+        idempotency_key="desc",
+        occurred_at=T,
+        surcharge_cents=0,
+        discount_cents=500_000,
+        reason="Promo",
+    )
+    job = await lav.finalizado(job)
     assert job.status == JobStatus.FINALIZADO  # saldo -500.000: a favor del cliente
     devolucion = await lav.jobs.record_payment(
         job.id, lav.pago(500_000), kind=PaymentKind.DEVOLUCION
@@ -435,17 +446,28 @@ async def test_a1_anular_un_cobro_de_un_cobrado_que_deja_saldo_falla(lav):
     assert pago.voided_at is None
 
 
-async def test_a1_anular_un_cobro_duplicado_de_un_cobrado_si_se_puede(lav):
-    job = await lav.finalizado()
+async def test_a1_anular_en_un_cobrado_lo_que_deja_saldo_cero_si_se_puede(lav):
+    # Un cobro duplicado ya no entra (F8). El caso que A1 deja pasar: la devolución y el
+    # re-cobro de un COBRADO se cargaron los dos por error; anulados, el saldo vuelve a 0.
+    job = await lav.walk_in()
+    await lav.jobs.start(job.id, idempotency_key="ini", occurred_at=T)
     await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
-    duplicado = await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+    devolucion = await lav.jobs.record_payment(
+        job.id, lav.pago(500_000), kind=PaymentKind.DEVOLUCION
+    )
+    recobro = await lav.jobs.record_payment(job.id, lav.pago(500_000))
+    await lav.jobs.finish(job.id, idempotency_key="fin", occurred_at=T)
+    assert job.status == JobStatus.COBRADO
+    await lav.jobs.void_payment(
+        devolucion.id, idempotency_key="v1", occurred_at=T, reason="No hubo devolución"
+    )
     anulado = await lav.jobs.void_payment(
-        duplicado.id, idempotency_key="v", occurred_at=T, reason="Cargado dos veces"
+        recobro.id, idempotency_key="v", occurred_at=T, reason="Cargado dos veces"
     )
     assert anulado.voided_at is not None
     assert await lav.jobs.balance(job.id) == 0
     caja = await lav.session.scalar(
-        select(CashMovement).where(CashMovement.payment_id == duplicado.id)
+        select(CashMovement).where(CashMovement.payment_id == recobro.id)
     )
     assert caja is not None and caja.voided_at is not None
     evento = (await lav.jobs.history(job.id))[-1]
@@ -453,11 +475,11 @@ async def test_a1_anular_un_cobro_duplicado_de_un_cobrado_si_se_puede(lav):
     assert evento.event_metadata["reason"] == "Cargado dos veces"
     # reenvío: sin efectos
     otra_vez = await lav.jobs.void_payment(
-        duplicado.id, idempotency_key="v", occurred_at=T, reason="Cargado dos veces"
+        recobro.id, idempotency_key="v", occurred_at=T, reason="Cargado dos veces"
     )
-    assert otra_vez.id == duplicado.id
+    assert otra_vez.id == recobro.id
     with pytest.raises(GuardFailedError):  # ya anulado, con otra clave
-        await lav.jobs.void_payment(duplicado.id, idempotency_key="v2", occurred_at=T, reason="x")
+        await lav.jobs.void_payment(recobro.id, idempotency_key="v2", occurred_at=T, reason="x")
 
 
 async def test_anular_en_curso_reabre_el_saldo(lav):
@@ -682,3 +704,187 @@ async def test_payment_input_es_inmutable(lav):
     pago = PaymentInput(1, lav.efectivo, "k", T)
     with pytest.raises(AttributeError):
         pago.amount_cents = 2
+
+
+# ── Arreglos de T3 (revisor adversarial y /code-review) ─────────────────────
+
+
+async def test_f1_una_devolucion_no_supera_lo_pagado_neto_vivo(lav):
+    job = await lav.walk_in()
+    with pytest.raises(InvalidAmountError):  # no se pagó nada: no hay qué devolver
+        await lav.jobs.record_payment(job.id, lav.pago(50_000_000), kind=PaymentKind.DEVOLUCION)
+    pago = await lav.jobs.record_payment(job.id, lav.pago(500_000))
+    with pytest.raises(InvalidAmountError):
+        await lav.jobs.record_payment(job.id, lav.pago(500_001), kind=PaymentKind.DEVOLUCION)
+    await lav.jobs.record_payment(job.id, lav.pago(200_000), kind=PaymentKind.DEVOLUCION)
+    with pytest.raises(InvalidAmountError):  # neto vivo: 500.000 − 200.000
+        await lav.jobs.record_payment(job.id, lav.pago(300_001), kind=PaymentKind.DEVOLUCION)
+    await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Error")
+    with pytest.raises(InvalidAmountError):  # el anulado no cuenta
+        await lav.jobs.record_payment(job.id, lav.pago(1), kind=PaymentKind.DEVOLUCION)
+    assert await lav.jobs.balance(job.id) == PRECIO_FIJO + 200_000
+
+
+async def test_f1_una_devolucion_que_deja_deuda_en_un_cobrado_se_rechaza(lav):
+    job = await lav.finalizado()
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+    assert job.status == JobStatus.COBRADO
+    with pytest.raises(GuardFailedError, match="A1"):
+        await lav.jobs.record_payment(job.id, lav.pago(1_500_000), kind=PaymentKind.DEVOLUCION)
+    assert await lav.jobs.balance(job.id) == 0
+    pagos = (await lav.session.scalars(select(Payment).where(Payment.job_id == job.id))).all()
+    assert len(pagos) == 1
+    await lav.jobs.pick_up(job.id, idempotency_key="ret", occurred_at=T)
+    with pytest.raises(GuardFailedError, match="A1"):  # tampoco en RETIRADO
+        await lav.jobs.record_payment(job.id, lav.pago(1), kind=PaymentKind.DEVOLUCION)
+
+
+async def test_f1_en_un_cobrado_la_devolucion_de_un_saldo_a_favor_si_entra(lav):
+    job = await lav.finalizado()
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO - 1_000))
+    devolucion = await lav.jobs.record_payment(job.id, lav.pago(1_000), kind=PaymentKind.DEVOLUCION)
+    await lav.jobs.record_payment(job.id, lav.pago(2_000))
+    assert job.status == JobStatus.COBRADO
+    await lav.jobs.void_payment(devolucion.id, idempotency_key="v", occurred_at=T, reason="Error")
+    assert await lav.jobs.balance(job.id) == -1_000  # a favor del cliente
+    await lav.jobs.record_payment(job.id, lav.pago(1_000), kind=PaymentKind.DEVOLUCION)
+    assert await lav.jobs.balance(job.id) == 0
+
+
+async def test_f2_no_se_cancela_por_demora_con_cobros_vivos(lav):
+    booking = await lav.turno()
+    job = await lav.recibido(booking, llegada=T + timedelta(minutes=40))
+    pago = await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+    with pytest.raises(GuardFailedError, match="payment"):
+        await lav.jobs.cancel_for_delay(
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+        )
+    assert job.status == JobStatus.PRESENTE
+    assert booking.status == BookingStatus.RECIBIDO
+    # anulado el cobro, se cancela
+    await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Error")
+    await lav.jobs.cancel_for_delay(
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+    )
+    assert job.status == JobStatus.CANCELADO_DEMORA
+
+
+async def test_f2_un_cobro_devuelto_no_impide_cancelar_por_demora(lav):
+    booking = await _turno_con_sena_pagada(lav)
+    job = await lav.recibido(booking, llegada=T + timedelta(minutes=40))
+    await lav.jobs.record_payment(job.id, lav.pago(1_000_000))
+    await lav.jobs.record_payment(job.id, lav.pago(1_000_000), kind=PaymentKind.DEVOLUCION)
+    await lav.jobs.cancel_for_delay(
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+    )
+    assert job.status == JobStatus.CANCELADO_DEMORA
+    retenido = (await lav.jobs.history(job.id))[-1]
+    assert retenido.event_metadata == {"amount_cents": SENA}  # la seña, no el saldo
+
+
+async def _cotizacion_aceptada(lav: Lavadero, precio: int = 5_000_000):
+    quote = await lav.cotizaciones.create(
+        customer_id=lav.cliente,
+        service_id=lav.tapizado,
+        vehicle_size_id=lav.auto,
+        requested_at=AHORA,
+    )
+    await lav.cotizaciones.quote(
+        quote.id, agreed_price_cents=precio, agreed_duration_min=120, quoted_at=AHORA
+    )
+    await lav.cotizaciones.accept(quote.id, decided_at=AHORA, now=AHORA)
+    return quote
+
+
+def _walk_in_cotizado(lav: Lavadero, clave: str, quote_id: uuid.UUID):
+    return lav.jobs.receive(
+        idempotency_key=clave,
+        arrived_at=T,
+        vehicle_id=lav.vehiculo,
+        vehicle_size_id=lav.auto,
+        service_id=lav.tapizado,
+        channel=Channel.CALLE,
+        quote_id=quote_id,
+    )
+
+
+async def test_f3_una_cotizacion_se_usa_en_un_solo_job(lav):
+    quote = await _cotizacion_aceptada(lav)
+    primero = await _walk_in_cotizado(lav, "w1", quote.id)
+    with pytest.raises(GuardFailedError, match="quote"):
+        await _walk_in_cotizado(lav, "w2", quote.id)
+    assert (await _walk_in_cotizado(lav, "w1", quote.id)).id == primero.id  # reenvío
+    jobs = (await lav.session.scalars(select(Job).where(Job.quote_id == quote.id))).all()
+    assert [j.id for j in jobs] == [primero.id]
+
+
+async def test_f3_la_cotizacion_de_un_turno_no_sirve_para_un_walk_in(lav):
+    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    assert booking.quote_id is not None
+    await lav.cotizaciones.quote(
+        booking.quote_id, agreed_price_cents=100_000, agreed_duration_min=60, quoted_at=AHORA
+    )
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
+    with pytest.raises(GuardFailedError, match="booking"):
+        await _walk_in_cotizado(lav, "w", booking.quote_id)
+    job = await lav.recibido(booking)
+    assert job.quote_id == booking.quote_id
+
+
+async def test_f3_recibir_un_turno_exige_la_cotizacion_del_turno(lav):
+    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    assert booking.quote_id is not None
+    await lav.cotizaciones.quote(
+        booking.quote_id, agreed_price_cents=100_000, agreed_duration_min=60, quoted_at=AHORA
+    )
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
+    suelta = await _cotizacion_aceptada(lav)
+    with pytest.raises(GuardFailedError, match="quote"):
+        await lav.jobs.receive(
+            idempotency_key="r", arrived_at=T, booking_id=booking.id, quote_id=suelta.id
+        )
+    job = await lav.jobs.receive(
+        idempotency_key="r", arrived_at=T, booking_id=booking.id, quote_id=booking.quote_id
+    )
+    assert (job.quote_id, job.base_price_cents) == (booking.quote_id, 100_000)
+
+
+async def test_f3_la_cotizacion_del_turno_ya_usada_por_otro_job_es_error_de_dominio(lav):
+    """La red final es el único parcial `(tenant_id, quote_id)`: si otro job ya tiene la
+    cotización (carrera, dato migrado), recibir el turno falla con error de dominio, no 500."""
+    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    assert booking.quote_id is not None
+    await lav.cotizaciones.quote(
+        booking.quote_id, agreed_price_cents=100_000, agreed_duration_min=60, quoted_at=AHORA
+    )
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
+    intruso = await lav.walk_in()
+    intruso.quote_id = booking.quote_id  # lo que dejaría una carrera o una migración
+    await lav.session.flush()
+    with pytest.raises(GuardFailedError, match="quote"):
+        await lav.recibido(booking)
+    assert booking.status == BookingStatus.CONFIRMADO
+
+
+async def test_f8_un_cobro_mayor_al_saldo_pendiente_se_rechaza(lav):
+    job = await lav.finalizado()
+    with pytest.raises(InvalidAmountError):
+        await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO + 100))
+    assert job.status == JobStatus.FINALIZADO
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO - 100))
+    with pytest.raises(InvalidAmountError):
+        await lav.jobs.record_payment(job.id, lav.pago(101))
+    await lav.jobs.record_payment(job.id, lav.pago(100))
+    assert job.status == JobStatus.COBRADO
+    with pytest.raises(InvalidAmountError):  # el cobro duplicado ya no entra
+        await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+
+
+async def test_f13_recibir_decide_por_el_snapshot_del_turno_no_por_el_catalogo(lav):
+    booking = await lav.turno()  # precio fijo, reservado con precio
+    servicio = await lav.session.get(Service, lav.lavado)
+    assert servicio is not None
+    servicio.pricing_mode = PricingMode.A_COTIZAR  # el catálogo cambió después de reservar
+    await lav.session.flush()
+    job = await lav.recibido(booking)
+    assert (job.base_price_cents, job.quote_id) == (PRECIO_FIJO, None)

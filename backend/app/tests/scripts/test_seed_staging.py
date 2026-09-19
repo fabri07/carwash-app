@@ -9,6 +9,7 @@ conteos se leen con el superusuario, que es el único testigo que ve todos los t
 """
 
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -83,6 +84,18 @@ async def test_seed_puebla_toda_tabla_con_tenant_y_no_duplica(pg_admin_engine, p
     hashes_dos = await _hashes(pg_admin_engine)
     assert hashes_dos.keys() == hashes_uno.keys()
     assert all(hashes_dos[e] != hashes_uno[e] for e in hashes_uno)
+
+
+async def test_seed_usa_telefonos_y_patentes_inconfundiblemente_falsos(pg_admin_engine, pg_clean):
+    """F11 de T3: `11 0000-00xx` y `ZZ0xxZZ` no son de nadie ni se emitirán en décadas; los
+    datos de staging no pueden confundirse con un cliente o un auto reales."""
+    corrida = _correr_seed(PASSWORD_PRIMERA)
+    assert corrida.returncode == 0, corrida.stdout + corrida.stderr
+    async with pg_admin_engine.connect() as conn:
+        telefonos = (await conn.scalars(text("SELECT phone_e164 FROM customers"))).all()
+        patentes = (await conn.scalars(text("SELECT plate_normalized FROM vehicles"))).all()
+    assert telefonos and all(re.fullmatch(r"\+549110000\d{4}", t) for t in telefonos), telefonos
+    assert patentes and all(re.fullmatch(r"ZZ\d{3}ZZ", p) for p in patentes), patentes
 
 
 async def test_seed_se_niega_fuera_de_staging(pg_admin_engine, pg_clean):

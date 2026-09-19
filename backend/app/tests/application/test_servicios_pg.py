@@ -27,10 +27,11 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.application.services.errors import SlotTakenError
-from app.domain.enums import BookingStatus, JobEventType, JobStatus
+from app.application.services.errors import QuoteAlreadyUsedError, SlotTakenError
+from app.domain.enums import BookingStatus, Channel, DepositStatus, JobEventType, JobStatus
 from app.domain.exceptions import GuardFailedError, InvalidTransition
 from app.persistence.models import Customer, Job, JobEvent
+from app.persistence.repositories.agenda import BookingRepository
 from app.tests.application._armado import (
     AHORA,
     PRECIO_FIJO,
@@ -112,7 +113,8 @@ async def test_confirmacion_tardia_sobre_un_horario_ya_tomado_choca(fabrica, lav
     await _en_tx(fabrica, lav, lambda lv: lv.turno(ahora=HOLD))  # vence el hold y toma el horario
     async with fabrica() as s, s.begin():
         with pytest.raises(SlotTakenError):
-            await lav.en(s).turnos.confirm_late(vencido.id, now=HOLD)
+            lv = lav.en(s)
+            await lv.turnos.confirm_late(vencido.id, now=HOLD, payment=lv.pago(SENA))
 
 
 async def test_aceptar_una_cotizacion_que_alarga_el_turno_sobre_otro_choca(fabrica, lav):
@@ -282,8 +284,8 @@ async def test_dos_cancelaciones_concurrentes_dan_una(fabrica, lav):
     uno, dos, bloqueada = await _en_paralelo(
         fabrica,
         lav,
-        lambda lv: lv.turnos.cancel_by_client(turno.id, requested_at=AHORA),
-        lambda lv: lv.turnos.cancel_by_client(turno.id, requested_at=AHORA),
+        lambda lv: lv.turnos.cancel_by_client(turno.id, now=AHORA),
+        lambda lv: lv.turnos.cancel_by_client(turno.id, now=AHORA),
     )
     assert bloqueada
     assert uno.id == dos.id
@@ -407,3 +409,132 @@ async def test_cancelar_por_demora_y_revertir_contra_postgres(fabrica, lav, pg_a
         JobEventType.DEPOSIT_RETAINED,
         JobEventType.DEPOSIT_RETENTION_REVERSED,
     ]
+
+
+# ── Arreglos de T3 (revisor adversarial y /code-review) ─────────────────────
+
+
+async def test_f3_dos_walk_in_concurrentes_con_la_misma_cotizacion_dan_un_job(
+    fabrica, lav, pg_admin_engine
+):
+    """El único parcial `(tenant_id, quote_id)` es la red: el segundo espera en el índice y,
+    al comitear el primero, recibe un error de dominio (no un `IntegrityError` → 500)."""
+
+    async def aceptada(lv: Lavadero) -> Any:
+        quote = await lv.cotizaciones.create(
+            customer_id=lv.cliente,
+            service_id=lv.tapizado,
+            vehicle_size_id=lv.auto,
+            requested_at=AHORA,
+        )
+        await lv.cotizaciones.quote(
+            quote.id, agreed_price_cents=1_000_000, agreed_duration_min=60, quoted_at=AHORA
+        )
+        return await lv.cotizaciones.accept(quote.id, decided_at=AHORA, now=AHORA)
+
+    quote = await _en_tx(fabrica, lav, aceptada)
+
+    def walk_in(lv: Lavadero, clave: str) -> Coroutine[Any, Any, Any]:
+        return lv.jobs.receive(
+            idempotency_key=clave,
+            arrived_at=T,
+            vehicle_id=lv.vehiculo,
+            vehicle_size_id=lv.auto,
+            service_id=lv.tapizado,
+            channel=Channel.CALLE,
+            quote_id=quote.id,
+        )
+
+    with pytest.raises(QuoteAlreadyUsedError):
+        await _en_paralelo(
+            fabrica, lav, lambda lv: walk_in(lv, "tablet"), lambda lv: walk_in(lv, "celular")
+        )
+    assert (
+        await _contar(pg_admin_engine, "SELECT count(*) FROM jobs WHERE quote_id = :q", q=quote.id)
+        == 1
+    )
+
+
+async def test_f5_la_sena_que_llega_despues_de_perder_el_horario_queda_registrada(
+    fabrica, lav, pg_admin_engine
+):
+    """El escenario del revisor: el hold de A vence, B toma el horario y la seña de A llega
+    después. `confirm_deposit` y `confirm_late` fallan; la plata igual queda registrada."""
+    a = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    await _en_tx(fabrica, lav, lambda lv: lv.turno(ahora=HOLD + timedelta(minutes=1)))
+    tarde = HOLD + timedelta(minutes=2)
+    with pytest.raises(InvalidTransition):
+        await _en_tx(
+            fabrica, lav, lambda lv: lv.turnos.confirm_deposit(a.id, lv.pago(SENA), now=tarde)
+        )
+    with pytest.raises(SlotTakenError):
+        await _en_tx(
+            fabrica,
+            lav,
+            lambda lv: lv.turnos.confirm_late(a.id, now=tarde, payment=lv.pago(SENA)),
+        )
+    c = await _en_tx(
+        fabrica,
+        lav,
+        lambda lv: lv.turnos.record_deposit_after_slot_lost(
+            a.id, lv.pago(SENA, "sena-tarde"), now=tarde
+        ),
+    )
+    otra = await _en_tx(
+        fabrica,
+        lav,
+        lambda lv: lv.turnos.record_deposit_after_slot_lost(
+            a.id, lv.pago(SENA, "sena-tarde"), now=tarde
+        ),
+    )
+    assert otra.id == c.id
+    assert c.deposit_status == DepositStatus.REPROGRAMACION_O_DEVOLUCION_PENDIENTE
+    assert c.deposit_paid_cents == SENA
+    sql = "SELECT count(*) FROM payments WHERE booking_id = :b AND kind = 'SEÑA'"
+    assert await _contar(pg_admin_engine, sql, b=a.id) == 1
+    assert (
+        await _contar(
+            pg_admin_engine, "SELECT count(*) FROM cancellations WHERE booking_id = :b", b=a.id
+        )
+        == 1
+    )
+    async with fabrica() as s, s.begin():
+        assert (await lav.en(s).turnos.get(a.id)).status == BookingStatus.VENCIDO
+
+
+async def test_f12_dos_turnos_vencidos_del_mismo_puesto_no_se_bloquean_en_cruz(fabrica, lav):
+    """Cada transacción tiene tomado **su** turno (un hold vencido) y vence los holds del
+    puesto: sin `SKIP LOCKED` una espera el turno de la otra y viceversa (40P01)."""
+    x = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    y = await _en_tx(
+        fabrica,
+        lav,
+        lambda lv: lv.turno(inicio=T + timedelta(hours=3), servicio=lv.lavado_con_sena, hold=HOLD),
+    )
+    tarde = HOLD + timedelta(minutes=1)
+
+    async def tomar(lv: Lavadero, turno_id: uuid.UUID) -> None:
+        await lv.turnos.get(turno_id)  # fija el contexto del tenant
+        await BookingRepository(lv.session).get_for_update(turno_id, lv.tenant_id)
+
+    async with fabrica() as s1, fabrica() as s2:
+        await s1.begin()
+        await s2.begin()
+        uno, dos = lav.en(s1), lav.en(s2)
+        await tomar(uno, x.id)
+        await tomar(dos, y.id)
+        resultados = await asyncio.wait_for(
+            asyncio.gather(
+                uno.turnos.expire_holds(lav.puesto, tarde),
+                dos.turnos.expire_holds(lav.puesto, tarde),
+                return_exceptions=True,
+            ),
+            timeout=10,
+        )
+        errores = [r for r in resultados if isinstance(r, BaseException)]
+        assert not errores, errores
+        await s1.commit()
+        await s2.commit()
+    vencidos_1, vencidos_2 = resultados
+    assert [b.id for b in vencidos_1] == [x.id]  # el de la otra lo resuelve la otra
+    assert [b.id for b in vencidos_2] == [y.id]

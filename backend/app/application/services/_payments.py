@@ -89,6 +89,9 @@ async def create_payment(
         amount_cents=data.amount_cents,
         payment_method_id=method.id,
         commission_bps=method.commission_bps,
+        # [abierto] Una DEVOLUCION también lleva comisión con la tasa del medio. Si la
+        # devolución recupera o no la comisión del cobro original es decisión de negocio
+        # abierta para F7 (pregunta 12 del contrato): no se cambia acá.
         commission_cents=apply_bps(data.amount_cents, method.commission_bps),
         occurred_at=data.occurred_at,
         actor_user_id=actor_user_id,

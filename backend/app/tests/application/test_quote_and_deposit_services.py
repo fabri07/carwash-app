@@ -8,6 +8,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.application.services import DepositResolutionService, QuoteService
+from app.application.services._base import as_aware
 from app.application.services.errors import IdempotencyKeyReusedError, NotFoundError
 from app.domain.enums import (
     BookingStatus,
@@ -121,7 +122,14 @@ async def test_aceptar_con_seña_deja_el_turno_esperando_la_sena(lav):
 async def test_aceptar_con_el_hold_del_turno_vencido_falla(lav):
     booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
     assert booking.quote_id is not None
-    await _cotizada(lav, booking.quote_id)
+    # La cotización sigue vigente (F6 la rechazaría antes): lo que venció es el turno.
+    await lav.cotizaciones.quote(
+        booking.quote_id,
+        agreed_price_cents=4_000_000,
+        agreed_duration_min=180,
+        quoted_at=AHORA,
+        expires_at=HOLD + timedelta(days=1),
+    )
     with pytest.raises(InvalidTransition):
         await lav.cotizaciones.accept(booking.quote_id, decided_at=HOLD, now=HOLD)
 
@@ -178,7 +186,7 @@ async def _cancelada(lav: Lavadero, *, cuando, con_sena=True, operativa=False):
         await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     if operativa:
         return await lav.turnos.cancel_operational(booking.id, requested_at=cuando, reason="Lluvia")
-    return await lav.turnos.cancel_by_client(booking.id, requested_at=cuando)
+    return await lav.turnos.cancel_by_client(booking.id, now=cuando)
 
 
 async def test_devuelta_registra_la_devolucion_y_cierra(lav):
@@ -297,3 +305,37 @@ async def test_resolver_exige_actor_y_clave_propia(lav):
         await lav.senas.resolve(
             uuid.uuid4(), status=DepositStatus.DEVUELTA, reason="x", resolved_at=T
         )
+
+
+# ── Arreglos de T3 (revisor adversarial y /code-review) ─────────────────────
+
+
+async def test_f6_una_cotizacion_vencida_no_se_acepta(lav):
+    vence = AHORA + timedelta(hours=1)
+    quote = await _suelta(lav, expires_at=vence)
+    await _cotizada(lav, quote.id)
+    with pytest.raises(GuardFailedError, match="expired"):  # mismo comparador `<=` del hold
+        await lav.cotizaciones.accept(quote.id, decided_at=vence, now=vence)
+    assert quote.status == Q.COTIZADO
+    antes = vence - timedelta(seconds=1)
+    await lav.cotizaciones.accept(quote.id, decided_at=antes, now=antes)
+    assert quote.status == Q.ACEPTADO
+
+
+async def test_f9_reenviar_el_mismo_cierre_devuelve_el_caso_sin_efectos(lav):
+    c = await _cancelada(lav, cuando=T + timedelta(minutes=5))
+    assert c.deposit_status == DepositStatus.EN_REVISION
+    hecho = await lav.senas.resolve(
+        c.id, status=DepositStatus.RETENIDA, reason="No vino", resolved_at=T
+    )
+    otra = await lav.senas.resolve(
+        c.id,
+        status=DepositStatus.RETENIDA,
+        reason="Otro motivo",
+        resolved_at=T + timedelta(hours=1),
+    )
+    assert otra.id == hecho.id
+    assert otra.resolution_reason == "No vino"  # sin efectos
+    assert as_aware(otra.resolved_at) == T
+    with pytest.raises(InvalidTransition):  # un cierre distinto sigue fallando
+        await lav.senas.resolve(c.id, status=DepositStatus.REPROGRAMADA, reason="x", resolved_at=T)

@@ -47,6 +47,8 @@ from app.persistence.models._constraints import (
 JOB_EVENTS_IDEMPOTENCY_UNIQUE = "uq_job_events_tenant_id_idempotency_key"
 #: Recibir es idempotente: un turno tiene a lo sumo un job vivo (**[corregir]** R-O-010).
 JOBS_BOOKING_UNIQUE = "ux_jobs_tenant_id_booking_id"
+#: Una cotización se usa en un solo job vivo (F3 de T3).
+JOBS_QUOTE_UNIQUE = "ux_jobs_tenant_id_quote_id"
 
 
 class Job(TenantScopedModel):
@@ -72,6 +74,9 @@ class Job(TenantScopedModel):
         tenant_index("jobs", "resource_id"),
         tenant_index("jobs", "responsible_user_id"),
         unique_alive("jobs", "booking_id", where="booking_id IS NOT NULL"),
+        # Una cotización se usa en UN job vivo (F3 de T3): la red ante la carrera de dos
+        # walk-ins con la misma cotización. El índice no único de arriba sigue cubriendo la FK.
+        unique_alive("jobs", "quote_id", where="quote_id IS NOT NULL"),
         unique_alive("jobs", "legacy_id", where="legacy_id IS NOT NULL"),
         check("base_price_cents > 0", "precio_base_positivo"),
         check("surcharge_cents >= 0", "recargo_no_negativo"),

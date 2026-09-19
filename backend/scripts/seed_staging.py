@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Seed SINTÉTICO de staging — ADR-0012, punto 3.
 
-Crea dos tenants de mentira, cada uno con un OWNER, un STAFF y recursos dummy.
-Todo es inventado: emails bajo el dominio reservado `.invalid` (RFC 2606), sin
-nombres de personas, sin teléfonos, sin patentes.
+Crea dos tenants de mentira, cada uno con un OWNER, un STAFF, recursos dummy y el
+dominio del lavadero. Todo es inventado: emails bajo el dominio reservado `.invalid`
+(RFC 2606), clientes sin nombres de personas ("Cliente Demo n"), y teléfonos y patentes
+**inconfundiblemente falsos**: `11 0000-00xx` (`+549110000xxxx`, una numeración que no se
+asigna) y `ZZ0xxZZ` (serie Mercosur que no se emitirá en décadas). Pasan los CHECK de
+formato (E.164 y patente normalizada) sin poder coincidir con una persona o un auto reales.
 
 **Prohibido** alimentar staging con datos de producción, ni restaurando un
 volcado ni copiando filas: nombres, teléfonos y patentes son PII bajo la
@@ -27,7 +30,7 @@ también ejercite las máquinas de estado: catálogo, puestos, franjas, medios d
 clientes, vehículos y su vínculo, turnos en varios estados, un bloqueo, jobs que
 recorren la máquina (con eventos, inspección, cobros, anulación y retención), una
 cotización aceptada y otra rechazada, cancelaciones con su seña resuelta y los
-movimientos de caja. Teléfonos `11 5550-00xx` y patentes `SS0xxSS`/`SSS0xx`, inventados.
+movimientos de caja. Teléfonos `11 0000-00xx` y patentes `ZZ0xxZZ` (ver arriba).
 El dominio se siembra una vez por tenant, en la misma transacción: si el tenant ya
 tiene catálogo, no se toca (re-correr no duplica).
 
@@ -231,14 +234,14 @@ async def _seed_domain(
     gente = []
     for n in range(1, 6):
         cliente = await clientes.resolve_by_phone(
-            f"11 5550-00{n:02d}", name=f"Cliente Demo {n}", channel=Channel.WHATSAPP
+            f"11 0000-00{n:02d}", name=f"Cliente Demo {n}", channel=Channel.WHATSAPP
         )
         auto_n = await vehiculos.resolve_by_plate(
-            f"SS0{n:02d}SS", vehicle_size_id=auto.id, brand_model="Sedán demo", color="Gris"
+            f"ZZ0{n:02d}ZZ", vehicle_size_id=auto.id, brand_model="Sedán demo", color="Gris"
         )
         await vehiculos.link_customer(cliente.customer.id, auto_n.vehicle.id, is_primary=True)
         gente.append((cliente.customer.id, auto_n.vehicle.id))
-    walk_in_auto = await vehiculos.resolve_by_plate("SSS001", vehicle_size_id=suv.id)
+    walk_in_auto = await vehiculos.resolve_by_plate("ZZ000ZZ", vehicle_size_id=suv.id)
 
     turnos = BookingService(session, tenant_id, staff_id)
     jobs = JobService(session, tenant_id, staff_id)
@@ -325,7 +328,7 @@ async def _seed_domain(
     await turnos.confirm_deposit(
         cancelado.id, pago(900_000, "sena-3", RESERVA, efectivo.id), now=RESERVA
     )
-    cancelacion = await turnos.cancel_by_client(cancelado.id, requested_at=RESERVA, reason="Viaje")
+    cancelacion = await turnos.cancel_by_client(cancelado.id, now=RESERVA, reason="Viaje")
     await DepositResolutionService(session, tenant_id, owner_id).resolve(
         cancelacion.id,
         status=DepositStatus.DEVUELTA,

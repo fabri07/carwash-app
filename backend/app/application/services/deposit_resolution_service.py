@@ -10,7 +10,9 @@ transiciones salen de `app.domain.deposit.DEPOSIT_RESOLUTIONS`:
 - `SIN_PAGO` no se resuelve; un cierre no se reabre.
 
 Cerrar exige actor y motivo (CHECK en la base). Idempotente por la clave del pago de la
-devolución: un reenvío devuelve la cancelación ya resuelta.
+devolución: un reenvío devuelve la cancelación ya resuelta. Sin devolución (`RETENIDA`,
+`REPROGRAMADA`), reenviar el mismo cierre sobre un caso ya cerrado con ese estado devuelve el
+caso sin efectos (la cola offline reintenta, F9); un cierre distinto sigue fallando.
 """
 
 import uuid
@@ -19,7 +21,11 @@ from datetime import datetime
 from app.application.services._base import ServiceBase, require_instant, require_key
 from app.application.services._payments import PaymentInput, create_payment
 from app.application.services.errors import IdempotencyKeyReusedError
-from app.domain.deposit import check_resolution_requirements, resolve_deposit
+from app.domain.deposit import (
+    DEPOSIT_CLOSED_STATUSES,
+    check_resolution_requirements,
+    resolve_deposit,
+)
 from app.domain.enums import DepositStatus, PaymentKind
 from app.domain.exceptions import GuardFailedError, InvalidAmountError
 from app.persistence.models.cancellation import Cancellation
@@ -50,6 +56,12 @@ class DepositResolutionService(ServiceBase):
                     raise IdempotencyKeyReusedError(key)
                 return cancellation
 
+        if (
+            refund is None
+            and status in DEPOSIT_CLOSED_STATUSES
+            and cancellation.deposit_status == status
+        ):
+            return cancellation  # reenvío del mismo cierre: sin efectos (F9)
         target = resolve_deposit(cancellation.deposit_status, status)
         cleaned = check_resolution_requirements(target, reason, refund is not None)
         if refund is not None and target != DepositStatus.DEVUELTA:

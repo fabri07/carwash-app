@@ -742,6 +742,33 @@ async def test_recibir_dos_veces_el_mismo_turno_choca(pg_admin_engine, lavaderos
     )
 
 
+async def test_una_cotizacion_en_un_solo_job_vivo(pg_admin_engine, lavaderos):
+    """F3 de T3: una cotización se usa en un job vivo; anular el job la libera."""
+    a, _ = lavaderos
+    quote = await _alta(
+        pg_admin_engine,
+        "quotes",
+        {
+            "tenant_id": a.tenant,
+            "customer_id": a.customer,
+            "service_id": a.service,
+            "vehicle_size_id": a.size,
+            "status": "ACEPTADO",
+            "requested_at": DIEZ,
+            "agreed_price_cents": 5_000_000,
+            "agreed_duration_min": 90,
+        },
+    )
+    primero = await _alta(pg_admin_engine, "jobs", _job(a, quote_id=quote))
+    await _rechaza(pg_admin_engine, "jobs", _job(a, quote_id=quote), "ux_jobs_tenant_id_quote_id")
+    async with pg_admin_engine.begin() as conn:
+        await conn.execute(text(_ANULAR.format(tabla="jobs")), {"id": primero})
+    await _alta(pg_admin_engine, "jobs", _job(a, quote_id=quote))
+    # sin cotización no hay único
+    await _alta(pg_admin_engine, "jobs", _job(a))
+    await _alta(pg_admin_engine, "jobs", _job(a))
+
+
 # ── X11: sin btree_gist la migración corta ────────────────────────────────────
 
 
@@ -775,6 +802,38 @@ async def test_sin_btree_gist_la_migracion_corta_con_el_mensaje_del_contrato(pg_
             )
             == 1
         )
+
+
+@pytest.mark.parametrize(("paso", "tabla"), [("upgrade", "tenants"), ("downgrade", "job_events")])
+async def test_la_migracion_no_espera_para_siempre_un_lock(pg_admin_engine, paso, tabla):
+    """F10 de T3: 0002 toma `ACCESS EXCLUSIVE` sobre `tenants` y `users` (y `job_events` al
+    bajar). Detrás de una transacción colgada, esperar sin límite encolaría a todo el que lea
+    esas tablas, logins incluidos. `lock_timeout` la corta y el deploy falla visible."""
+    from alembic.migration import MigrationContext  # noqa: PLC0415
+    from alembic.operations import Operations  # noqa: PLC0415
+
+    migracion = _migracion()
+
+    def _correr(conn: Connection) -> None:
+        # Red del propio test: sin `lock_timeout`, corta acá (y el `match` de abajo falla)
+        # en vez de colgarse.
+        conn.execute(text("SET LOCAL statement_timeout = '20s'"))
+        with Operations.context(MigrationContext.configure(conn)):
+            getattr(migracion, paso)()
+
+    async with pg_admin_engine.connect() as bloqueo:
+        colgada = await bloqueo.begin()
+        await bloqueo.execute(text(f"LOCK TABLE {tabla} IN ACCESS SHARE MODE"))
+        try:
+            async with pg_admin_engine.connect() as conn:
+                trans = await conn.begin()
+                try:
+                    with pytest.raises(DBAPIError, match="lock timeout"):
+                        await conn.run_sync(_correr)
+                finally:
+                    await trans.rollback()
+        finally:
+            await colgada.rollback()
 
 
 # ── Enums congelados y ORM contra Postgres ────────────────────────────────────

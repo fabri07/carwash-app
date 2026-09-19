@@ -32,7 +32,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.application.services.errors import (
@@ -41,6 +41,8 @@ from app.application.services.errors import (
     NotFoundError,
 )
 from app.domain.enums import BookingStatus, DepositStatus
+from app.persistence.db.tenant_context import set_tenant_context
+from app.persistence.models import VehicleSize
 from app.persistence.repositories.jobs import JobEventRepository
 from app.tests.application._armado import AHORA, PRECIO_FIJO, SENA, Lavadero, T, armar_catalogo
 from app.tests.security._intentos_servicios import (
@@ -130,7 +132,12 @@ async def _foto(admin: AsyncEngine, tenant_id: uuid.UUID) -> dict[str, list[str]
 async def _intentar(
     fabrica: Factory, lv: Lavadero, fn: Callable[[Lavadero], Awaitable[Any]]
 ) -> BaseException | None:
-    """Corre `fn` y **comitea igual** si levantó una excepción de Python (el peor llamador)."""
+    """Corre `fn` y **comitea igual** si levantó una excepción de Python (el peor llamador).
+
+    Si la base ya había rechazado, el commit no se puede hacer: `DBAPIError`, o
+    `PendingRollbackError` si el rechazo fue en un flush. Se revierte y se devuelve el error
+    real de `fn` (p. ej. el `IntegrityError`), no el del commit.
+    """
     async with fabrica() as s:
         await s.begin()
         error: BaseException | None = None
@@ -140,7 +147,7 @@ async def _intentar(
             error = exc
         try:
             await s.commit()
-        except DBAPIError:  # la base ya había rechazado: la transacción no se puede comitear
+        except (DBAPIError, PendingRollbackError):
             await s.rollback()
     return error
 
@@ -203,6 +210,25 @@ async def test_expire_holds_con_el_puesto_de_a_no_vence_nada(esc: Escenario) -> 
     async with esc.fabrica() as s, s.begin():  # el hold de A sigue vivo
         turno = await esc.a.en(s).turnos.get(esc.ids_a["booking_pend_sena"])
         assert turno.status == BookingStatus.PENDIENTE_SENA
+    # Control positivo: con el tenant A, la misma llamada sí vence el hold (y se revierte).
+    async with esc.fabrica() as s:
+        await s.begin()
+        propios = await esc.a.en(s).turnos.expire_holds(esc.ids_a["puesto"], T + timedelta(days=30))
+        assert esc.ids_a["booking_pend_sena"] in {b.id for b in propios}
+        await s.rollback()
+
+
+async def test_intentar_reporta_el_rechazo_de_la_base_como_el_error_real(dos: Dos) -> None:
+    """Si la base rechaza (un `IntegrityError`), `_intentar` lo devuelve tal cual: no lo tapa
+    el `PendingRollbackError` del commit posterior."""
+
+    async def rechazada(lv: Lavadero) -> None:
+        await set_tenant_context(lv.session, lv.tenant_id)
+        lv.session.add(VehicleSize(tenant_id=lv.tenant_id, code="XL", label=None))
+        await lv.session.flush()
+
+    error = await _intentar(dos.fabrica, dos.b, rechazada)
+    assert isinstance(error, IntegrityError), repr(error)
 
 
 # ── 2. B9 por los servicios ──────────────────────────────────────────────────

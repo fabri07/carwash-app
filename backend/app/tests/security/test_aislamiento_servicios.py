@@ -19,11 +19,12 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.errors import NotFoundError
 from app.domain.enums import BookingStatus
+from app.persistence.models import VehicleSize
 from app.tests.application._armado import Lavadero, T, armar
 from app.tests.security._intentos_servicios import (
     CONTROL_NO_APLICA,
@@ -68,7 +69,11 @@ async def _foto(session: AsyncSession, tenant_id: uuid.UUID) -> dict[str, list[s
 async def _intentar(
     session: AsyncSession, fn: Callable[[], Awaitable[Any]]
 ) -> BaseException | None:
-    """Corre `fn` en un SAVEPOINT y lo **libera igual** si falló (el peor llamador)."""
+    """Corre `fn` en un SAVEPOINT y lo **libera igual** si falló (el peor llamador).
+
+    Si la base ya había rechazado (un `IntegrityError` dentro de `fn`), el flush de abajo
+    levanta `PendingRollbackError`: se revierte el SAVEPOINT y se devuelve el error real.
+    """
     savepoint = await session.begin_nested()
     error: BaseException | None = None
     try:
@@ -78,7 +83,7 @@ async def _intentar(
     try:
         await session.flush()
         await savepoint.commit()
-    except DBAPIError:
+    except (DBAPIError, PendingRollbackError):
         await savepoint.rollback()
     return error
 
@@ -133,3 +138,20 @@ async def test_expire_holds_con_el_puesto_de_a_no_vence_nada(esc: Escenario) -> 
     assert await _foto(esc.session, esc.a.tenant_id) == antes
     turno = await esc.a.turnos.get(esc.ids_a["booking_pend_sena"])
     assert turno.status == BookingStatus.PENDIENTE_SENA
+    # Control positivo: con el tenant A, la misma llamada sí vence el hold.
+    propios = await esc.a.turnos.expire_holds(esc.ids_a["puesto"], T + timedelta(days=30))
+    vencido = next(b for b in propios if b.id == esc.ids_a["booking_pend_sena"])
+    assert vencido.status == BookingStatus.VENCIDO
+
+
+async def test_intentar_reporta_el_rechazo_de_la_base_como_el_error_real(esc: Escenario) -> None:
+    """Si la base rechaza (un `IntegrityError`), `_intentar` lo devuelve tal cual: no lo tapa
+    un `PendingRollbackError` del flush posterior."""
+
+    async def rechazada() -> None:
+        esc.session.add(VehicleSize(tenant_id=esc.b.tenant_id, code="XL", label=None))
+        await esc.session.flush()
+
+    error = await _intentar(esc.session, rechazada)
+    assert isinstance(error, IntegrityError), repr(error)
+    assert await esc.b.turnos.get(esc.ids_b["booking_pend_sena"])  # la sesión sigue usable

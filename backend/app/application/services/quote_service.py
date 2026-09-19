@@ -118,12 +118,17 @@ class QuoteService(ServiceBase):
         Si la duración acordada alarga el turno sobre otro, el `EXCLUDE` lo rechaza
         (`SlotTakenError`). Antes vence los holds del puesto (§1.3): si el del propio turno
         ya venció, el turno está `VENCIDO` y aceptar falla (`InvalidTransition`).
+
+        Una cotización con `expires_at <= now` (el comparador de los holds, C-16) no se
+        acepta (F6): `GuardFailedError`, aunque todavía nadie la haya pasado a `VENCIDO`.
         """
         await self._enter()
         require_instant(decided_at)
         require_instant(now)
         quote = await self._lock(QuoteRepository(self._session), quote_id)
         target = next_quote_status(quote.status, QuoteAction.ACCEPT)
+        if quote.expires_at is not None and hold_expired(as_aware(quote.expires_at), now):
+            raise GuardFailedError("the quote has expired: it cannot be accepted")
         if quote.booking_id is not None:
             await self._pass_to_booking(quote, now, hold_expires_at)
         quote.status = target

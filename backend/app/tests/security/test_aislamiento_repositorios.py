@@ -215,6 +215,10 @@ async def test_void_de_un_id_ajeno_es_none_y_no_anula(
     assert await repo_cls(db_session).void(id_a, b.tenant_id, VoidReason.ERROR_DE_CARGA) is None
     voided = await db_session.scalar(select(tabla.c.voided_at).where(tabla.c.id == id_a))
     assert voided is None
+    # Control positivo: con el tenant A, la misma llamada sí anula.
+    assert await repo_cls(db_session).void(id_a, a.tenant_id, VoidReason.ERROR_DE_CARGA)
+    voided = await db_session.scalar(select(tabla.c.voided_at).where(tabla.c.id == id_a))
+    assert voided is not None
 
 
 async def test_job_events_get_by_id_y_list_by_tenant_no_cruzan(
@@ -235,11 +239,28 @@ async def test_job_events_get_by_id_y_list_by_tenant_no_cruzan(
 
 Caso = Callable[[Any, Lavadero, uuid.UUID], Awaitable[Any]]
 
+
+async def _ocupa_el_horario(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+    """`slot_taken` con un turno sonda en el puesto y el horario del turno de A: devuelve el
+    turno de A si lo ve ocupando (bool → fila, para compararlo como los demás casos)."""
+    from app.persistence.models import Booking  # noqa: PLC0415
+
+    turno = await repo._session.get(Booking, a.ids["bookings"])
+    sonda = Booking(
+        id=uuid.uuid4(),
+        resource_id=turno.resource_id,
+        start_at=turno.start_at,
+        end_at=turno.end_at,
+    )
+    return turno if await repo.slot_taken(sonda, tenant_id) else None
+
+
 #: Cada caso recibe (repo, datos de A, tenant con el que se pregunta).
 CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("BookingRepository", "lock_expired_holds"): lambda r, a, t: r.lock_expired_holds(
         a.ids["resources"], MUY_TARDE, t
     ),
+    ("BookingRepository", "slot_taken"): _ocupa_el_horario,
     ("CancellationRepository", "find_by_booking"): lambda r, a, t: r.find_by_booking(
         a.ids["bookings"], t
     ),

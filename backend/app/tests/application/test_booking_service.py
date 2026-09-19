@@ -28,7 +28,7 @@ from app.domain.enums import (
     QuoteStatus,
 )
 from app.domain.exceptions import GuardFailedError, InvalidTransition
-from app.persistence.models import CashMovement, Quote
+from app.persistence.models import CashMovement, Payment, Quote
 from app.persistence.models.cancellation import DEFAULT_REASON
 from app.tests.application._armado import (
     AHORA,
@@ -176,13 +176,14 @@ async def test_sena_con_el_hold_vencido_no_confirma_y_va_por_confirmacion_tardia
     ).status == S.CONFIRMADO
 
 
-async def test_confirmacion_tardia_sin_pago_y_solo_desde_vencido(lav):
+async def test_confirmacion_tardia_solo_desde_vencido(lav):
     booking = await lav.turno()
     with pytest.raises(InvalidTransition):
         await lav.turnos.confirm_late(booking.id, now=AHORA)
     pendiente = await _con_sena(lav, inicio=T + timedelta(hours=3))
     await lav.turnos.expire_holds(lav.puesto, HOLD)
-    assert (await lav.turnos.confirm_late(pendiente.id, now=HOLD)).status == S.CONFIRMADO
+    confirmado = await lav.turnos.confirm_late(pendiente.id, now=HOLD, payment=lav.pago(SENA))
+    assert confirmado.status == S.CONFIRMADO
 
 
 # ── Cancelaciones ────────────────────────────────────────────────────────────
@@ -191,7 +192,7 @@ async def test_confirmacion_tardia_sin_pago_y_solo_desde_vencido(lav):
 async def test_cancelacion_normal_con_sena_abre_devolucion_pendiente(lav):
     booking = await _con_sena(lav)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
-    c = await lav.turnos.cancel_by_client(booking.id, requested_at=T - timedelta(hours=13))
+    c = await lav.turnos.cancel_by_client(booking.id, now=T - timedelta(hours=13))
     assert booking.status == S.CANCELADO_CLIENTE
     assert c.classification == CancellationClassification.NORMAL
     assert c.anticipation_min == 13 * 60
@@ -207,9 +208,7 @@ async def test_cancelacion_normal_con_sena_abre_devolucion_pendiente(lav):
 async def test_cancelacion_tardia_sin_sena_queda_sin_pago(lav):
     booking = await lav.turno()
     web = BookingService(lav.session, lav.tenant_id, None)  # desde la web: sin actor
-    c = await web.cancel_by_client(
-        booking.id, requested_at=T - timedelta(hours=2), reason="  Viaje  "
-    )
+    c = await web.cancel_by_client(booking.id, now=T - timedelta(hours=2), reason="  Viaje  ")
     assert c.classification == CancellationClassification.TARDIA
     assert c.deposit_status == DepositStatus.SIN_PAGO
     assert c.actor_user_id is None
@@ -219,7 +218,7 @@ async def test_cancelacion_tardia_sin_sena_queda_sin_pago(lav):
 async def test_cancelar_despues_de_la_hora_es_ausente_con_aviso(lav):
     booking = await _con_sena(lav)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
-    c = await lav.turnos.cancel_by_client(booking.id, requested_at=T + timedelta(minutes=10))
+    c = await lav.turnos.cancel_by_client(booking.id, now=T + timedelta(minutes=10))
     assert booking.status == S.AUSENTE_CON_AVISO_POSTERIOR
     assert c.classification == CancellationClassification.POSTERIOR_AL_TURNO
     assert c.anticipation_min == -10
@@ -228,8 +227,8 @@ async def test_cancelar_despues_de_la_hora_es_ausente_con_aviso(lav):
 
 async def test_una_cancelacion_por_turno_la_segunda_devuelve_la_existente(lav):
     booking = await lav.turno()
-    uno = await lav.turnos.cancel_by_client(booking.id, requested_at=AHORA)
-    dos = await lav.turnos.cancel_by_client(booking.id, requested_at=AHORA)
+    uno = await lav.turnos.cancel_by_client(booking.id, now=AHORA)
+    dos = await lav.turnos.cancel_by_client(booking.id, now=AHORA)
     assert dos.id == uno.id
     tres = await lav.turnos.cancel_operational(booking.id, requested_at=AHORA, reason="x")
     assert tres.id == uno.id
@@ -239,10 +238,10 @@ async def test_no_se_cancela_desde_vencido_ni_con_motivo_largo(lav):
     booking = await _con_sena(lav)
     await lav.turnos.expire_holds(lav.puesto, HOLD)
     with pytest.raises(InvalidTransition):  # [corregir] R-T-036
-        await lav.turnos.cancel_by_client(booking.id, requested_at=AHORA)
+        await lav.turnos.cancel_by_client(booking.id, now=AHORA)
     otro = await lav.turno(inicio=T + timedelta(hours=3))
     with pytest.raises(GuardFailedError):
-        await lav.turnos.cancel_by_client(otro.id, requested_at=AHORA, reason="x" * 161)
+        await lav.turnos.cancel_by_client(otro.id, now=AHORA, reason="x" * 161)
 
 
 async def test_cancelacion_operativa_exige_motivo_y_actor(lav):
@@ -283,7 +282,7 @@ async def test_get_y_turno_ajeno(lav, db_session):
     with pytest.raises(NotFoundError):
         await otro.turnos.get(booking.id)
     with pytest.raises(NotFoundError):
-        await otro.turnos.cancel_by_client(booking.id, requested_at=AHORA)
+        await otro.turnos.cancel_by_client(booking.id, now=AHORA)
 
 
 async def test_precio_del_turno_es_snapshot(lav):
@@ -293,3 +292,128 @@ async def test_precio_del_turno_es_snapshot(lav):
     )
     assert booking.price_cents == PRECIO_CON_SENA
     assert booking.duration_min == 90
+
+
+# ── Arreglos de T3 (revisor adversarial y /code-review) ─────────────────────
+
+
+async def test_f4_un_turno_a_cotizar_vencido_no_se_confirma_tarde(lav):
+    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
+    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    assert booking.status == S.VENCIDO
+    with pytest.raises(GuardFailedError, match="price"):
+        await lav.turnos.confirm_late(booking.id, now=HOLD)
+    with pytest.raises(GuardFailedError, match="price"):
+        await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
+    assert booking.status == S.VENCIDO
+    assert booking.price_cents is None
+
+
+async def test_f4_la_confirmacion_tardia_exige_la_sena_si_el_turno_la_pide(lav):
+    booking = await _con_sena(lav)
+    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    with pytest.raises(GuardFailedError, match="deposit"):
+        await lav.turnos.confirm_late(booking.id, now=HOLD)
+    assert booking.status == S.VENCIDO
+    await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
+    assert booking.status == S.CONFIRMADO
+
+
+async def test_f4_sin_sena_requerida_la_confirmacion_tardia_no_acepta_un_pago(lav):
+    booking = await _con_sena(lav)
+    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    booking.deposit_required_cents = 0  # defensa: hoy un PENDIENTE_SEÑA siempre pide seña
+    with pytest.raises(GuardFailedError, match="deposit"):
+        await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
+    assert booking.status == S.VENCIDO
+    assert (await lav.turnos.confirm_late(booking.id, now=HOLD)).status == S.CONFIRMADO
+
+
+async def _horario_perdido(lav: Lavadero):
+    """Turno con seña cuyo hold venció y otro cliente tomó el horario."""
+    perdido = await _con_sena(lav)
+    otro = await lav.turno(ahora=HOLD + timedelta(minutes=1))
+    assert perdido.status == S.VENCIDO and otro.status == S.CONFIRMADO
+    return perdido
+
+
+async def test_f5_la_sena_que_llega_despues_de_perder_el_horario_queda_registrada(lav):
+    perdido = await _horario_perdido(lav)
+    tarde = HOLD + timedelta(minutes=2)
+    c = await lav.turnos.record_deposit_after_slot_lost(
+        perdido.id, lav.pago(SENA, "sena-tarde"), now=tarde
+    )
+    assert perdido.status == S.VENCIDO  # el turno no cambia
+    assert c.booking_id == perdido.id
+    assert c.initiator == CancellationInitiator.NEGOCIO
+    assert c.classification == CancellationClassification.OPERATIVA
+    assert c.deposit_status == DepositStatus.REPROGRAMACION_O_DEVOLUCION_PENDIENTE
+    assert (c.previous_status, c.resulting_status) == (S.VENCIDO, S.VENCIDO)
+    assert c.deposit_paid_cents == SENA
+    assert c.requested_at == tarde
+    assert c.actor_user_id == lav.owner_id
+    assert "slot" in c.reason.lower() or "horario" in c.reason.lower()
+    pagos = (
+        await lav.session.scalars(select(Payment).where(Payment.booking_id == perdido.id))
+    ).all()
+    assert [(p.kind, p.amount_cents) for p in pagos] == [(PaymentKind.SENA, SENA)]
+    # reenvío de la cola offline: sin efectos
+    otra = await lav.turnos.record_deposit_after_slot_lost(
+        perdido.id, lav.pago(SENA, "sena-tarde"), now=tarde
+    )
+    assert otra.id == c.id
+    assert (
+        len(
+            (
+                await lav.session.scalars(select(Payment).where(Payment.booking_id == perdido.id))
+            ).all()
+        )
+        == 1
+    )
+    # el caso se resuelve como cualquier otro
+    hecho = await lav.senas.resolve(
+        c.id,
+        status=DepositStatus.DEVUELTA,
+        reason="Transferido",
+        resolved_at=tarde,
+        refund=lav.pago(SENA, "dev-tarde"),
+    )
+    assert hecho.deposit_status == DepositStatus.DEVUELTA
+
+
+async def test_f5_solo_para_un_vencido_cuyo_horario_esta_tomado(lav):
+    confirmado = await lav.turno(inicio=T + timedelta(hours=5))
+    with pytest.raises(InvalidTransition):
+        await lav.turnos.record_deposit_after_slot_lost(confirmado.id, lav.pago(SENA), now=HOLD)
+    libre = await _con_sena(lav)
+    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    with pytest.raises(GuardFailedError, match="confirm_late"):  # el horario sigue libre
+        await lav.turnos.record_deposit_after_slot_lost(libre.id, lav.pago(SENA), now=HOLD)
+    pagos = (await lav.session.scalars(select(Payment).where(Payment.booking_id == libre.id))).all()
+    assert pagos == []
+
+
+async def test_f5_la_clave_es_de_su_turno_y_un_segundo_pago_no_se_suma_en_silencio(lav):
+    perdido = await _horario_perdido(lav)
+    tarde = HOLD + timedelta(minutes=2)
+    await lav.turnos.record_deposit_after_slot_lost(perdido.id, lav.pago(SENA, "s1"), now=tarde)
+    with pytest.raises(GuardFailedError):  # ya hay un caso abierto: lo resuelve una persona
+        await lav.turnos.record_deposit_after_slot_lost(perdido.id, lav.pago(SENA, "s2"), now=tarde)
+    otro = await lav.turno(inicio=T + timedelta(hours=5))
+    with pytest.raises(IdempotencyKeyReusedError):
+        await lav.turnos.confirm_late(otro.id, now=tarde, payment=lav.pago(SENA, "s1"))
+    # una clave de un pago de otra operación no sirve para registrar la seña tardía
+    job = await lav.walk_in()
+    await lav.jobs.record_payment(job.id, lav.pago(1_000, "cobro"))
+    with pytest.raises(IdempotencyKeyReusedError):
+        await lav.turnos.record_deposit_after_slot_lost(
+            perdido.id, lav.pago(SENA, "cobro"), now=tarde
+        )
+
+
+async def test_f7_cancel_by_client_toma_la_hora_del_server(lav):
+    booking = await _con_sena(lav)
+    await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
+    c = await lav.turnos.cancel_by_client(booking.id, now=T + timedelta(hours=2))
+    assert c.requested_at == T + timedelta(hours=2)
+    assert c.classification == CancellationClassification.POSTERIOR_AL_TURNO

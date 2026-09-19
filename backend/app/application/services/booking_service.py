@@ -12,9 +12,11 @@ ya vencido; el job periódico de F5 es solo limpieza.
 `create` es **mínimo**: calcula estado, precio y seña del catálogo y deja que el `EXCLUDE`
 decida. La validación de disponibilidad (franjas, bloqueos, reglas horarias) es F5.
 
-Orden de locks: este servicio solo toma locks de turnos (y de sus holds vencidos en orden de
-`id`). `JobService` toma job → turno; `QuoteService` cotización → turno. Nadie toma turno → job,
-así que no hay ciclo de espera.
+Orden de locks: este servicio solo toma locks de turnos. Los holds vencidos del puesto se toman
+con `FOR UPDATE SKIP LOCKED` (F12): un hold que otra transacción tiene tomado lo resuelve esa
+transacción, así dos operaciones que bloquearon cada una su turno y vencen holds del mismo
+puesto no se esperan en cruz (deadlock). `JobService` toma job → turno; `QuoteService`
+cotización → turno. Nadie toma turno → job, así que no hay ciclo de espera.
 """
 
 import uuid
@@ -49,13 +51,14 @@ from app.domain.booking_state import (
 from app.domain.deposit import deposit_required, deposit_status_for
 from app.domain.enums import (
     BookingSource,
+    BookingStatus,
     CancellationClassification,
     CancellationInitiator,
     Channel,
     PaymentKind,
     PricingMode,
 )
-from app.domain.exceptions import GuardFailedError
+from app.domain.exceptions import GuardFailedError, InvalidTransition
 from app.domain.quote_state import QuoteAction, next_quote_status
 from app.persistence.db._savepoint import (
     SavepointConflictError,
@@ -68,6 +71,7 @@ from app.persistence.models.cancellation import (
     DEFAULT_REASON,
     Cancellation,
 )
+from app.persistence.models.catalog import PaymentMethod
 from app.persistence.models.money import Payment
 from app.persistence.models.quote import Quote
 from app.persistence.repositories.agenda import HOLD_STATUSES, BookingRepository
@@ -84,6 +88,8 @@ from app.persistence.repositories.money import PaymentRepository, deposits_paid
 
 #: `CHECK (length(reason) <= 160)` de `cancellations`.
 MAX_CANCELLATION_REASON = 160
+#: Motivo del caso que abre `record_deposit_after_slot_lost` (F5).
+SLOT_LOST_REASON = "La seña llegó después de que venció el hold y otro turno tomó el horario"
 
 _OVERLAP = unique_violation_classifier("overlap", constraint=BOOKING_OVERLAP_CONSTRAINT)
 _CODE = alive_unique("bookings", "code")
@@ -119,8 +125,11 @@ class BookingService(ServiceBase):
     async def expire_holds(self, resource_id: uuid.UUID, now: datetime) -> list[Booking]:
         """Vence `PENDIENTE_SEÑA`/`PENDIENTE_COTIZACION` del puesto con `hold_expires_at <= now`.
 
-        Toma los turnos con `FOR UPDATE` (en orden de `id`) y los pasa a `VENCIDO` (no
-        terminal, R-T-030). Devuelve los que venció.
+        Toma los turnos con `FOR UPDATE SKIP LOCKED` (en orden de `id`) y los pasa a
+        `VENCIDO` (no terminal, R-T-030). Devuelve los que venció. Un hold que otra
+        transacción tiene tomado no se espera (F12): lo resuelve esa transacción, y el
+        `EXCLUDE` sigue siendo la garantía del horario (si esa transacción revierte, un
+        alta encima choca con `SlotTakenError` y se reintenta).
         """
         await self._enter()
         require_instant(now)
@@ -278,10 +287,16 @@ class BookingService(ServiceBase):
             raise IdempotencyKeyReusedError(key)
         return existing
 
-    async def _record_deposit(self, booking: Booking, payment: PaymentInput) -> Payment:
-        method = await self._require(
+    async def _deposit_method(self, payment: PaymentInput) -> PaymentMethod:
+        return await self._require(
             PaymentMethodRepository(self._session), payment.payment_method_id
         )
+
+    async def _record_deposit(
+        self, booking: Booking, payment: PaymentInput, method: PaymentMethod | None = None
+    ) -> Payment:
+        if method is None:
+            method = await self._deposit_method(payment)
         return await create_payment(
             self._session,
             self._tenant_id,
@@ -321,6 +336,11 @@ class BookingService(ServiceBase):
     ) -> Booking:
         """`VENCIDO → CONFIRMADO` (confirmación tardía): el `EXCLUDE` decide si el horario
         sigue libre (`SlotTakenError` si no). Con `payment`, registra además la seña.
+
+        Guardas (F4): el turno tiene precio (un `A_COTIZAR` vencido se vuelve a cotizar, no
+        se confirma tarde sin precio); si pide seña (`deposit_required_cents > 0`) exige su
+        pago, y si no la pide rechaza uno. Si el horario ya no está libre, la seña se
+        registra con `record_deposit_after_slot_lost`.
         """
         await self._enter()
         require_instant(now)
@@ -330,6 +350,17 @@ class BookingService(ServiceBase):
             if await self._replayed_deposit(booking, key) is not None:
                 return booking
         target = next_booking_status(booking.status, BookingAction.LATE_CONFIRM)
+        if booking.price_cents is None:
+            raise GuardFailedError(
+                "a booking without a price (to be quoted) cannot be confirmed late"
+            )
+        if booking.deposit_required_cents > 0 and payment is None:
+            raise GuardFailedError("the booking requires a deposit: confirm late with its payment")
+        if booking.deposit_required_cents == 0 and payment is not None:
+            raise GuardFailedError("the booking requires no deposit: confirm late without payment")
+        # El medio se resuelve antes de tocar el turno: un medio inexistente no deja el turno
+        # confirmado sin su seña.
+        method = await self._deposit_method(payment) if payment is not None else None
         await self.expire_holds(booking.resource_id, now)
         try:
             async with guarded_savepoint(self._session, _OVERLAP):
@@ -338,8 +369,64 @@ class BookingService(ServiceBase):
         except SavepointConflictError as exc:
             raise _conflict_error(exc) from exc
         if payment is not None:
-            await self._record_deposit(booking, payment)
+            await self._record_deposit(booking, payment, method)
         return booking
+
+    async def record_deposit_after_slot_lost(
+        self, booking_id: uuid.UUID, payment: PaymentInput, *, now: datetime
+    ) -> Cancellation:
+        """La seña de un turno `VENCIDO` cuyo horario ya tomó otro turno (F5).
+
+        La plata llegó y no hay horario que confirmar (`confirm_late` choca con el
+        `EXCLUDE`): se registra el pago `SEÑA` en el turno **sin cambiar su estado** y se abre
+        el caso de la seña en `cancellations` (`NEGOCIO`, `OPERATIVA`,
+        `REPROGRAMACION_O_DEVOLUCION_PENDIENTE`, `VENCIDO → VENCIDO`), que se cierra con
+        `DepositResolutionService` (devolver o reprogramar). `now` es la hora del server.
+
+        Si el horario sigue libre, `GuardFailedError`: corresponde `confirm_late`. Un turno
+        tiene un solo caso: un segundo pago sobre un caso ya abierto se rechaza (lo resuelve
+        una persona). Idempotente por la clave del pago: un reenvío devuelve el caso.
+        """
+        await self._enter()
+        key = require_key(payment.idempotency_key)
+        require_instant(now)
+        actor = self._actor()
+        cancellations = CancellationRepository(self._session)
+        booking = await self._lock(self._bookings, booking_id)
+        if await self._replayed_deposit(booking, key) is not None:
+            existing = await cancellations.find_by_booking(booking.id, self._tenant_id)
+            if existing is None:  # la clave la usó otra seña de este turno
+                raise IdempotencyKeyReusedError(key)
+            return existing
+        if booking.status != BookingStatus.VENCIDO:
+            raise InvalidTransition("booking", booking.status, "RECORD_DEPOSIT_AFTER_SLOT_LOST")
+        await self.expire_holds(booking.resource_id, now)
+        if not await self._bookings.slot_taken(booking, self._tenant_id):
+            raise GuardFailedError("the slot is still free: use confirm_late")
+        if await cancellations.find_by_booking(booking.id, self._tenant_id) is not None:
+            raise GuardFailedError("the booking already has a deposit case: resolve it first")
+
+        await self._record_deposit(booking, payment)
+        paid = deposits_paid(await self._payments.list_for_booking(booking.id, self._tenant_id))
+        classification = CancellationClassification.OPERATIVA
+        cancellation = Cancellation(
+            tenant_id=self._tenant_id,
+            booking_id=booking.id,
+            initiator=CancellationInitiator.NEGOCIO,
+            classification=classification,
+            requested_at=now,
+            anticipation_min=anticipation_min(as_aware(booking.start_at), now),
+            reason=SLOT_LOST_REASON,
+            previous_status=booking.status,
+            resulting_status=booking.status,
+            deposit_paid_cents=paid,
+            deposit_status=deposit_status_for(classification, paid),
+            actor_user_id=actor,
+            terms_version=booking.terms_version,
+        )
+        self._session.add(cancellation)
+        await self._session.flush()
+        return cancellation
 
     # ── Cancelaciones ─────────────────────────────────────────────────────────
 
@@ -347,7 +434,7 @@ class BookingService(ServiceBase):
         self,
         booking_id: uuid.UUID,
         *,
-        requested_at: datetime,
+        now: datetime,
         reason: str | None = None,
         late_threshold_min: int = DEFAULT_LATE_THRESHOLD_MIN,
     ) -> Cancellation:
@@ -355,11 +442,15 @@ class BookingService(ServiceBase):
         `AUSENTE_CON_AVISO_POSTERIOR` (< 0). Clasifica (R-T-037) y abre el caso de la seña
         con `deposit_status_for`. Sin actor = desde la web.
 
+        `now` es la hora **del server**, nunca un dato del cliente (F7): la clasificación
+        decide si la seña se puede retener (`EN_REVISION` → `RETENIDA`), y un cliente que
+        mandara una hora anterior se la sacaría de encima. Queda como `requested_at`.
+
         Idempotente por turno: si ya hay una cancelación, la devuelve (R-T-035).
         """
         return await self._cancel(
             booking_id,
-            requested_at=requested_at,
+            requested_at=now,
             reason=reason,
             initiator=CancellationInitiator.CLIENTE,
             late_threshold_min=late_threshold_min,

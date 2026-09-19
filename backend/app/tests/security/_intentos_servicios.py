@@ -8,12 +8,16 @@ tercera red: el filtro por `tenant_id` del repositorio) y `test_aislamiento_serv
 - `INTENTOS`: cada operación pública de servicio que recibe un id, con el id de A que se le pasa
   y la tabla que tiene que nombrar el `NotFoundError`.
 - `operaciones_con_id()` descubre las operaciones por introspección: una nueva sin intento hace
-  fallar el test de cobertura.
+  fallar el test de cobertura. Ve también los `uuid.UUID` **dentro** de un dataclass de entrada
+  (`PaymentInput.payment_method_id`): cada uno es una entrada propia,
+  `Servicio.metodo:param.campo`, que necesita su intento.
 
 Datos sintéticos (`1144445555`, `AB123CD`, `@ejemplo.invalid`).
 """
 
+import dataclasses
 import inspect
+import typing
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -54,9 +58,35 @@ async def cancelada(lv: Lavadero, inicio: Any) -> Any:
         inicio=inicio, servicio=lv.lavado_con_sena, hold=AHORA + timedelta(hours=2)
     )
     await lv.turnos.confirm_deposit(turno.id, lv.pago(SENA), now=AHORA)
-    cancelacion = await lv.turnos.cancel_by_client(turno.id, requested_at=AHORA)
+    cancelacion = await lv.turnos.cancel_by_client(turno.id, now=AHORA)
     assert cancelacion.deposit_status == DepositStatus.DEVOLUCION_PENDIENTE
     return cancelacion
+
+
+async def vencido_con_sena(lv: Lavadero) -> uuid.UUID:
+    """Turno con seña, hold vencido, horario libre (puesto 2, T+6h): `confirm_late` funciona."""
+    turno = await lv.turno(
+        inicio=T + timedelta(hours=6),
+        servicio=lv.lavado_con_sena,
+        puesto=lv.puesto_2,
+        hold=AHORA + timedelta(minutes=10),
+    )
+    await lv.turnos.expire_holds(lv.puesto_2, AHORA + timedelta(minutes=20))
+    return turno.id
+
+
+async def perdido(lv: Lavadero) -> uuid.UUID:
+    """Turno con seña vencido cuyo horario tomó otro (puesto 2, T+14h): para
+    `record_deposit_after_slot_lost`."""
+    inicio = T + timedelta(hours=14)
+    turno = await lv.turno(
+        inicio=inicio,
+        servicio=lv.lavado_con_sena,
+        puesto=lv.puesto_2,
+        hold=AHORA + timedelta(minutes=10),
+    )
+    await lv.turno(inicio=inicio, puesto=lv.puesto_2, ahora=AHORA + timedelta(minutes=20))
+    return turno.id
 
 
 async def armar_a(lv: Lavadero) -> Ids:
@@ -93,14 +123,8 @@ async def armar_a(lv: Lavadero) -> Ids:
             hold=AHORA + timedelta(hours=2),
         )
     ).id
-    vencido = await lv.turno(
-        inicio=T + timedelta(hours=6),
-        servicio=lv.lavado_con_sena,
-        puesto=lv.puesto_2,
-        hold=AHORA + timedelta(minutes=10),
-    )
-    await lv.turnos.expire_holds(lv.puesto_2, AHORA + timedelta(minutes=20))
-    ids["booking_vencido"] = vencido.id
+    ids["booking_vencido"] = await vencido_con_sena(lv)
+    ids["booking_perdido"] = await perdido(lv)
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
 
     async def cotizacion() -> Any:
@@ -140,6 +164,8 @@ async def armar_b(lv: Lavadero) -> Ids:
         )
     ).id
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
+    ids["booking_vencido"] = await vencido_con_sena(lv)
+    ids["booking_perdido"] = await perdido(lv)
     return ids
 
 
@@ -236,7 +262,7 @@ INTENTOS: dict[str, Intento] = {
         "efectivo",
         "payment_methods",
         lambda lv, ib, x: lv.jobs.record_payment(ib["job_finalizado"], lv.pago(1_000, medio=x)),
-        "JobService.record_payment",
+        "JobService.record_payment:payment.payment_method_id",
     ),
     "job.void_payment": Intento(
         "pago",
@@ -345,18 +371,45 @@ INTENTOS: dict[str, Intento] = {
         lambda lv, ib, x: lv.turnos.confirm_deposit(
             ib["booking_pend_sena"], lv.pago(SENA, medio=x), now=AHORA
         ),
-        "BookingService.confirm_deposit",
+        "BookingService.confirm_deposit:payment.payment_method_id",
     ),
     "booking.confirm_late": Intento(
         "booking_vencido",
         "bookings",
-        lambda lv, ib, x: lv.turnos.confirm_late(x, now=AHORA + timedelta(minutes=30)),
+        # con seña (F4): si el turno se leyera, se confirmaría con el pago
+        lambda lv, ib, x: lv.turnos.confirm_late(
+            x, now=AHORA + timedelta(minutes=30), payment=lv.pago(SENA)
+        ),
         "BookingService.confirm_late",
+    ),
+    "booking.confirm_late.medio": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.turnos.confirm_late(
+            ib["booking_vencido"], now=AHORA + timedelta(minutes=30), payment=lv.pago(SENA, medio=x)
+        ),
+        "BookingService.confirm_late:payment.payment_method_id",
+    ),
+    "booking.record_deposit_after_slot_lost": Intento(
+        "booking_perdido",
+        "bookings",
+        lambda lv, ib, x: lv.turnos.record_deposit_after_slot_lost(
+            x, lv.pago(SENA), now=AHORA + timedelta(minutes=30)
+        ),
+        "BookingService.record_deposit_after_slot_lost",
+    ),
+    "booking.record_deposit_after_slot_lost.medio": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.turnos.record_deposit_after_slot_lost(
+            ib["booking_perdido"], lv.pago(SENA, medio=x), now=AHORA + timedelta(minutes=30)
+        ),
+        "BookingService.record_deposit_after_slot_lost:payment.payment_method_id",
     ),
     "booking.cancel_by_client": Intento(
         "booking_conf",
         "bookings",
-        lambda lv, ib, x: lv.turnos.cancel_by_client(x, requested_at=AHORA),
+        lambda lv, ib, x: lv.turnos.cancel_by_client(x, now=AHORA),
         "BookingService.cancel_by_client",
     ),
     "booking.cancel_operational": Intento(
@@ -485,7 +538,7 @@ INTENTOS: dict[str, Intento] = {
             resolved_at=T,
             refund=lv.pago(SENA, medio=x),
         ),
-        "DepositResolutionService.resolve",
+        "DepositResolutionService.resolve:refund.payment_method_id",
     ),
     # ── Clientes, vehículos y catálogo ──
     "vehicle.link_customer.customer": Intento(
@@ -539,8 +592,24 @@ CUBIERTAS_APARTE: dict[str, str] = {
 }
 
 
+def _es_uuid(anotacion: Any) -> bool:
+    return anotacion is uuid.UUID or uuid.UUID in getattr(anotacion, "__args__", ())
+
+
+def _dataclass_de(anotacion: Any) -> type | None:
+    """El dataclass de entrada de una anotación (`PaymentInput` o `PaymentInput | None`)."""
+    for candidato in (anotacion, *getattr(anotacion, "__args__", ())):
+        if inspect.isclass(candidato) and dataclasses.is_dataclass(candidato):
+            return candidato
+    return None
+
+
 def operaciones_con_id() -> set[str]:
-    """`Servicio.metodo` público de cada servicio exportado que recibe algún `uuid.UUID`."""
+    """Cada entrada con un `uuid.UUID` de cada operación pública de los servicios exportados.
+
+    `Servicio.metodo` si recibe un `uuid.UUID` directo; `Servicio.metodo:param.campo` por cada
+    `uuid.UUID` dentro de un dataclass de entrada (el medio de pago de un `PaymentInput`).
+    """
     encontradas = set()
     for nombre in paquete_servicios.__all__:
         cls = getattr(paquete_servicios, nombre)
@@ -549,13 +618,19 @@ def operaciones_con_id() -> set[str]:
         for metodo, fn in inspect.getmembers(cls, inspect.iscoroutinefunction):
             if metodo.startswith("_"):
                 continue
+            operacion = f"{cls.__name__}.{metodo}"
             anotaciones = inspect.get_annotations(fn, eval_str=True)
-            if any(
-                a is uuid.UUID or (hasattr(a, "__args__") and uuid.UUID in a.__args__)
-                for k, a in anotaciones.items()
-                if k != "return"
-            ):
-                encontradas.add(f"{cls.__name__}.{metodo}")
+            for param, anotacion in anotaciones.items():
+                if param == "return":
+                    continue
+                if _es_uuid(anotacion):
+                    encontradas.add(operacion)
+                entrada = _dataclass_de(anotacion)
+                if entrada is None:
+                    continue
+                for campo, tipo in typing.get_type_hints(entrada).items():
+                    if _es_uuid(tipo):
+                        encontradas.add(f"{operacion}:{param}.{campo}")
     return encontradas
 
 

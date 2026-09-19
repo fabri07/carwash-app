@@ -37,3 +37,8 @@ class AlreadyExistsError(DomainError):
 class CatalogIncoherentError(GuardFailedError):
     """Precio y modalidad no concuerdan (§1.1): `PRECIO_FIJO` ⇒ precio; `A_COTIZAR` ⇒ sin
     precio y seña 0. La regla cruza tablas y por eso vive en la aplicación, no en un CHECK."""
+
+
+class QuoteAlreadyUsedError(GuardFailedError):
+    """La cotización ya la usa otro job vivo: una cotización se usa en **un** job (índice único
+    parcial `ux_jobs_tenant_id_quote_id`). También es la traducción de ese único ante la carrera."""
