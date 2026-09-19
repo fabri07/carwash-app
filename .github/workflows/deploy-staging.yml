@@ -42,28 +42,24 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
         working-directory: backend
-        run: railway up --service api-staging --environment staging --ci
+        run: |
+          # /health informa el commit que sirve: el smoke lo exige (ver scripts/smoke_health.sh).
+          # `railway up` no inyecta RAILWAY_GIT_COMMIT_SHA; --skip-deploys evita un deploy extra.
+          railway variable set "GIT_COMMIT_SHA=${GITHUB_SHA}" --service api-staging --environment staging --skip-deploys
+          railway up --service api-staging --environment staging --ci
 
       # El seed sintético NO se corre acá: va dentro de scripts/migrate.sh
       # (preDeployCommand), gateado por APP_ENV=staging, para que corra en el
       # mismo contenedor, después de las migraciones y antes del tráfico.
       # Datos inventados, nunca de producción (ADR-0012, punto 3).
 
-      # Smoke mínimo: el ambiente tiene que saber quién es. Si /health dice
-      # cualquier cosa que no sea "staging", algo apuntó mal y no queremos
-      # enterarnos recién cuando corra `make check-envs` (A11).
+      # Smoke: el ambiente tiene que saber quién es Y servir el commit de este push.
+      # Si /health dice otro ambiente, algo apuntó mal; si dice otro commit, el
+      # deploy no llegó a servir (p. ej. la migración falló y quedó la versión
+      # anterior, que es el fail-safe). Los dos casos son rojo.
       - name: Smoke — /health se identifica como staging
         run: |
-          set -eu
-          for i in $(seq 1 30); do
-            if curl -fsS https://api-staging.carwashdetailapp.com/health -o /tmp/health.json; then break; fi
-            echo "esperando a que staging responda ($i/30)"; sleep 10
-          done
-          cat /tmp/health.json
-          [ "$(jq -r .env /tmp/health.json)" = "staging" ] \
-            || { echo "staging no se identifica como staging"; exit 1; }
-          [ "$(jq -r .commit /tmp/health.json)" = "${GITHUB_SHA}" ] \
-            || echo "AVISO: el commit de /health no es el de este push (¿deploy en curso?)"
+          sh scripts/smoke_health.sh https://api-staging.carwashdetailapp.com/health staging "${GITHUB_SHA}"
 
   frontend:
     name: App staging (Vercel)
