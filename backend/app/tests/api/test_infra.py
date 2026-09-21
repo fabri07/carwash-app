@@ -84,6 +84,29 @@ async def test_ready_mira_el_esquema_y_no_solo_que_la_base_conteste(client, monk
     assert r.json()["checks"]["schema"]["ok"] is False
 
 
+async def test_el_chequeo_de_esquema_corre_de_verdad_en_sqlite():
+    """Sin parches: el chequeo tiene que CONSULTAR, no explotar por el dialecto.
+
+    `to_regclass` es de Postgres. Contra SQLite —desarrollo sin docker, y el engine de
+    esta suite— tiraba `OperationalError`, el `except` genérico lo tapaba como
+    `schema.ok = false` y `/ready` quedaba en 503 con una base perfectamente sana.
+    El resto de los tests de `/ready` parchean `_check_schema_ready`, así que ninguno
+    recorre este camino.
+
+    La base de tests la arma `create_all`, no alembic, así que la respuesta correcta es
+    "sin migrar" — y eso es justamente lo que prueba que la consulta se ejecutó.
+    """
+    from app.main import _check_schema_ready
+
+    resultado = await _check_schema_ready()
+
+    assert resultado.ok is False
+    assert resultado.error == "sin migrar: no existe alembic_version", (
+        "el chequeo no llegó a consultar; probablemente reventó por el dialecto: "
+        f"{resultado.error}"
+    )
+
+
 def test_el_head_de_alembic_se_lee_del_codigo():
     """El head sale de los archivos de migración, no de una constante que se copia."""
     from app.main import head_de_alembic

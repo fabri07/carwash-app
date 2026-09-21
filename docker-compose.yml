@@ -23,7 +23,14 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # ⚠️ El montaje va en /var/lib/postgresql, NO en /var/lib/postgresql/data.
+      # Desde la imagen 18 el PGDATA es /var/lib/postgresql/18/docker (un directorio
+      # por versión mayor, para poder correr `pg_upgrade --link`), y el entrypoint
+      # ABORTA si encuentra algo montado en la ruta vieja — también con un volumen
+      # nuevo y vacío. Con la ruta vieja el contenedor entra en crash-loop y se caen
+      # `make dev` y `make test-pg`; CI no lo nota porque los service containers de
+      # GitHub Actions no montan volumen.
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-carwash} -d ${POSTGRES_DB:-carwash}"]
       interval: 5s

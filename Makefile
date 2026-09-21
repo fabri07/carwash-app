@@ -39,6 +39,16 @@ help: ## Lista los targets
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ── Desarrollo ────────────────────────────────────────────────────────────────
+#
+# ⚠️ PRIMERA VEZ DESPUÉS DE SUBIR A POSTGRES 18 (2026-09-21): hay que borrar el
+# volumen viejo UNA vez, porque un cluster inicializado por la imagen 16 no lo puede
+# leer la 18 (y además cambió la ruta del montaje):
+#
+#     docker compose down -v && make dev
+#
+# `down -v` BORRA la base local. Es dato de desarrollo descartable —los tests la
+# recrean y `make test-pg` levanta la suya—, pero si tenías algo cargado a mano en el
+# Postgres local, se va. No toca staging ni producción: esto es solo docker local.
 dev: ## Levanta postgres + redis + backend con hot reload
 	$(DC) up --build
 

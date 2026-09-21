@@ -420,7 +420,19 @@ async def _check_schema_ready() -> ReadyCheck:
 
         esperado = head_de_alembic()
         async with engine.connect() as conn:
-            existe = await conn.scalar(text("SELECT to_regclass('public.alembic_version')"))
+            # `to_regclass` es de Postgres. En SQLite (desarrollo sin docker, y los
+            # tests) tira OperationalError y /ready quedaría en 503 por una base que
+            # está perfectamente sana. Se mira el dialecto de LA CONEXIÓN y no
+            # `settings.is_sqlite`: en los tests contra Postgres real el settings
+            # sigue diciendo sqlite, y ahí el chequeo tiene que hablar en Postgres.
+            if conn.dialect.name == "sqlite":
+                existe_sql = (
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name='alembic_version'"
+                )
+            else:
+                existe_sql = "SELECT to_regclass('public.alembic_version')"
+            existe = await conn.scalar(text(existe_sql))
             if existe is None:
                 return ReadyCheck(ok=False, error="sin migrar: no existe alembic_version")
             aplicado = await conn.scalar(text("SELECT version_num FROM alembic_version"))

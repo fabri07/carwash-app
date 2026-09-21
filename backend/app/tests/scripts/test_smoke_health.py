@@ -48,6 +48,17 @@ READY_SIN_MIGRAR = {
 }
 
 
+READY_SOLO_REDIS_CAIDO = {
+    "status": "degraded",
+    "env": "staging",
+    "checks": {
+        "database": {"ok": True, "error": None},
+        "schema": {"ok": True, "error": None},
+        "redis": {"ok": False, "error": "ConnectionError"},
+    },
+}
+
+
 class _Estado:
     """Lo que el servidor de prueba va a contestar en cada ruta."""
 
@@ -55,6 +66,8 @@ class _Estado:
         self.health: dict[str, str] = {}
         self.ready: dict[str, object] = dict(READY_SANO)
         self.ready_status = 200
+        #: corta la conexión de `/ready` sin responder, para probar el caso sin respuesta
+        self.ready_corta = False
 
 
 @pytest.fixture
@@ -64,6 +77,9 @@ def servidor() -> Iterator[tuple[str, _Estado]]:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 — nombre de la API de http.server
             if self.path.endswith("/ready"):
+                if estado.ready_corta:
+                    self.close_connection = True
+                    return
                 cuerpo, codigo = json.dumps(estado.ready).encode(), estado.ready_status
             else:
                 cuerpo, codigo = json.dumps(estado.health).encode(), 200
@@ -150,6 +166,63 @@ def test_falla_si_ready_esta_caido_por_otra_razon(servidor):
     assert "NO está sano" in resultado.stdout
     # Sin check de esquema fallado, no inventa el diagnóstico de las migraciones.
     assert "Pre-Deploy Command" not in resultado.stdout
+
+
+def test_redis_caido_avisa_fuerte_pero_no_tumba_el_deploy(servidor):
+    """La base y el esquema OK: el deploy está BIEN, redis se cayó solo.
+
+    Volver atrás no levanta redis, y un smoke que se pone rojo por un parpadeo de una
+    dependencia es un smoke que en dos semanas todos saltean — justo la red que este
+    script existe para tender. Sale verde, con el aviso bien visible.
+    """
+    base, estado = servidor
+    estado.health.update(env="staging", commit="abc123")
+    estado.ready = dict(READY_SOLO_REDIS_CAIDO)
+    estado.ready_status = 503
+
+    resultado = _correr(base, "staging", "abc123")
+
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+    assert "AVISO" in resultado.stdout
+    assert "redis NO responde: ConnectionError" in resultado.stdout
+    assert "Pre-Deploy Command" not in resultado.stdout
+
+
+def test_la_base_caida_si_tumba_el_deploy(servidor):
+    """La tolerancia con redis no se extiende a la base: eso es un deploy roto."""
+    base, estado = servidor
+    estado.health.update(env="staging", commit="abc123")
+    estado.ready = {
+        "status": "degraded",
+        "checks": {
+            "database": {"ok": False, "error": "OperationalError"},
+            "schema": {"ok": False, "error": "OperationalError"},
+            "redis": {"ok": True, "error": None},
+        },
+    }
+    estado.ready_status = 503
+
+    resultado = _correr(base, "staging", "abc123")
+
+    assert resultado.returncode == 1
+    assert "NO está sano" in resultado.stdout
+
+
+def test_sin_respuesta_en_ready_el_codigo_que_imprime_es_000(servidor):
+    """`curl -w '%{http_code}'` ya escribe 000 al fallar la conexión.
+
+    Con un `|| echo 000` encima quedaba `000000` en pantalla, en el único momento en
+    que alguien está leyendo esta salida para entender qué se rompió.
+    """
+    base, estado = servidor
+    estado.health.update(env="staging", commit="abc123")
+    estado.ready_corta = True
+
+    resultado = _correr(base, "staging", "abc123")
+
+    assert resultado.returncode == 1
+    assert "000000" not in resultado.stdout, resultado.stdout
+    assert "/ready respondió 000" in resultado.stdout
 
 
 def test_falla_si_nadie_responde():

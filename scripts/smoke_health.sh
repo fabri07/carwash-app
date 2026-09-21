@@ -64,13 +64,25 @@ if [ -z "$servido" ]; then
   exit 1
 fi
 
-# ── 2. /ready: base, esquema y redis ─────────────────────────────────────────
+# ── 2. /ready: la base y el esquema ──────────────────────────────────────────
 # Pocos reintentos: /health ya confirmó que la versión nueva recibe tráfico, así que
 # acá solo se le da margen a una dependencia que tarde en levantar, no al deploy.
+#
+# Qué tumba el deploy y qué no: ROJO solo si falla la base o el esquema, que son las
+# dos cosas que hacen que este deploy esté MAL y que la versión anterior estuviera
+# mejor. Redis caído sale como AVISO: es una dependencia que se cae y se levanta
+# sola, volver atrás no la arregla, y un smoke que se pone rojo por un parpadeo es un
+# smoke que en dos semanas todos ignoran — justo la red que este PR viene a poner.
 i=1
+redis_caido=""
 while :; do
-  codigo=$(curl -sS -m 10 -o "$cuerpo" -w '%{http_code}' "$base/ready" 2>/dev/null || echo 000)
+  codigo=$(curl -sS -m 10 -o "$cuerpo" -w '%{http_code}' "$base/ready" 2>/dev/null || true)
   [ "$codigo" = "200" ] && break
+  if [ "$codigo" = "503" ] && jq -e \
+      '.checks.database.ok == true and .checks.schema.ok == true' "$cuerpo" >/dev/null 2>&1; then
+    redis_caido="si"
+    break
+  fi
   if [ "$i" -ge "${SMOKE_READY_INTENTOS:-3}" ]; then
     cat "$cuerpo" 2>/dev/null || true
     echo
@@ -92,4 +104,9 @@ done
 
 cat "$cuerpo"
 echo
-echo "OK: $env_esperado está listo (base, esquema y redis)"
+if [ -n "$redis_caido" ]; then
+  echo "AVISO: la base y el esquema están OK, pero redis NO responde: $(jq -r .checks.redis.error "$cuerpo")"
+  echo "   → el deploy queda en pie (volver atrás no levanta redis), pero la app está"
+  echo "     degradada: revisar el servicio de Redis del ambiente."
+fi
+echo "OK: $env_esperado está listo (base y esquema)"
