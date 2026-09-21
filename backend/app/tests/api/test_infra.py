@@ -1,5 +1,8 @@
 """main.py: health, ready, handlers de error, cabeceras y endpoint de prueba de Sentry."""
 
+import logging
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
@@ -7,6 +10,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app import bootstrap
 from app.main import create_app, db_fingerprint
+
+#: El único origen que `conftest.py` pone en CORS_ORIGINS.
+ORIGEN_PERMITIDO = "https://app.carwash.test"
 
 
 async def test_health_devuelve_env_commit_y_fingerprint(client):
@@ -47,8 +53,52 @@ async def test_ready_ok(client, monkeypatch):
 
     monkeypatch.setattr(main, "_check_database_ready", ok)
     monkeypatch.setattr(main, "_check_redis_ready", ok)
+    monkeypatch.setattr(main, "_check_schema_ready", ok)
     r = await client.get("/ready")
     assert r.status_code == 200 and r.json()["status"] == "ready"
+
+
+async def test_ready_mira_el_esquema_y_no_solo_que_la_base_conteste(client, monkeypatch):
+    """Una base VACÍA acepta conexiones igual: `SELECT 1` funciona sin una sola tabla.
+
+    Staging, 2026-09-21: el `preDeployCommand` no estaba configurado en Railway, las
+    migraciones nunca corrieron y el deploy salió VERDE — `/health` no toca tablas y
+    `/ready` solo abría una conexión. El dueño lo descubrió cuando no pudo entrar.
+    Por eso `/ready` compara la revisión aplicada contra el head de este código.
+    """
+    from app import main
+
+    async def ok():
+        return main.ReadyCheck(ok=True)
+
+    async def sin_migrar():
+        return main.ReadyCheck(ok=False, error="sin migrar: no existe alembic_version")
+
+    monkeypatch.setattr(main, "_check_database_ready", ok)
+    monkeypatch.setattr(main, "_check_redis_ready", ok)
+    monkeypatch.setattr(main, "_check_schema_ready", sin_migrar)
+
+    r = await client.get("/ready")
+    assert r.status_code == 503
+    assert r.json()["status"] == "degraded"
+    assert r.json()["checks"]["schema"]["ok"] is False
+
+
+def test_el_head_de_alembic_se_lee_del_codigo():
+    """El head sale de los archivos de migración, no de una constante que se copia."""
+    from app.main import head_de_alembic
+
+    head = head_de_alembic()
+    assert head and head != "unknown"
+
+    # Tiene que ser EL head real: el mismo que resuelve alembic por su cuenta.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    raiz = Path(__file__).resolve().parents[3]
+    cfg = Config(str(raiz / "alembic.ini"))
+    cfg.set_main_option("script_location", str(raiz / "app" / "persistence" / "migrations"))
+    assert head == ScriptDirectory.from_config(cfg).get_current_head()
 
 
 async def test_hsts_solo_en_produccion(settings_env):
@@ -96,6 +146,77 @@ async def test_excepcion_no_manejada_es_500_sin_detalle_y_va_a_sentry(monkeypatc
     assert r.json()["detail"]["code"] == "INTERNAL_ERROR"
     assert "secreto" not in r.text
     assert len(capturadas) == 1
+
+
+async def test_el_500_le_llega_al_navegador_con_cors(monkeypatch):
+    """Un 500 SIN `access-control-allow-origin` el navegador lo descarta: el fetch
+    falla como error de red, axios se queda sin `response` y el frontend muestra
+    "No hay conexión con el servidor" (`frontend/src/lib/errors.ts`).
+
+    Pasó en staging el 2026-09-21. La base estaba sin migrar y todo endpoint que
+    tocaba una tabla daba 500, pero el dueño vio "no hay conexión" y se puso a
+    revisar su internet. El handler de `Exception` corre en el `ServerErrorMiddleware`
+    de Starlette, que envuelve TODO — incluido el `CORSMiddleware`, que por eso nunca
+    llega a tocar la respuesta. Por eso el error se captura además en un middleware
+    interno al CORS.
+    """
+    monkeypatch.setattr("app.main.sentry_sdk.capture_exception", lambda exc: None)
+
+    async def boom():
+        raise RuntimeError("secreto interno")
+
+    app = await _app_con_ruta("/x", boom)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="https://t") as ac:
+        r = await ac.get("/x", headers={"Origin": ORIGEN_PERMITIDO})
+
+    assert r.status_code == 500
+    assert r.json()["detail"]["code"] == "INTERNAL_ERROR"
+    assert "secreto" not in r.text
+    # Sin estas dos cabeceras el navegador nunca le entrega el cuerpo al JS.
+    assert r.headers.get("access-control-allow-origin") == ORIGEN_PERMITIDO
+    assert r.headers.get("access-control-allow-credentials") == "true"
+
+
+async def test_el_500_deja_el_traceback_en_el_log(monkeypatch, caplog):
+    """Atrapar la excepción nosotros le saca a uvicorn la chance de imprimir el
+    traceback (el `ServerErrorMiddleware`, que es quien la re-lanza, ya no la ve).
+    El log estructurado tiene que compensarlo: sin traceback, un 500 en Railway se
+    vuelve indiagnosticable. El del 2026-09-21 decía la causa exacta en la última
+    línea: `UndefinedTableError: relation "tenants" does not exist`.
+    """
+    monkeypatch.setattr("app.main.sentry_sdk.capture_exception", lambda exc: None)
+
+    async def boom():
+        raise RuntimeError("causa raíz")
+
+    app = await _app_con_ruta("/x", boom)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        async with AsyncClient(transport=transport, base_url="https://t") as ac:
+            await ac.get("/x")
+
+    # `format_exc_info` (app/observability/logger.py) convierte la excepción en el
+    # traceback ya formateado; sin ese procesador acá quedaría solo su `repr`.
+    mensajes = [str(r.msg) for r in caplog.records]
+    assert any("Traceback" in m and "causa raíz" in m for m in mensajes), mensajes
+
+
+async def test_un_origen_ajeno_no_recibe_cors_ni_en_el_500(monkeypatch):
+    """La red de seguridad del test anterior no puede volverse un agujero: a un
+    origen que no está en CORS_ORIGINS el 500 le llega igual de mudo que un 200."""
+    monkeypatch.setattr("app.main.sentry_sdk.capture_exception", lambda exc: None)
+
+    async def boom():
+        raise RuntimeError("x")
+
+    app = await _app_con_ruta("/x", boom)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="https://t") as ac:
+        r = await ac.get("/x", headers={"Origin": "https://atacante.example"})
+
+    assert r.status_code == 500
+    assert "access-control-allow-origin" not in r.headers
 
 
 async def test_pydantic_validation_error_en_handler_es_422():

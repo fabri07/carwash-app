@@ -12,9 +12,9 @@
 # el caso excepcional, explícito, con docker-compose.override.example.yml.
 
 services:
-  # ── PostgreSQL 16 ────────────────────────────────────────────────────────────
+  # ── PostgreSQL 18 ────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-carwash}
@@ -37,7 +37,7 @@ services:
   # los roles ya existen solo re-afirma atributos. El usuario de POSTGRES_USER es
   # el superusuario del contenedor y solo se usa acá y en los tests `postgres`.
   db-roles:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     depends_on:
       postgres:
         condition: service_healthy

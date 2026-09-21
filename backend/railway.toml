@@ -77,6 +77,20 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+# ⚠️ RAILWAY NO LEE ESTE CAMPO con `railway up`. Verificado el 2026-09-21:
+# el servicio `api-staging` tenía el Pre-Deploy Command VACÍO en el panel pese a
+# que este archivo lo declara desde el primer deploy. Resultado: las migraciones
+# nunca corrieron, la base quedó vacía, y los deploys salieron TODOS en verde —
+# `/health` no toca ninguna tabla. El dueño lo descubrió al no poder entrar a la
+# app, dos días después.
+#
+# Hasta que se entienda por qué Railway lo ignora, el comando se carga A MANO en
+# Settings → Deploy → Pre-Deploy Command de CADA servicio (`api-staging` y `api`),
+# y hay que apretar el botón de aplicar: Railway deja los cambios en espera.
+# La red que impide que vuelva a pasar en silencio es el smoke: `/ready` compara la
+# revisión aplicada contra el head del código y `scripts/smoke_health.sh` lo exige,
+# así que un deploy sin migrar ahora sale ROJO.
+#
 # Fail-safe: corre UNA vez antes de que la versión nueva reciba tráfico. Si
 # falla (set -eu en migrate.sh), Railway aborta el deploy y la versión vieja
 # sigue sirviendo. A14 lo ensaya contra staging.

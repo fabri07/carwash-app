@@ -128,6 +128,10 @@ jobs:
           vercel build --prod --token="$VERCEL_TOKEN"
           vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
-      - name: Smoke — /health se identifica como production
+      # Además del ambiente y el commit, exige que el esquema aplicado sea el que
+      # este tag espera: el `Pre-Deploy Command` que corre las migraciones se carga a
+      # mano en el panel de Railway (ignora el preDeployCommand de railway.toml), así
+      # que un servicio recién creado puede quedar sirviendo contra una base vacía.
+      - name: Smoke — commit servido y esquema aplicado
         run: |
-          sh scripts/smoke_health.sh https://api.carwashdetailapp.com/health production "${GITHUB_SHA}"
+          sh scripts/smoke_health.sh https://api.carwashdetailapp.com production "${GITHUB_SHA}"

@@ -118,8 +118,14 @@ async def test_un_commit_que_falla_no_se_reporta_como_exito(app_con_commits_real
 
     event.listen(Session, "before_commit", _falla)
     try:
-        with pytest.raises(RuntimeError):
-            await _llamar_asgi(app, "POST", "/v1/dummy-resources", {"name": "x"}, cookies, eventos)
+        # Antes acá iba `pytest.raises(RuntimeError)`: la excepción salía cruda de la
+        # app porque el `ServerErrorMiddleware` la re-lanza después de responder.
+        # Ahora la atrapa `unhandled_dentro_del_cors` (para que el 500 salga CON las
+        # cabeceras de CORS y el navegador pueda leerlo), así que la app responde 500
+        # en vez de explotar hacia afuera. Lo que el test cuida es lo mismo de antes y
+        # se afirma más directo: un commit roto no puede terminar en 201.
+        await _llamar_asgi(app, "POST", "/v1/dummy-resources", {"name": "x"}, cookies, eventos)
     finally:
         event.remove(Session, "before_commit", _falla)
     assert "status:201" not in eventos, f"se respondió 201 con el commit roto: {eventos}"
+    assert "status:500" in eventos, f"el commit roto tiene que dar 500: {eventos}"

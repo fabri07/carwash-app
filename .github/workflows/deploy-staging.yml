@@ -53,13 +53,16 @@ jobs:
       # mismo contenedor, después de las migraciones y antes del tráfico.
       # Datos inventados, nunca de producción (ADR-0012, punto 3).
 
-      # Smoke: el ambiente tiene que saber quién es Y servir el commit de este push.
+      # Smoke: el ambiente tiene que saber quién es, servir el commit de este push Y
+      # tener aplicado el esquema que ese commit espera.
       # Si /health dice otro ambiente, algo apuntó mal; si dice otro commit, el
       # deploy no llegó a servir (p. ej. la migración falló y quedó la versión
-      # anterior, que es el fail-safe). Los dos casos son rojo.
-      - name: Smoke — /health se identifica como staging
+      # anterior, que es el fail-safe); si /ready dice que el esquema no está al día,
+      # las migraciones no corrieron (Railway ignora el preDeployCommand del toml:
+      # va a mano en Settings → Deploy). Los tres casos son rojo.
+      - name: Smoke — commit servido y esquema aplicado
         run: |
-          sh scripts/smoke_health.sh https://api-staging.carwashdetailapp.com/health staging "${GITHUB_SHA}"
+          sh scripts/smoke_health.sh https://api-staging.carwashdetailapp.com staging "${GITHUB_SHA}"
 
   frontend:
     name: App staging (Vercel)
