@@ -159,9 +159,9 @@ consume y no lo edita**. Si necesita un cambio, lo pide en T3.
 | `backend/scripts/{start_worker.sh, start_beat.sh, worker_healthcheck.py}` | — | **NO SE PORTA** — no hay Celery en la Fase 2. | — |
 | `backend/Procfile` (279 B) | — | **NO SE PORTA** — vestigial: el `startCommand` de `railway.toml` le gana. Mantener dos definiciones del arranque es cómo se desincronizan. | — |
 | `backend/Makefile` (6812 B) | `Makefile` (raíz) | **ADAPTAR** — **se conservan:** `dev`/`dev-bg`/`stop`/`logs`/`shell` (13-26), `migrate`/`migrate-down`/`migrate-create`/`migrate-history` (29-47), `db-reset` (49-52), `test`/`test-cov`/`test-fast`/`test-watch`/`test-file` (75-88), `lint`/`fix`/`typecheck`/`check` (91-122), `build`/`clean`/`install`/`setup` (125-142). **Se saca** el target `format` que **falla a propósito** (94-110) y su hermano `format-normalize-global` (115-117): acá `make format` formatea (ADR-0007). **Se saca** el número de cobertura de `test-cov` (78-79): sale de `pyproject.toml` (ADR-0008). **Se agregan** `openapi`, `gen-api` y `check-envs` (ADR-0012, ADR-0013). | `deploy` |
-| `backend/docker-compose.yml` (4514 B) | `docker-compose.yml` (raíz) | **ADAPTAR** — se conservan `postgres` (postgres:16-alpine, 2-19), `redis` (21-34) y `backend` (36-57). **Se sacan** `celery-worker` (59-92), `celery-beat` (94-120) y el servicio `test` (122-135). | `deploy` |
+| `backend/docker-compose.yml` (4514 B) | `docker-compose.yml` (raíz) | **ADAPTAR** — se conservan `postgres` (postgres:16-alpine en Véktor, acá **18-alpine** desde 2026-09-21 — ver la nota al pie, 2-19), `redis` (21-34) y `backend` (36-57). **Se sacan** `celery-worker` (59-92), `celery-beat` (94-120) y el servicio `test` (122-135). | `deploy` |
 | `backend/docker-compose.override.yml` (1722 B) | `docker-compose.override.example.yml` | **REESCRIBIR** — **el "truco" se porta invertido, a propósito.** En Véktor el `.env` apunta a **Neon producción** y el override (gitignoreado) lo pisa con el Postgres local, aprovechando que `environment:` le gana a `env_file:`. O sea: *sin* el override, `make dev` le pega a la base de producción. Acá el default es local y **ningún archivo por defecto puede alcanzar una base remota**; el override queda como ejemplo para el caso inverso, que es el excepcional. Se conserva el aviso de la trampa secundaria (15-25): el esquema de la URL (`postgresql+asyncpg://` vs `postgresql://`) no es intercambiable entre alembic y los scripts. | `deploy` |
-| `.github/workflows/ci-backend.yml` (8261 B) | igual | **ADAPTAR** — **se conservan:** triggers con `paths: backend/**` (3-13), el servicio **Postgres 16 real** (27-40) con healthcheck `pg_isready` —está ahí porque los tests de concurrencia usan primitivos que en SQLite son no-op (comentario 23-26)—, `ruff check .` (69-70), `mypy app` (72-74), pytest con cobertura (77-104), **el paso `alembic upgrade head` contra Postgres real** (110-128, con el comentario 106-109: valida la migración, no el `create_all` del ORM) y el paso secuencial `-n 0` para los tests marcados `postgres` (137-172). **Se agrega:** `ruff format --check .` **antes** del lint (ADR-0007) y los tests de RLS. **Se cambia:** caché de `uv` en vez de `pip` (54-60); el `--cov-fail-under=60` de la línea 103 **se elimina del workflow** (sale de `pyproject.toml`, ADR-0008). | `deploy` |
+| `.github/workflows/ci-backend.yml` (8261 B) | igual | **ADAPTAR** — **se conservan:** triggers con `paths: backend/**` (3-13), el servicio **Postgres real** (27-40; 16 en Véktor, acá **18** desde 2026-09-21 — ver la nota al pie) con healthcheck `pg_isready` —está ahí porque los tests de concurrencia usan primitivos que en SQLite son no-op (comentario 23-26)—, `ruff check .` (69-70), `mypy app` (72-74), pytest con cobertura (77-104), **el paso `alembic upgrade head` contra Postgres real** (110-128, con el comentario 106-109: valida la migración, no el `create_all` del ORM) y el paso secuencial `-n 0` para los tests marcados `postgres` (137-172). **Se agrega:** `ruff format --check .` **antes** del lint (ADR-0007) y los tests de RLS. **Se cambia:** caché de `uv` en vez de `pip` (54-60); el `--cov-fail-under=60` de la línea 103 **se elimina del workflow** (sale de `pyproject.toml`, ADR-0008). | `deploy` |
 | `.github/workflows/ci-frontend.yml` (3277 B) | igual | **ADAPTAR** — **se conserva el orden deliberado**: Jest **primero** (46-60 — el comentario documenta un incidente real de 8 días con 9 suites en rojo sin que nadie se enterara por no tener este paso), después `tsc` (62-64), ESLint (66-68) y `next build` (70-74). **Se agrega:** el paso de deriva de tipos generados (ADR-0013) y la cobertura con umbral. | `deploy` |
 | `.github/workflows/ci-mcp.yml` (4746 B) | — | **NO SE PORTA** — no hay servicio MCP. (Su `--cov-fail-under=15` de `ci-mcp.yml:94` queda como recordatorio de a dónde llega un piso que se fija donde está el código.) | — |
 | — | `.github/workflows/deploy-staging.yml`, `deploy-prod.yml` | **REESCRIBIR** — no existen en Véktor: `grep -rni staging .github/ backend/railway.toml frontend/.vercel/` da cero. Staging desde `main`; prod desde tag, con GitHub Environment y revisor (ADR-0012). | `deploy` |
@@ -194,3 +194,21 @@ shell, el manifiesto de PWA y los componentes de shadcn sin esperar a nadie, per
 tipos hasta que `backend` commitee el primer `backend/openapi.json`**. Ese es el único momento de
 sincronización de T2, y conviene que el backend lo produzca temprano aunque el contrato todavía tenga solo
 `auth` y `dummy-resources`.
+
+---
+
+## Nota posterior — Postgres 16 → 18 (2026-09-21)
+
+Este manifiesto describe **qué se portó desde Véktor y con qué criterio**; las versiones que
+menciona son las que tenía el archivo de origen y se dejan como estaban, para que siga siendo
+legible contra Véktor. Lo que cambió después:
+
+El Postgres administrado de Railway es **18.6**, y el proyecto venía probando contra 16. Una
+divergencia de versión mayor entre lo que se prueba y lo que corre en producción es exactamente
+el tipo de diferencia que aparece recién en el deploy, así que se subió todo a 18:
+`docker-compose.yml`, `.github/workflows/ci-backend.yml`, ADR-0002 y `FASE-2-ACEPTACION.md`.
+
+Con la imagen 18 el `PGDATA` pasó a `/var/lib/postgresql/18/docker`, así que el montaje de
+compose va en `/var/lib/postgresql` y **no** en `/var/lib/postgresql/data`: con la ruta vieja el
+contenedor ni arranca. El volumen local que haya quedado de 16 no se puede leer desde 18; la
+primera vez hay que borrarlo con `docker compose down -v` (ver la nota en el `Makefile`).

@@ -18,6 +18,8 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -101,6 +103,53 @@ def _error_body(code: ErrorCode, message: str) -> dict[str, Any]:
     )
 
 
+@lru_cache(maxsize=1)
+def head_de_alembic() -> str:
+    """Revisión que este código espera encontrar aplicada en la base.
+
+    Se lee de los archivos de migración, no de una constante: una constante se
+    olvida de actualizar y el chequeo pasaría a mentir en la dirección peligrosa
+    (decir "al día" cuando falta una migración).
+    """
+    from alembic.config import Config  # noqa: PLC0415
+    from alembic.script import ScriptDirectory  # noqa: PLC0415
+
+    raiz = Path(__file__).resolve().parents[1]
+    cfg = Config(str(raiz / "alembic.ini"))
+    # El `script_location` del ini es relativo al cwd, y el contenedor no siempre
+    # arranca parado en `backend/`: se resuelve contra la raíz del paquete.
+    cfg.set_main_option("script_location", str(raiz / "app" / "persistence" / "migrations"))
+    return ScriptDirectory.from_config(cfg).get_current_head() or ""
+
+
+def _respuesta_de_error_interno(exc: Exception, path: str) -> JSONResponse:
+    """El 500 opaco: se registra y se manda a Sentry, y el cliente no ve el motivo.
+
+    La usan los DOS caminos que atrapan una excepción no manejada — el middleware
+    interno al CORS y el handler de último recurso — para que el cuerpo, el log y el
+    evento de Sentry sean idénticos venga por donde venga.
+    """
+    # `exc_info` no es decorativo. Atrapar la excepción acá evita que llegue al
+    # `ServerErrorMiddleware`, que es quien la RE-LANZA para que uvicorn imprima el
+    # traceback: sin esta línea, el log del contenedor se quedaría con el nombre de
+    # la excepción y nada más. El traceback de Railway fue lo único que permitió
+    # diagnosticar el 500 del 2026-09-21 (`UndefinedTableError: relation "tenants"
+    # does not exist`) — perderlo saldría carísimo la próxima vez.
+    logger.error(
+        "request.unhandled_exception",
+        path=str(path),
+        exc_type=type(exc).__name__,
+        exc_info=exc,
+    )
+    # Atrapamos la excepción nosotros, así que la integración de FastAPI nunca la ve:
+    # sin esta línea, Sentry queda activo y con cero eventos.
+    sentry_sdk.capture_exception(exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=_error_body(ErrorCode.INTERNAL_ERROR, "Internal Server Error"),
+    )
+
+
 def db_fingerprint(database_url: str) -> str:
     parts = urlsplit(database_url)
     target = (
@@ -156,6 +205,25 @@ def create_app() -> FastAPI:
                 content=_error_body(ErrorCode.ORIGIN_NOT_ALLOWED, "Origin not allowed."),
             )
         return await call_next(request)
+
+    # ── Los 500 tienen que pasar por el CORS ─────────────────────────────────
+    # Este middleware se registra ANTES del CORSMiddleware, y como `add_middleware`
+    # inserta al principio de la pila, eso lo deja POR DENTRO de él: la respuesta que
+    # devuelve acá todavía atraviesa el CORS de vuelta y sale con sus cabeceras.
+    #
+    # Sin esto, una excepción no manejada sube hasta el `ServerErrorMiddleware` de
+    # Starlette, que envuelve TODO — CORS incluido — y el 500 sale sin
+    # `access-control-allow-origin`. El navegador entonces descarta la respuesta y el
+    # fetch falla como error de RED: el frontend muestra "No hay conexión con el
+    # servidor" y el error real queda invisible. Pasó en staging el 2026-09-21.
+    @app.middleware("http")
+    async def unhandled_dentro_del_cors(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:  # noqa: BLE001  # se re-expone como 500 opaco
+            return _respuesta_de_error_interno(exc, request.url.path)
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     app.add_middleware(
@@ -280,20 +348,13 @@ def create_app() -> FastAPI:
             content={"detail": _public_errors(exc.errors())},
         )
 
+    # Red de último recurso: lo que falle en los middlewares que están POR FUERA del
+    # CORS (security_headers, request_logger) no pasa por `unhandled_dentro_del_cors`
+    # y termina acá. Esa respuesta sí sale sin cabeceras CORS, y no hay forma de
+    # evitarlo: el `ServerErrorMiddleware` envuelve al CORSMiddleware.
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.error(
-            "request.unhandled_exception",
-            path=str(request.url.path),
-            exc_type=type(exc).__name__,
-        )
-        # Este handler INTERCEPTA la excepción, así que la integración de FastAPI
-        # nunca la ve: sin esta línea, Sentry queda activo y con cero eventos.
-        sentry_sdk.capture_exception(exc)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=_error_body(ErrorCode.INTERNAL_ERROR, "Internal Server Error"),
-        )
+        return _respuesta_de_error_interno(exc, request.url.path)
 
     # ── Health / readiness ────────────────────────────────────────────────────
     @app.get("/health", tags=["Infra"], response_model=HealthResponse)
@@ -312,7 +373,11 @@ def create_app() -> FastAPI:
         responses={503: {"model": ReadyResponse}},
     )
     async def readiness_check() -> JSONResponse:
-        checks = {"database": await _check_database_ready(), "redis": await _check_redis_ready()}
+        checks = {
+            "database": await _check_database_ready(),
+            "schema": await _check_schema_ready(),
+            "redis": await _check_redis_ready(),
+        }
         ready = all(check.ok for check in checks.values())
         body = ReadyResponse(
             status="ready" if ready else "degraded", env=settings.APP_ENV, checks=checks
@@ -336,6 +401,47 @@ async def _check_database_ready() -> ReadyCheck:
         return ReadyCheck(ok=True)
     except Exception as exc:
         return ReadyCheck(ok=False, error=type(exc).__name__)
+
+
+async def _check_schema_ready() -> ReadyCheck:
+    """La revisión aplicada en la base tiene que ser el head de ESTE código.
+
+    `_check_database_ready` no alcanza: una base vacía acepta conexiones y responde
+    `SELECT 1` sin tener una sola tabla. Staging estuvo así dos días (2026-09-21),
+    con el deploy en verde, porque el `preDeployCommand` no estaba configurado en
+    Railway y las migraciones nunca corrieron. Este chequeo es lo que convierte ese
+    caso en un 503, y `scripts/smoke_health.sh` lo exige antes de dar el deploy por
+    bueno.
+    """
+    try:
+        from sqlalchemy import text  # noqa: PLC0415
+
+        from app.persistence.db.engine import engine  # noqa: PLC0415
+
+        esperado = head_de_alembic()
+        async with engine.connect() as conn:
+            # `to_regclass` es de Postgres. En SQLite (desarrollo sin docker, y los
+            # tests) tira OperationalError y /ready quedaría en 503 por una base que
+            # está perfectamente sana. Se mira el dialecto de LA CONEXIÓN y no
+            # `settings.is_sqlite`: en los tests contra Postgres real el settings
+            # sigue diciendo sqlite, y ahí el chequeo tiene que hablar en Postgres.
+            if conn.dialect.name == "sqlite":
+                existe_sql = (
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name='alembic_version'"
+                )
+            else:
+                existe_sql = "SELECT to_regclass('public.alembic_version')"
+            existe = await conn.scalar(text(existe_sql))
+            if existe is None:
+                return ReadyCheck(ok=False, error="sin migrar: no existe alembic_version")
+            aplicado = await conn.scalar(text("SELECT version_num FROM alembic_version"))
+    except Exception as exc:
+        return ReadyCheck(ok=False, error=type(exc).__name__)
+
+    if aplicado == esperado:
+        return ReadyCheck(ok=True)
+    return ReadyCheck(ok=False, error=f"esquema aplicado={aplicado} esperado={esperado}")
 
 
 async def _check_redis_ready() -> ReadyCheck:
