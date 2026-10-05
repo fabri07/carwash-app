@@ -39,6 +39,13 @@ def configure_logging() -> None:
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
+        # Sin esto, un `logger.error(..., exc_info=exc)` sale como el `repr` de la
+        # excepción y el traceback se pierde. Importa: desde que los 500 se atrapan
+        # en `main.unhandled_dentro_del_cors`, la excepción ya no llega al
+        # `ServerErrorMiddleware` de Starlette, que era quien la re-lanzaba para que
+        # uvicorn imprimiera el traceback en el log del contenedor. Este procesador
+        # es ahora la ÚNICA fuente de tracebacks en Railway.
+        structlog.processors.format_exc_info,
     ]
 
     if settings.is_production:

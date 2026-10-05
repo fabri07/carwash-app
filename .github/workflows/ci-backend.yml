@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: backend
 
-    # Postgres 16 REAL, no SQLite. Está acá por tres razones que SQLite no puede
+    # Postgres 18 REAL, no SQLite. Está acá por tres razones que SQLite no puede
     # cubrir:
     #   1. RLS no existe en SQLite (ADR-0002): los tests de A7 y A8 no tienen
     #      dónde correr sin esto.
@@ -41,7 +41,7 @@ jobs:
     #   3. Los primitivos de exclusión mutua de Postgres son no-op en SQLite.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: carwash
           POSTGRES_PASSWORD: carwash

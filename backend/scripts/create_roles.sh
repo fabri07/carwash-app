@@ -50,7 +50,7 @@ SELECT format('GRANT CONNECT ON DATABASE %I TO carwash_owner, carwash_app', curr
 -- `tenant_id`/`resource_id` (uuid) con `=` dentro de un índice gist, y eso necesita los
 -- operadores de esta extensión. La crea el superusuario porque carwash_owner tiene CONNECT
 -- pero no CREATE sobre la base: si la migración la intentara crear, el primer deploy de F3
--- fallaría. La migración 0002 solo verifica que exista. Idempotente.
+-- fallaría. La migración 0003 solo verifica que exista. Idempotente.
 -- Paso manual del dueño: re-correr este script en staging y producción antes del primer
 -- deploy de F3.
 CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;

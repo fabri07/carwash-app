@@ -165,3 +165,25 @@ def append_only_trigger(table: str) -> list[str]:
 def drop_append_only_trigger(table: str) -> list[str]:
     fn = f"{table}_append_only"
     return [f"DROP TRIGGER IF EXISTS {fn} ON {table}", f"DROP FUNCTION IF EXISTS {fn}()"]
+
+
+def grant_alembic_version_read() -> list[str]:
+    """SOLO lectura de `alembic_version` para el rol de runtime.
+
+    `/ready` compara la revisión aplicada contra el head del código, y lo hace con el
+    engine de runtime (`carwash_app`). `create_roles.sh` no da privilegios por default
+    justamente para que ese rol no llegue a `alembic_version` ni a ninguna tabla
+    futura sin revisión, así que sin este GRANT el `SELECT` tira
+    `InsufficientPrivilege`, `/ready` queda en 503 para siempre y el smoke deja TODOS
+    los deploys en rojo — con el mensaje equivocado, además, culpando al Pre-Deploy
+    Command. Verificado contra PostgreSQL 18.6 el 2026-09-21.
+
+    Es un SELECT sobre una tabla de una fila y una columna, sin datos de ningún
+    lavadero: no toca el aislamiento. Sigue sin haber INSERT/UPDATE/DELETE — el rol de
+    runtime no puede mentir sobre la revisión aplicada, solo leerla.
+    """
+    return [_if_app_role(f"GRANT SELECT ON TABLE alembic_version TO {APP_ROLE}")]
+
+
+def revoke_alembic_version_read() -> list[str]:
+    return [_if_app_role(f"REVOKE SELECT ON TABLE alembic_version FROM {APP_ROLE}")]

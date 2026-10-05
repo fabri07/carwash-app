@@ -37,3 +37,10 @@ def test_el_deploy_fija_el_commit_y_el_smoke_lo_exige(nombre, servicio):
     assert 0 <= fija < sube, "GIT_COMMIT_SHA se fija antes de railway up"
     assert "--skip-deploys" in wf[fija:sube]
     assert "sh scripts/smoke_health.sh" in wf and '"${GITHUB_SHA}"' in wf[sube:]
+
+    # El smoke recibe la BASE del servicio, no `.../health`: además del commit
+    # consulta `/ready`, que es donde vive el chequeo del esquema. Con la firma vieja
+    # (que apuntaba directo a /health) un deploy sin migrar volvía a pasar en verde,
+    # que es exactamente lo que dejó staging dos días con la base vacía.
+    linea = next(ln for ln in wf.splitlines() if "sh scripts/smoke_health.sh" in ln)
+    assert "/health" not in linea, f"el smoke recibe la base, no una ruta: {linea.strip()}"

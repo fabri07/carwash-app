@@ -1,7 +1,7 @@
 """Dominio del lavadero: catálogo, clientes, agenda, operación y dinero + RLS.
 
-Revision ID: 0002_dominio
-Revises: 0001_inicial
+Revision ID: 0003_dominio
+Revises: 0002_ready_lee_alembic_version
 Create Date: 2026-09-18
 
 Por qué (FASE-3-CONTRATO §1 y §5):
@@ -41,8 +41,8 @@ from app.persistence.db.rls import (
     grant_app_role_append_only,
 )
 
-revision: str = "0002_dominio"
-down_revision: str | None = "0001_inicial"
+revision: str = "0003_dominio"
+down_revision: str | None = "0002_ready_lee_alembic_version"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

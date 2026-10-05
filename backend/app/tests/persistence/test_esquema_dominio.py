@@ -142,7 +142,7 @@ def test_el_exclude_solo_se_emite_en_postgres():
 
 
 def test_los_estados_que_bloquean_son_los_del_contrato():
-    # La migración 0002 los congela en el WHERE del EXCLUDE: si el dominio cambia, este test
+    # La migración 0003 los congela en el WHERE del EXCLUDE: si el dominio cambia, este test
     # avisa que hace falta una migración nueva.
     assert {s.value for s in BLOCKING_STATUSES} == {
         "PENDIENTE_SEÑA",

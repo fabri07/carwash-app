@@ -13,7 +13,7 @@ from app.persistence.models._constraints import parent_key, voidable_table_args
 class User(TenantScopedModel):
     __tablename__ = "users"
     #: `UNIQUE (tenant_id, id)`: F3 apunta a usuarios con FKs compuestas (responsable,
-    #: actor de cada evento). Cambio aditivo sobre la tabla de F2 (migración 0002).
+    #: actor de cada evento). Cambio aditivo sobre la tabla de F2 (migración 0003).
     __table_args__ = voidable_table_args(parent_key())
 
     #: Único global: el login es por email solo, sin elegir tenant.

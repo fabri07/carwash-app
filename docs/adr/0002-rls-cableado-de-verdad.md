@@ -78,7 +78,7 @@ esa conexión y no setee el contexto leería datos del tenant previo.
   consecuencia del mecanismo.
 - **Cuesta:** SQLite no tiene RLS. La suite rápida sigue corriendo en SQLite (es lo que la hace durar
   minutos), pero **los tests de aislamiento tienen que correr contra Postgres real**, con marca `postgres`
-  y un engine propio. El CI ya levanta un `postgres:16` como servicio (ver el manifiesto), así que el
+  y un engine propio. El CI ya levanta un `postgres:18` como servicio (ver el manifiesto), así que el
   costo es un job, no una infraestructura nueva.
 - **Cuesta:** dos roles de base que hay que crear y mantener en Railway, y un `DATABASE_URL` distinto para
   migraciones y para runtime.

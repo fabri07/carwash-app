@@ -501,7 +501,9 @@ todo en **una** transacción.
 
 ---
 
-## 5. Migración `0002_dominio`
+## 5. Migración `0003_dominio`
+
+> Se escribió como `0002_dominio`. Pasó a `0003` el 2026-10-04 al entrar a `main` `0002_ready_lee_alembic_version` (PR #5), que también salía de `0001_inicial`: con las dos, alembic quedaba con dos heads.
 
 - Nombre `YYYYMMDD_NNNN_descripcion.py`, docstring con el **porqué**, **idempotente** (A6: el
   `preDeployCommand` puede correr dos veces), additive-first. `down_revision = "0001_inicial"`.
@@ -553,7 +555,7 @@ adentro**: se tratan como PII.
 |---|---|---|
 | B1 | `make check` y `make test-cov` verdes (cobertura ≥ 80%, sin bajar el piso). | CI |
 | B2 | `alembic upgrade head`, `alembic check`, `downgrade base`, `upgrade head` limpios contra Postgres con `carwash_owner`. | CI |
-| B3 | Re-aplicar 0002 con el stamp atrasado no falla (A6 extendido). | `test_migraciones_idempotentes_pg.py` |
+| B3 | Re-aplicar 0003 con el stamp atrasado no falla (A6 extendido). | `test_migraciones_idempotentes_pg.py` |
 | B4 | Toda tabla de tenant: RLS forzado, `USING` = `WITH CHECK` (los tests de F2 lo cubren solos, por metadata). | `test_rls_politicas_pg.py` |
 | B5 | Toda FK entre tablas de tenant es compuesta con `tenant_id`. | `test_fks_compuestas.py` |
 | B6 | Toda FK tiene índice que la cubre. | `test_indices_de_fks_pg.py` |
@@ -631,7 +633,7 @@ pregunta 12.
 | A18 | `cancel_by_client(now=…)` usa la hora **del server**: la clasificación decide si la seña se puede retener. |
 | A19 | La recepción de un turno decide el camino de cotización por el **snapshot** del turno, no por el `pricing_mode` vivo del servicio. |
 | A20 | Reenviar el mismo cierre de una seña no tiene efectos (cola offline). |
-| A21 | La migración 0002 corre con `lock_timeout = 5s`: toma `ACCESS EXCLUSIVE` sobre `tenants` y `users`, y no puede colgar los logins. |
+| A21 | La migración 0003 corre con `lock_timeout = 5s`: toma `ACCESS EXCLUSIVE` sobre `tenants` y `users`, y no puede colgar los logins. |
 | A22 | Vencer holds usa `FOR UPDATE SKIP LOCKED` (se reprodujo un deadlock 40P01 entre dos holds vencidos del mismo puesto). |
 | A23 | El seed de staging usa teléfonos `+549110000xxxx` y patentes `ZZ0xxZZ`: pasan los CHECK y no pueden ser de una persona real. |
 

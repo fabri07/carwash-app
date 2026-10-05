@@ -75,12 +75,12 @@ comprobable:
 
 ### A5 · `alembic upgrade head` limpio contra Postgres real
 
-No contra SQLite, y no contra `Base.metadata.create_all()`. Contra un Postgres 16 de verdad, desde una base
+No contra SQLite, y no contra `Base.metadata.create_all()`. Contra un Postgres 18 de verdad, desde una base
 **vacía**, igual que en el deploy.
 
 ```bash
 docker run -d --name pg-acep -e POSTGRES_PASSWORD=carwash -e POSTGRES_USER=carwash \
-           -e POSTGRES_DB=carwash -p 5433:5432 postgres:16
+           -e POSTGRES_DB=carwash -p 5433:5432 postgres:18
 until docker exec pg-acep pg_isready -U carwash; do :; done
 
 export DATABASE_URL=postgresql://carwash:carwash@localhost:5433/carwash

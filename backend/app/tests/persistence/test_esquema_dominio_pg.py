@@ -39,13 +39,13 @@ from app.tests.persistence.test_esquema_dominio import alta_por_orm
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 
 MIGRACION = (
-    Path(__file__).resolve().parents[2] / "persistence/migrations/versions/20260918_0002_dominio.py"
+    Path(__file__).resolve().parents[2] / "persistence/migrations/versions/20260918_0003_dominio.py"
 )
 DIEZ = datetime(2026, 9, 21, 10, tzinfo=UTC)
 
 
 def _migracion() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("migracion_0002", MIGRACION)
+    spec = importlib.util.spec_from_file_location("migracion_0003", MIGRACION)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -806,7 +806,7 @@ async def test_sin_btree_gist_la_migracion_corta_con_el_mensaje_del_contrato(pg_
 
 @pytest.mark.parametrize(("paso", "tabla"), [("upgrade", "tenants"), ("downgrade", "job_events")])
 async def test_la_migracion_no_espera_para_siempre_un_lock(pg_admin_engine, paso, tabla):
-    """F10 de T3: 0002 toma `ACCESS EXCLUSIVE` sobre `tenants` y `users` (y `job_events` al
+    """F10 de T3: 0003 toma `ACCESS EXCLUSIVE` sobre `tenants` y `users` (y `job_events` al
     bajar). Detrás de una transacción colgada, esperar sin límite encolaría a todo el que lea
     esas tablas, logins incluidos. `lock_timeout` la corta y el deploy falla visible."""
     from alembic.migration import MigrationContext  # noqa: PLC0415
