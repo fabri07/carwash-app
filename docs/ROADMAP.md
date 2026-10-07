@@ -26,7 +26,7 @@ Decisiones tomadas por el usuario en esta sesión:
 El MVP **no** se declara terminado porque "la app funciona".
 
 **Orden de ejecución:**
-`F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Migración/go-live`
+`F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Migración/go-live → F9 Productos y ventas`
 
 No se escribe un modelo SQL ni una pantalla hasta que `docs/spec/02-reglas-negocio.md` esté congelado:
 ese archivo decide prácticamente todo lo que viene después.
@@ -282,6 +282,28 @@ política de cancelación) · tamaños de vehículo · catálogo de servicios co
 El onboarding no es cosmético: es el primer filtro de adopción. Un dueño de lavadero no es técnico.
 Arranca con una plantilla de servicios precargada que puede editar, no con una tabla vacía.
 
+**Lavaderos y talleres de detailing (decisión del dueño, 2026-10-07).** La app es para los dos rubros y
+**ningún servicio queda fijo en el código**: cada negocio define sus servicios, categorías, tamaños y
+precios. Lo que aporta la app es vocabulario del rubro, no un catálogo cerrado:
+
+- **Glosario del rubro** (`docs/GLOSARIO-RUBRO.md` → datos versionados en el backend): términos en
+  español rioplatense con sus equivalentes en inglés, que en detailing se usan tal cual (*ceramic coating*,
+  *PPF*, *paint correction*). Argentina primero; las variantes de otros países se suman después.
+- **Plantillas sugeridas** en el wizard: dos puntos de partida (lavadero, taller de detailing). El admin
+  tilda las que le sirven y edita nombre, precio y duración. Nada se crea sin que lo elija. Cada término
+  del glosario lleva un **tipo**: solo `servicio` y `adicional` se sugieren como ítems; una `tecnica`
+  ("clay bar") o un `defecto` ("swirls") nunca llegan al catálogo.
+- **Categorías de servicio definidas por el negocio** (`service_categories`, FK nullable en `services`:
+  aditivo, sin migración destructiva). Las plantillas proponen lavado, detailing exterior, interior y
+  protección.
+- **Búsqueda tolerante**: "ceramico" encuentra "Ceramic Coating", "ppf" encuentra "Film de protección
+  de pintura". Con `unaccent` + `pg_trgm` y los sinónimos del glosario, en capas: exacta, sinónimo,
+  prefijo, trigramas (glosario §13). Buscar un **defecto** ("sacar rayas") devuelve los servicios que lo
+  resuelven: es una relación muchos a muchos, no texto. Las dos extensiones las crea el
+  superusuario desde la Console de Railway, igual que `btree_gist` (X11 de F3).
+- No se usa una librería de lenguaje natural: para buscar y sugerir en un vocabulario acotado alcanza un
+  glosario curado, y una dependencia pesada no agrega precisión.
+
 **Equipo:**
 | T | Agente | Dueño de |
 |---|---|---|
@@ -289,7 +311,8 @@ Arranca con una plantilla de servicios precargada que puede editar, no con una t
 | T2 | Backend-config ‖ Frontend-wizard ‖ Diseño-UI | `api/v1/`, `services/` ‖ `app/(protected)/configuracion/`, `features/onboarding/` ‖ design system, shadcn, tokens |
 | T3 | Tester-aislamiento ‖ Revisor-adversarial | | |
 
-**Checkpoint:** creás un lavadero ficticio de cero y cargás 5 servicios sin ayuda.
+**Checkpoint:** creás un lavadero ficticio de cero y cargás 5 servicios sin ayuda; creás un taller de
+detailing ficticio desde su plantilla, y buscás un servicio escribiéndolo sin tilde o en inglés.
 
 ---
 
@@ -461,6 +484,63 @@ con tu cálculo a mano.
 
 ---
 
+## Fase 9 — Productos, proveedores y ventas (después del go-live)
+
+**Por qué después de F8:** Sola CleanCars no vende productos hoy, así que no la obliga a abrir el Sheet
+(criterio de la primera entrega). Pero el rubro es **híbrido**: un taller de detailing presta servicios,
+a veces vende un producto junto con el servicio y a veces vende solo productos. Sin esto la app no se
+puede ofrecer a ese nicho. Decisión del dueño, 2026-10-07.
+
+**Referencia:** el módulo de ventas de Véktor, **mucho más chico**. Véktor tiene punto de venta,
+terminales, órdenes de compra y conciliación; acá no entra nada de eso.
+
+**Alcance:**
+- `products`: nombre, categoría, SKU opcional, precio de venta, costo, `track_stock`, stock mínimo para
+  la alerta. Definidos por cada negocio, como los servicios.
+- `suppliers`: ficha de contacto.
+- `purchases` + `purchase_lines`: compras a proveedor. Suman stock y entran como gasto (F7B).
+- **Cuenta corriente con proveedores**: una compra puede quedar a pagar; `supplier_payments` la cancela
+  total o parcialmente. Saldo por proveedor **derivado**, nunca guardado (X9 de F3).
+- `sales` + `sale_lines`: una venta puede ser **solo de productos** o estar **ligada a un job**
+  (`sales.job_id` NULL): "le vendí un aromatizante al que vino a lavar" se cobra junto con el lavado.
+- `stock_movements`, append-only como `job_events`: compra (+), venta (−), anulación de venta (+) y
+  ajuste manual (±) con motivo obligatorio. El stock actual se deriva o es caché del último movimiento,
+  igual que `jobs.status`.
+- **Dinero:** los cobros de una venta son `payments` con `sale_id` (columna nueva; el CHECK "de un turno o
+  de un job" pasa a "o de una venta"). Misma caja, mismo medio de pago y misma comisión que los servicios.
+- **Resultado:** el resultado operativo de F7B suma ventas de productos menos su costo.
+
+**Lo que no entra:** ver el bloque siguiente. F9 cierra sin eso.
+
+**Equipo:**
+| T | Agente | Dueño de |
+|---|---|---|
+| T1 | Contrato-ventas | esquema, invariantes de stock (nunca negativo sin ajuste explícito) y de la cuenta corriente |
+| T2 | Backend-ventas ‖ Frontend-ventas ‖ Frontend-stock-y-proveedores | ‖ ‖ |
+| T3 | Tester-contable ‖ Tester-aislamiento ‖ Revisor-adversarial | stock y saldos cuadran ‖ ‖ concurrencia de dos ventas del último producto |
+
+**Checkpoint:** un taller de detailing ficticio carga sus productos, compra mercadería a un proveedor a
+cuenta, vende un producto suelto y otro junto con un servicio, paga parte de la deuda al proveedor, y el
+stock, la caja y el saldo con el proveedor coinciden con la cuenta a mano.
+
+---
+
+## Ventas: lo que queda para más adelante (sin fase asignada)
+
+Pedidos que el dueño dejó afuera de F9 a propósito (2026-10-07). Entran cuando el uso real de los
+talleres los pida, no antes, y el esquema de F9 no tiene que cerrarles la puerta:
+
+- **Varios depósitos** (stock por sucursal o por depósito). F9 tiene un solo stock por producto.
+- **Lotes y vencimientos** de productos.
+- **Código de barras** para cargar y vender.
+- **Listas de precios por cliente** (mayorista, flotas).
+- **Facturación electrónica (AFIP).**
+- **Insumos por servicio:** descontar del stock lo que se gasta en cada servicio (litros de shampoo por
+  lavado, kit de cerámico por tratamiento). Es el paso natural para medir el costo real del detailing,
+  pero necesita datos de uso primero.
+
+---
+
 ## Verificación
 
 **Continua, en cada fase:**
@@ -480,6 +560,7 @@ marcados `postgres` en secuencial (`-n 0`) — las dos lecciones caras heredadas
 - F7: día completo cargado, caja cuadrada contra suma manual.
 - F7B: semana de gastos + un pago a empleado; resultado operativo coincide con tu cálculo a mano.
 - F8: reporte de reconciliación en cero diferencias + una semana de operación real.
+- F9: stock, caja y saldo con proveedor cuadrados contra la cuenta a mano.
 
 **Los cuatro tests que no pueden faltar nunca** (los que atrapan los bugs caros):
 1. Aislamiento cruzado por recurso → 404, nunca 403.

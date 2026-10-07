@@ -4,7 +4,9 @@ Guía para Claude Code al trabajar en este repositorio.
 
 ## Qué es esto
 
-SaaS multi-tenant para lavaderos y centros de detailing. Nace del sistema real que opera
+SaaS multi-tenant para lavaderos y talleres de detailing: rubros híbridos que prestan servicios y venden
+productos (F9). Ningún servicio queda fijo en el código: cada negocio define los suyos; la app aporta el
+vocabulario del rubro (`docs/GLOSARIO-RUBRO.md`). Nace del sistema real que opera
 **Sola CleanCars** (Google Sheet + Apps Script), que pasa a ser el tenant #1 y es la fuente de las
 reglas de negocio.
 
@@ -20,11 +22,11 @@ sin nada del dominio del lavadero todavía. Contrato de la fase: `docs/adr/` (13
 `docs/adr/PORT-MANIFEST.md` y `docs/adr/FASE-2-ACEPTACION.md`. El checkpoint humano de F2 (registrarse
 en la URL desplegada) depende de configurar GitHub, Railway y Vercel.
 
-Roadmap completo de 8 fases: `docs/ROADMAP.md`.
+Roadmap completo: `docs/ROADMAP.md`.
 
 ```
 F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero
-       → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Migración/go-live
+       → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Migración/go-live → F9 Productos y ventas
 ```
 
 > ⚠️ **`docs/spec/` y `docs/legacy/` no están en este repositorio.** Son local-only (ver `.gitignore`):
