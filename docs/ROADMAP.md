@@ -290,12 +290,16 @@ precios. Lo que aporta la app es vocabulario del rubro, no un catálogo cerrado:
   español rioplatense con sus equivalentes en inglés, que en detailing se usan tal cual (*ceramic coating*,
   *PPF*, *paint correction*). Argentina primero; las variantes de otros países se suman después.
 - **Plantillas sugeridas** en el wizard: dos puntos de partida (lavadero, taller de detailing). El admin
-  tilda las que le sirven y edita nombre, precio y duración. Nada se crea sin que lo elija.
+  tilda las que le sirven y edita nombre, precio y duración. Nada se crea sin que lo elija. Cada término
+  del glosario lleva un **tipo**: solo `servicio` y `adicional` se sugieren como ítems; una `tecnica`
+  ("clay bar") o un `defecto` ("swirls") nunca llegan al catálogo.
 - **Categorías de servicio definidas por el negocio** (`service_categories`, FK nullable en `services`:
   aditivo, sin migración destructiva). Las plantillas proponen lavado, detailing exterior, interior y
   protección.
 - **Búsqueda tolerante**: "ceramico" encuentra "Ceramic Coating", "ppf" encuentra "Film de protección
-  de pintura". Con `unaccent` + `pg_trgm` y los sinónimos del glosario. Las dos extensiones las crea el
+  de pintura". Con `unaccent` + `pg_trgm` y los sinónimos del glosario, en capas: exacta, sinónimo,
+  prefijo, trigramas (glosario §13). Buscar un **defecto** ("sacar rayas") devuelve los servicios que lo
+  resuelven: es una relación muchos a muchos, no texto. Las dos extensiones las crea el
   superusuario desde la Console de Railway, igual que `btree_gist` (X11 de F3).
 - No se usa una librería de lenguaje natural: para buscar y sugerir en un vocabulario acotado alcanza un
   glosario curado, y una dependencia pesada no agrega precisión.
