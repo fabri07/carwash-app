@@ -19,12 +19,17 @@ segunda). Es gratis y no se saca.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.void import VoidReason
 from app.persistence.db.base import TenantScopedModel
 from app.utils.datetime_utils import utcnow
+
+
+async def one_or_none[T](session: AsyncSession, statement: Select[tuple[T]]) -> T | None:
+    """`scalar_one_or_none` tipado (`AsyncSession.scalar` devuelve `Any` para mypy)."""
+    return (await session.execute(statement)).scalar_one_or_none()
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,23 @@ class BaseRepository[ModelT: TenantScopedModel]:
     ) -> ModelT | None:
         result = await self._session.execute(
             select(self.model).where(self.model.id == id, *self._scope(tenant_id, include_voided))
+        )
+        return result.scalar_one_or_none()
+
+    async def get_for_update(self, id: uuid.UUID, tenant_id: uuid.UUID) -> ModelT | None:
+        """`SELECT … FOR UPDATE` de una fila viva (FASE-3-CONTRATO §2, C-18).
+
+        `populate_existing`: si la fila ya estaba en el identity map, se pisa con lo que
+        devuelve la base **después** de tomar el lock. Sin eso, el servicio validaría la
+        transición contra una copia vieja y la guarda `from == estado actual` no serviría.
+        En SQLite `FOR UPDATE` no se emite (no hay locks de fila): la carrera se prueba en
+        Postgres.
+        """
+        result = await self._session.execute(
+            select(self.model)
+            .where(self.model.id == id, *self._scope(tenant_id, include_voided=False))
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 

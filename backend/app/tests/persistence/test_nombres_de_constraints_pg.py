@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ExcludeConstraint
 
 import app.persistence.models  # noqa: F401
 from app.persistence.db.base import Base
@@ -24,6 +25,9 @@ _TIPOS = {
     UniqueConstraint: "u",
     ForeignKeyConstraint: "f",
     CheckConstraint: "c",
+    # FASE-3: `xc_bookings_sin_solapamiento`. Sin esta entrada `_esperados` no sabe
+    # clasificarlo, y sin 'x' en la consulta un EXCLUDE con otro nombre pasaría en verde.
+    ExcludeConstraint: "x",
 }
 
 
@@ -46,7 +50,7 @@ async def test_constraints_de_postgres_coinciden_con_el_orm(pg_admin_engine):
                     "FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid "
                     "JOIN pg_namespace n ON n.oid = rel.relnamespace "
                     "WHERE n.nspname = 'public' AND rel.relname = ANY(:tablas) "
-                    "AND con.contype IN ('p', 'u', 'f', 'c')"
+                    "AND con.contype IN ('p', 'u', 'f', 'c', 'x')"
                 ),
                 {"tablas": tablas},
             )

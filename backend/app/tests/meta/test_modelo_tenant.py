@@ -43,10 +43,14 @@ def test_la_columna_tenant_id_es_identica_en_todas_las_tablas():
             continue
         assert col.nullable is False, f"{t.name}.tenant_id es nullable"
         assert col.index is True, f"{t.name}.tenant_id sin índice"
-        fks = list(col.foreign_keys)
-        assert len(fks) == 1, f"{t.name}.tenant_id sin FK"
-        assert fks[0].column.table.name == "tenants"
+        # `tenant_id` también es la primera columna de las FKs compuestas (FASE-3, X4):
+        # esas las verifica `test_fks_compuestas.py`. Acá, la que va a `tenants`: una sola.
+        fks = [fk for fk in col.foreign_keys if fk.column.table.name == "tenants"]
+        assert len(fks) == 1, f"{t.name}.tenant_id sin FK a tenants"
+        assert len(fks[0].constraint.columns) == 1, f"{t.name}: la FK a tenants es compuesta"
         assert fks[0].ondelete == "RESTRICT", f"{t.name}.tenant_id con ondelete={fks[0].ondelete}"
+        otras = [fk for fk in col.foreign_keys if fk.column.table.name != "tenants"]
+        assert all(len(fk.constraint.columns) == 2 for fk in otras), f"{t.name}: FK simple"
 
 
 def test_el_detector_de_redeclaracion_funciona():

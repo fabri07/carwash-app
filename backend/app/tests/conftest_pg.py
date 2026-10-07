@@ -45,9 +45,18 @@ PG_TEST_URL = os.environ.get("PG_TEST_URL", "postgresql://carwash:carwash@localh
 APP_ROLE_PASSWORD = "carwash_app_test"
 OWNER_ROLE = "carwash_owner"
 OWNER_ROLE_PASSWORD = "carwash_owner_test"
-TENANT_TABLES = ("users", "dummy_resources", "idempotency_keys")
-#: Todas las tablas con RLS (L3: `tenants` incluida).
-RLS_TABLES = ("tenants", *TENANT_TABLES)
+
+
+def _tablas_a_limpiar() -> str:
+    """Toda tabla del ORM. Sale de la metadata: una tabla nueva no puede quedar sucia entre tests.
+
+    `TRUNCATE` no dispara los triggers de fila, así que también limpia `job_events`
+    (append-only: su trigger rechaza `UPDATE`/`DELETE`, no `TRUNCATE`).
+    """
+    import app.persistence.models  # noqa: F401, PLC0415
+    from app.persistence.db.base import Base  # noqa: PLC0415
+
+    return ", ".join(t.name for t in Base.metadata.sorted_tables)
 
 
 def _with_driver(url: str, driver: str) -> str:
@@ -112,6 +121,10 @@ async def pg_admin_engine() -> AsyncGenerator[AsyncEngine, None]:
         # Base de test dedicada: se recrea el esquema entero, con dueño no superusuario.
         await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         await conn.execute(text(f"CREATE SCHEMA public AUTHORIZATION {OWNER_ROLE}"))
+        # El DROP de arriba se lleva las extensiones instaladas en `public`. En los
+        # ambientes la crea `create_roles.sh` como superusuario, porque el dueño no
+        # tiene CREATE sobre la base (FASE-3-CONTRATO, X11). Acá, lo mismo.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
     migrate_head(owner_url())
     yield engine
     await engine.dispose()
@@ -132,7 +145,7 @@ async def pg_clean(pg_admin_engine: AsyncEngine) -> AsyncGenerator[None, None]:
     """Los tests de Postgres commitean de verdad: se limpia al terminar cada uno."""
     yield
     async with pg_admin_engine.begin() as conn:
-        await conn.execute(text(f"TRUNCATE {', '.join(RLS_TABLES)}"))
+        await conn.execute(text(f"TRUNCATE {_tablas_a_limpiar()}"))
 
 
 PgFactory = Callable[..., Coroutine[Any, Any, uuid.UUID]]
