@@ -29,10 +29,12 @@ from app.domain.void import VoidReason
 from app.persistence.db.base import Base
 from app.persistence.models import (
     Booking,
+    BookingItem,
     BusinessHours,
     Customer,
     Job,
     JobEvent,
+    JobItem,
     Payment,
     PaymentMethod,
     Quote,
@@ -202,14 +204,23 @@ async def alta_por_orm(
         end_at=start + timedelta(minutes=60),
         customer_id=customer.id,
         vehicle_id=vehicle.id,
-        service_id=service.id,
         vehicle_size_id=size.id,
-        service_name_snapshot=service.name,
         duration_min=60,
         price_cents=2_000_000,
     )
     session.add(booking)
     await session.flush()
+    session.add(
+        BookingItem(
+            tenant_id=t,
+            booking_id=booking.id,
+            service_id=service.id,
+            position=0,
+            service_name_snapshot=service.name,
+            duration_min=60,
+            price_cents=2_000_000,
+        )
+    )
     quote = Quote(
         tenant_id=t,
         customer_id=customer.id,
@@ -224,11 +235,9 @@ async def alta_por_orm(
         customer_id=customer.id,
         vehicle_id=vehicle.id,
         vehicle_size_id=size.id,
-        service_id=service.id,
         responsible_user_id=user_id,
         channel=Channel.WHATSAPP,
         status=JobStatus.PRESENTE,
-        service_name_snapshot=service.name,
         base_price_cents=2_000_000,
         scheduled_at=start,
         arrived_at=start + timedelta(minutes=5),
@@ -258,7 +267,16 @@ async def alta_por_orm(
         actor_user_id=user_id,
         idempotency_key="p-1",
     )
-    session.add_all([event, payment])
+    item = JobItem(
+        tenant_id=t,
+        job_id=job.id,
+        service_id=service.id,
+        position=0,
+        service_name_snapshot=service.name,
+        duration_min=60,
+        price_cents=2_000_000,
+    )
+    session.add_all([event, payment, item])
     await session.flush()
     return {
         "booking": booking.id,

@@ -35,8 +35,10 @@ JOB_TRANSITIONS = freeze(
         _E.JOB_FINISHED: Transition(frozenset({_J.EN_PROCESO}), _J.FINALIZADO),
         # Guarda (saldo derivado == 0) en el servicio: el saldo sale de `payments`.
         _E.JOB_SETTLED: Transition(frozenset({_J.FINALIZADO}), _J.COBRADO),
-        # No obligatorio: quedarse en COBRADO es "terminado sin retirar" (D-003).
-        _E.JOB_PICKED_UP: Transition(frozenset({_J.COBRADO}), _J.RETIRADO),
+        # No obligatorio: quedarse en COBRADO es "terminado sin retirar" (D-003). Desde
+        # FINALIZADO es retirar con deuda (adenda C2): la guarda (no es el primer servicio
+        # del cliente) mira la base y es del servicio.
+        _E.JOB_PICKED_UP: Transition(frozenset({_J.COBRADO, _J.FINALIZADO}), _J.RETIRADO),
         # Guardas en `check_delay_cancellation`.
         _E.JOB_CANCELLED_DELAY: Transition(frozenset({_J.PRESENTE}), _J.CANCELADO_DEMORA),
     }

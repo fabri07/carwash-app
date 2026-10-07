@@ -27,6 +27,7 @@ a propósito, pero tampoco lo deshace.
 """
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -40,9 +41,9 @@ from app.application.services._base import (
     require_instant,
     require_key,
 )
+from app.application.services._items import catalog_items
 from app.application.services._payments import PaymentInput, create_payment, void_payment_row
 from app.application.services.errors import (
-    CatalogIncoherentError,
     IdempotencyKeyReusedError,
     QuoteAlreadyUsedError,
 )
@@ -55,7 +56,6 @@ from app.domain.enums import (
     JobEventType,
     JobStatus,
     PaymentKind,
-    PricingMode,
     QuoteStatus,
 )
 from app.domain.exceptions import GuardFailedError, InvalidAmountError
@@ -78,20 +78,20 @@ from app.persistence.models.job import (
     Job,
     JobEvent,
     JobInspection,
+    JobItem,
 )
 from app.persistence.models.money import Payment
-from app.persistence.repositories.agenda import BookingRepository
+from app.persistence.repositories.agenda import BookingItemRepository, BookingRepository
 from app.persistence.repositories.catalog import (
     PaymentMethodRepository,
     ResourceRepository,
-    ServicePriceRepository,
-    ServiceRepository,
     VehicleSizeRepository,
 )
 from app.persistence.repositories.customers import CustomerRepository, VehicleRepository
 from app.persistence.repositories.jobs import (
     JobEventRepository,
     JobInspectionRepository,
+    JobItemRepository,
     JobRepository,
 )
 from app.persistence.repositories.money import PaymentRepository, deposits_paid
@@ -110,8 +110,10 @@ _QUOTE = alive_unique("jobs", "quote_id")
 _J = JobStatus
 _E = JobEventType
 
-#: Estados cerrados por cobro: anular un pago que deje saldo > 0 los haría mentir (A1).
+#: Estados cerrados: una devolución no puede dejarlos con saldo > 0 (A11).
 _SETTLED_STATUSES = frozenset({_J.COBRADO, _J.RETIRADO})
+#: Un cliente con un job en estos estados ya tuvo un servicio: puede retirar con deuda (C2).
+_PREVIOUS_SERVICE_STATUSES = frozenset({_J.COBRADO, _J.RETIRADO})
 
 
 def settled_key(key: str) -> str:
@@ -138,6 +140,12 @@ class JobService(ServiceBase):
         await self._enter()
         return await self._require(self._jobs, job_id)
 
+    async def items(self, job_id: uuid.UUID) -> list[JobItem]:
+        """Los servicios del job, en orden (adenda C1)."""
+        await self._enter()
+        await self._require(self._jobs, job_id)
+        return await JobItemRepository(self._session).list_for_job(job_id, self._tenant_id)
+
     async def history(self, job_id: uuid.UUID) -> list[JobEvent]:
         await self._enter()
         await self._require(self._jobs, job_id)
@@ -148,17 +156,13 @@ class JobService(ServiceBase):
         await self._enter()
         return await self._balance(await self._require(self._jobs, job_id))
 
-    async def _balance(self, job: Job, *, without: uuid.UUID | None = None) -> int:
+    async def _balance(self, job: Job) -> int:
         total = total_agreed(job.base_price_cents, job.surcharge_cents, job.discount_cents)
-        return balance_due(total, await self._lines(job, without=without))
+        return balance_due(total, await self._lines(job))
 
-    async def _lines(
-        self, job: Job, *, without: uuid.UUID | None = None
-    ) -> list[tuple[PaymentKind, int, bool]]:
+    async def _lines(self, job: Job) -> list[tuple[PaymentKind, int, bool]]:
         payments = await self._payments.list_for_job(job.id, self._tenant_id)
-        return [
-            (p.kind, p.amount_cents, p.voided_at is not None) for p in payments if p.id != without
-        ]
+        return [(p.kind, p.amount_cents, p.voided_at is not None) for p in payments]
 
     # ── Piezas comunes ────────────────────────────────────────────────────────
 
@@ -241,7 +245,7 @@ class JobService(ServiceBase):
         booking_id: uuid.UUID | None = None,
         vehicle_id: uuid.UUID | None = None,
         vehicle_size_id: uuid.UUID | None = None,
-        service_id: uuid.UUID | None = None,
+        service_ids: Sequence[uuid.UUID] = (),
         customer_id: uuid.UUID | None = None,
         channel: Channel | None = None,
         resource_id: uuid.UUID | None = None,
@@ -251,17 +255,21 @@ class JobService(ServiceBase):
     ) -> Job:
         """`JOB_RECEIVED` (∅ → `PRESENTE`, siempre: **[corregir]** R-O-001).
 
+        Los servicios **se suman** (adenda C1): el job lleva un ítem por servicio y
+        `base_price_cents` es la suma.
+
         **Con turno** (`booking_id`): idempotente por turno (si ya tiene job, lo devuelve);
-        snapshots de servicio, precio y seña del turno. El camino de la cotización lo decide
-        el **snapshot del turno** (F13), no el `pricing_mode` vivo del servicio: un turno con
+        copia los ítems del turno y su seña. El camino de la cotización lo decide el
+        **snapshot del turno** (F13), no el `pricing_mode` vivo del servicio: un turno con
         `quote_id` exige esa cotización `ACEPTADO` (y solo esa: un `quote_id` distinto se
-        rechaza, F3) y toma su precio; si no, el `price_cents` del turno.
+        rechaza, F3), y su ítem toma el precio y la duración acordados.
         `arrival_delay_min` con signo; turno → `RECIBIDO`; las señas del turno pasan a apuntar
         al job. El vehículo es el del turno o el que se pasa (la web no exige patente, el job sí).
 
-        **Walk-in**: exige vehículo, tamaño, servicio y canal; precio del catálogo, o de la
-        cotización `ACEPTADO` que se pase si el servicio es `A_COTIZAR`. La cotización tiene que
-        ser **suelta** (`booking_id IS NULL`, F3): la de un turno se usa recibiendo el turno.
+        **Walk-in**: exige vehículo, tamaño, al menos un servicio y canal; precios del catálogo.
+        El ítem `A_COTIZAR` (a lo sumo uno) toma precio y duración de la cotización `ACEPTADO`
+        que se pase. La cotización tiene que ser **suelta** (`booking_id IS NULL`, F3): la de un
+        turno se usa recibiendo el turno.
 
         Una cotización se usa en **un** job vivo (`ux_jobs_tenant_id_quote_id`, F3): reusarla
         es `QuoteAlreadyUsedError`, también ante la carrera.
@@ -284,7 +292,7 @@ class JobService(ServiceBase):
             arrived_at,
             vehicle_id=vehicle_id,
             vehicle_size_id=vehicle_size_id,
-            service_id=service_id,
+            service_ids=service_ids,
             customer_id=customer_id,
             channel=channel,
             resource_id=resource_id,
@@ -301,15 +309,16 @@ class JobService(ServiceBase):
             raise IdempotencyKeyReusedError(key)
         return await self._require(self._jobs, event.job_id, include_voided=True)
 
-    async def _accepted_quote_price(
+    async def _accepted_quote(
         self,
         quote_id: uuid.UUID | None,
         service_id: uuid.UUID,
         vehicle_size_id: uuid.UUID,
         *,
         booking_id: uuid.UUID | None,
-    ) -> int:
-        """`A_COTIZAR` no se recibe sin cotización `ACEPTADO` (D-006, C-17).
+    ) -> tuple[int, int]:
+        """`A_COTIZAR` no se recibe sin cotización `ACEPTADO` (D-006, C-17). Devuelve el
+        precio y la duración acordados.
 
         `booking_id`: el turno que se recibe, o `None` en un walk-in. La cotización tiene que
         ser la de ese turno, y la de un walk-in tiene que ser suelta (F3).
@@ -327,8 +336,9 @@ class JobService(ServiceBase):
             raise GuardFailedError(f"the quote is {quote.status}, not ACEPTADO")
         if quote.service_id != service_id or quote.vehicle_size_id != vehicle_size_id:
             raise GuardFailedError("the quote is for another service or vehicle size")
-        assert quote.agreed_price_cents is not None  # CHECK cotizado_completo
-        return quote.agreed_price_cents
+        # CHECK cotizado_completo
+        assert quote.agreed_price_cents is not None and quote.agreed_duration_min is not None
+        return quote.agreed_price_cents, quote.agreed_duration_min
 
     async def _receive_booking(
         self,
@@ -356,15 +366,32 @@ class JobService(ServiceBase):
             raise GuardFailedError("the quote is not the booking's quote")
         # F13: el snapshot del turno decide, no el `pricing_mode` vivo del servicio (el
         # catálogo puede cambiar entre la reserva y la llegada).
-        price = booking.price_cents
+        lines = [
+            (item.service_id, item.service_name_snapshot, item.duration_min, item.price_cents)
+            for item in await BookingItemRepository(self._session).list_for_booking(
+                booking.id, self._tenant_id
+            )
+        ]
         if booking.quote_id is not None:
-            price = await self._accepted_quote_price(
+            quote = await self._require(QuoteRepository(self._session), booking.quote_id)
+            # El ítem cotizado es el que nació sin precio: la cotización tiene que ser de ese
+            # servicio (si no, pisaría el precio de un ítem de catálogo).
+            quoted_ids = {sid for sid, *_, price in lines if price is None}
+            if quoted_ids != {quote.service_id}:
+                raise GuardFailedError("the quote is for another service")
+            agreed_price, agreed_duration = await self._accepted_quote(
                 booking.quote_id,
-                booking.service_id,
+                quote.service_id,
                 booking.vehicle_size_id,
                 booking_id=booking.id,
             )
-        if price is None:
+            lines = [
+                (sid, name, agreed_duration, agreed_price)
+                if sid == quote.service_id
+                else (sid, name, duration, price)
+                for sid, name, duration, price in lines
+            ]
+        if not lines or any(price is None for *_, price in lines):
             raise GuardFailedError("the booking has no price to receive it with")
         vehicle = vehicle_id or booking.vehicle_id
         if vehicle is None:
@@ -380,13 +407,11 @@ class JobService(ServiceBase):
             customer_id=booking.customer_id,
             vehicle_id=vehicle,
             vehicle_size_id=booking.vehicle_size_id,
-            service_id=booking.service_id,
             resource_id=resource_id or booking.resource_id,
             responsible_user_id=responsible,
             channel=booking.channel,
             status=target,
-            service_name_snapshot=booking.service_name_snapshot,
-            base_price_cents=price,
+            base_price_cents=sum(price or 0 for *_, price in lines),
             deposit_required_cents=booking.deposit_required_cents,
             scheduled_at=scheduled_at,
             arrived_at=arrived_at,
@@ -397,6 +422,7 @@ class JobService(ServiceBase):
             async with guarded_savepoint(self._session, first_match(_EVENT_KEY, _QUOTE)):
                 self._session.add(job)
                 await self._session.flush()
+                self._add_items(job, lines)
                 await self._record_received(job, key, arrived_at, booking=booking)
         except SavepointConflictError as exc:
             if exc.constraint == JOBS_QUOTE_UNIQUE:
@@ -412,6 +438,21 @@ class JobService(ServiceBase):
             payment.job_id = job.id
         await self._session.flush()
         return job
+
+    def _add_items(self, job: Job, lines: Sequence[tuple[uuid.UUID, str, int, int | None]]) -> None:
+        """Los ítems del job (adenda C1), en el orden del turno o del pedido."""
+        for position, (service_id, name, duration, price) in enumerate(lines):
+            self._session.add(
+                JobItem(
+                    tenant_id=self._tenant_id,
+                    job_id=job.id,
+                    service_id=service_id,
+                    position=position,
+                    service_name_snapshot=name,
+                    duration_min=duration,
+                    price_cents=price,
+                )
+            )
 
     async def _record_received(
         self, job: Job, key: str, arrived_at: datetime, *, booking: Booking | None
@@ -440,7 +481,7 @@ class JobService(ServiceBase):
         *,
         vehicle_id: uuid.UUID | None,
         vehicle_size_id: uuid.UUID | None,
-        service_id: uuid.UUID | None,
+        service_ids: Sequence[uuid.UUID],
         customer_id: uuid.UUID | None,
         channel: Channel | None,
         resource_id: uuid.UUID | None,
@@ -451,39 +492,37 @@ class JobService(ServiceBase):
         replayed = await self._replayed_receive(key)
         if replayed is not None:
             return replayed
-        if vehicle_id is None or vehicle_size_id is None or service_id is None or channel is None:
+        if vehicle_id is None or vehicle_size_id is None or not service_ids or channel is None:
             raise GuardFailedError("a walk-in needs vehicle, vehicle size, service and channel")
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
         if customer_id is not None:
             await self._require(CustomerRepository(self._session), customer_id)
-        service = await self._require(ServiceRepository(self._session), service_id)
-        if service.pricing_mode == PricingMode.A_COTIZAR:
-            price = await self._accepted_quote_price(
-                quote_id, service_id, vehicle_size_id, booking_id=None
-            )
-        else:
-            row = await ServicePriceRepository(self._session).find_for(
-                service_id, vehicle_size_id, self._tenant_id
-            )
-            if row is None or row.price_cents is None:
-                raise CatalogIncoherentError("the service has no price for that vehicle size")
-            price = row.price_cents
+        items = await catalog_items(self._session, self._tenant_id, service_ids, vehicle_size_id)
+        quoted = next((item for item in items if item.quoted), None)
+        lines: list[tuple[uuid.UUID, str, int, int | None]] = []
+        for item in items:
+            if item is quoted:
+                price, duration = await self._accepted_quote(
+                    quote_id, item.service_id, vehicle_size_id, booking_id=None
+                )
+                lines.append((item.service_id, item.name, duration, price))
+            else:
+                assert item.duration_min is not None and item.price_cents is not None
+                lines.append((item.service_id, item.name, item.duration_min, item.price_cents))
 
         target = apply_event(None, _E.JOB_RECEIVED)
         assert target is not None
         job = Job(
             tenant_id=self._tenant_id,
-            quote_id=quote_id if service.pricing_mode == PricingMode.A_COTIZAR else None,
+            quote_id=quote_id if quoted is not None else None,
             customer_id=customer_id,
             vehicle_id=vehicle_id,
             vehicle_size_id=vehicle_size_id,
-            service_id=service_id,
             resource_id=resource_id,
             responsible_user_id=responsible,
             channel=channel,
             status=target,
-            service_name_snapshot=service.name,
-            base_price_cents=price,
+            base_price_cents=sum(price or 0 for *_, price in lines),
             arrived_at=arrived_at,
             notes=notes,
         )
@@ -491,6 +530,7 @@ class JobService(ServiceBase):
             async with guarded_savepoint(self._session, first_match(_EVENT_KEY, _QUOTE)):
                 self._session.add(job)
                 await self._session.flush()
+                self._add_items(job, lines)
                 await self._record_received(job, key, arrived_at, booking=None)
         except SavepointConflictError as exc:
             # Carrera: otro reenvío con la misma clave comiteó primero. Gana el suyo (el
@@ -515,11 +555,59 @@ class JobService(ServiceBase):
     async def pick_up(
         self, job_id: uuid.UUID, *, idempotency_key: str, occurred_at: datetime
     ) -> Job:
-        """`COBRADO → RETIRADO`. No es obligatorio: quedarse en `COBRADO` es "terminado sin
-        retirar" (D-003). Con deuda no se retira (pregunta 4, hoy no)."""
-        return await self._simple(
-            job_id, _E.JOB_PICKED_UP, idempotency_key, occurred_at, "picked_up_at"
+        """`COBRADO, FINALIZADO → RETIRADO`. No es obligatorio: quedarse en `COBRADO` es
+        "terminado sin retirar" (D-003).
+
+        **Retirar con deuda** (adenda C2, respuesta 4 del dueño): con saldo derivado > 0
+        (desde `FINALIZADO`, o desde un `COBRADO` al que le anularon un cobro, C3), solo si el
+        job tiene cliente y el cliente ya tuvo otro servicio **pagado**: otro job vivo `COBRADO`
+        o `RETIRADO` con saldo <= 0. Un cliente nuevo no se lleva el auto debiendo, tampoco
+        anulando un cobro. El evento guarda `balance_due_cents`; la deuda se cobra después
+        con `record_payment`.
+
+        Un `FINALIZADO` sin deuda (saldo a favor) no se retira: primero se devuelve y pasa a
+        `COBRADO`, así ningún job llega a `RETIRADO` salteando el cierre del cobro.
+        """
+        await self._enter()
+        key = require_key(idempotency_key)
+        require_instant(occurred_at)
+        job = await self._lock_job(job_id)
+        if await self._replay(key, job.id, _E.JOB_PICKED_UP) is not None:
+            return job
+        apply_event(job.status, _E.JOB_PICKED_UP)
+        metadata: dict[str, Any] = {}
+        balance = await self._balance(job)
+        if job.status == _J.FINALIZADO and balance <= 0:
+            raise GuardFailedError(
+                "a FINALIZADO job without a balance due is refunded and settled before pick-up"
+            )
+        if balance > 0:
+            if not await self._has_paid_previous_service(job):
+                raise GuardFailedError(
+                    "a first-time customer cannot pick up the vehicle with a balance due"
+                )
+            metadata["balance_due_cents"] = balance
+        await self._record(
+            job,
+            _E.JOB_PICKED_UP,
+            key=key,
+            occurred_at=occurred_at,
+            metadata=metadata,
+            changes={"picked_up_at": occurred_at},
         )
+        return job
+
+    async def _has_paid_previous_service(self, job: Job) -> bool:
+        """¿El cliente del job tuvo otro servicio cerrado y pagado? (adenda C2)."""
+        if job.customer_id is None:
+            return False
+        others = await self._jobs.list_other_for_customer(
+            job.customer_id, _PREVIOUS_SERVICE_STATUSES, self._tenant_id, excluding=job.id
+        )
+        for other in others:
+            if await self._balance(other) <= 0:
+                return True
+        return False
 
     async def _simple(
         self,
@@ -680,9 +768,10 @@ class JobService(ServiceBase):
         Guardas de importe:
 
         - `SALDO` no supera el saldo pendiente (F8; el contrato deja "rechazar o confirmar" y
-          la confirmación explícita es UI de F7). En `COBRADO`/`RETIRADO` el pendiente es 0.
+          la confirmación explícita es UI de F7). Un `RETIRADO` con deuda (C2) o un cerrado
+          con un cobro anulado (C3) tiene pendiente > 0 y lo cobra sin cambiar de estado.
         - `DEVOLUCION` no supera lo pagado neto vivo del job (F1), y en `COBRADO`/`RETIRADO`
-          no puede dejar saldo > 0 (la guarda A1 de `void_payment`). Devolver un saldo a
+          no puede dejar saldo > 0 (A11): devolver plata no crea deuda. Devolver un saldo a
           favor (negativo) hasta 0 sí se puede.
         """
         await self._enter()
@@ -744,7 +833,7 @@ class JobService(ServiceBase):
             )
         if job.status in _SETTLED_STATUSES and due + amount_cents > 0:
             raise GuardFailedError(
-                f"this refund would leave a {job.status} job with a balance due (A1)"
+                f"this refund would leave a {job.status} job with a balance due (A11)"
             )
 
     async def _payment_of(self, event: JobEvent) -> Payment:
@@ -760,11 +849,12 @@ class JobService(ServiceBase):
         reason: str,
         void_reason: VoidReason = VoidReason.ERROR_DE_CARGA,
     ) -> Payment:
-        """Anula un pago de un job: `VoidableMixin` + `PAYMENT_VOIDED` con motivo.
+        """Anula un pago de un job: `VoidableMixin` + `PAYMENT_VOIDED` con motivo y actor.
 
-        **A1**: si el job está `COBRADO`/`RETIRADO` y el saldo resultante sería > 0, se
-        rechaza (no hay transición de vuelta y `jobs.status` mentiría). Anular un cobro
-        duplicado, que deja saldo 0, sí se puede. Reabrir es la pregunta 11 del dueño.
+        **Adenda C3** (respuesta 11 del dueño, reemplaza la guarda de A1): en un job
+        `COBRADO`/`RETIRADO` se puede anular aunque deje saldo > 0. El job **no se reabre**
+        (si no, cualquier usuario podría manipular lo cobrado): el estado queda y la diferencia
+        es deuda derivada. La anulación es un registro aparte; qué roles anulan es F4.
         """
         await self._enter()
         key = require_key(idempotency_key)
@@ -781,10 +871,6 @@ class JobService(ServiceBase):
         payment = await self._payments.get_for_update(payment_id, self._tenant_id)
         if payment is None:
             raise GuardFailedError("the payment is already voided")
-        if job.status in _SETTLED_STATUSES and await self._balance(job, without=payment.id) > 0:
-            raise GuardFailedError(
-                f"voiding this payment would leave a {job.status} job with a balance due (A1)"
-            )
         await void_payment_row(self._session, self._tenant_id, payment, void_reason)
         await self._record(
             job,

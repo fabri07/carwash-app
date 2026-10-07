@@ -135,9 +135,11 @@ TENANT_TABLES = [
     "vehicles",
     "customer_vehicles",
     "bookings",
+    "booking_items",
     "schedule_blocks",
     "quotes",
     "jobs",
+    "job_items",
     "job_events",
     "job_inspections",
     "payments",
@@ -476,12 +478,9 @@ def upgrade() -> None:
         _ts("hold_expires_at"),
         _uuid("customer_id"),
         _uuid("vehicle_id", nullable=True),
-        _uuid("service_id"),
         _uuid("vehicle_size_id"),
-        _text("service_name_snapshot", nullable=False),
         _int("duration_min"),
         _cents("price_cents", nullable=True),
-        _int("deposit_bps", default=0),
         _cents("deposit_required_cents", default=0),
         _uuid("quote_id", nullable=True),
         _text("terms_version"),
@@ -492,7 +491,6 @@ def upgrade() -> None:
         _fk(t, "resource_id", "resources"),
         _fk(t, "customer_id", "customers"),
         _fk(t, "vehicle_id", "vehicles"),
-        _fk(t, "service_id", "services"),
         _fk(t, "vehicle_size_id", "vehicle_sizes"),
         # `quote_id → quotes` se agrega después de crear `quotes` (ciclo con quotes.booking_id).
         _check(t, "rango_valido", "end_at > start_at"),
@@ -503,7 +501,6 @@ def upgrade() -> None:
         ),
         _check(t, "duracion_positiva", "duration_min > 0"),
         _check(t, "precio_positivo", "price_cents IS NULL OR price_cents > 0"),
-        _check(t, "sena_bps_rango", "deposit_bps BETWEEN 0 AND 10000"),
         _check(t, "sena_no_negativa", "deposit_required_cents >= 0"),
         _check(t, "sin_precio_sin_sena", "price_cents IS NOT NULL OR deposit_required_cents = 0"),
         _check(t, "notas_largo", "length(notes) <= 500"),
@@ -512,10 +509,31 @@ def upgrade() -> None:
     _index(t, "resource_id", "start_at")
     _index(t, "customer_id")
     _index(t, "vehicle_id")
-    _index(t, "service_id")
     _index(t, "vehicle_size_id")
     _index(t, "quote_id")
     _unique_alive(t, "code")
+
+    # Adenda C1: los servicios del turno se suman.
+    t = "booking_items"
+    _create_table(
+        t,
+        _uuid("booking_id"),
+        _uuid("service_id"),
+        sa.Column("position", sa.SmallInteger(), nullable=False),
+        _text("service_name_snapshot", nullable=False),
+        _int("duration_min"),
+        _cents("price_cents", nullable=True),
+        _int("deposit_bps", default=0),
+        _fk(t, "booking_id", "bookings"),
+        _fk(t, "service_id", "services"),
+        _check(t, "duracion_positiva", "duration_min > 0"),
+        _check(t, "precio_positivo", "price_cents IS NULL OR price_cents > 0"),
+        _check(t, "sena_bps_rango", "deposit_bps BETWEEN 0 AND 10000"),
+        _check(t, "sin_precio_sin_sena", "price_cents IS NOT NULL OR deposit_bps = 0"),
+    )
+    _index(t, "booking_id")
+    _index(t, "service_id")
+    _unique_alive(t, "booking_id", "service_id")
 
     t = "schedule_blocks"
     _create_table(
@@ -596,12 +614,10 @@ def upgrade() -> None:
         _uuid("customer_id", nullable=True),
         _uuid("vehicle_id"),
         _uuid("vehicle_size_id"),
-        _uuid("service_id"),
         _uuid("resource_id", nullable=True),
         _uuid("responsible_user_id"),
         sa.Column("channel", _enum("channel"), nullable=False),
         sa.Column("status", _enum("job_status"), nullable=False),
-        _text("service_name_snapshot", nullable=False),
         _cents("base_price_cents"),
         _cents("surcharge_cents", default=0),
         _cents("discount_cents", default=0),
@@ -623,7 +639,6 @@ def upgrade() -> None:
         _fk(t, "customer_id", "customers"),
         _fk(t, "vehicle_id", "vehicles"),
         _fk(t, "vehicle_size_id", "vehicle_sizes"),
-        _fk(t, "service_id", "services"),
         _fk(t, "resource_id", "resources"),
         _fk(t, "responsible_user_id", "users"),
         _check(t, "precio_base_positivo", "base_price_cents > 0"),
@@ -639,7 +654,6 @@ def upgrade() -> None:
         "customer_id",
         "vehicle_id",
         "vehicle_size_id",
-        "service_id",
         "resource_id",
         "responsible_user_id",
     ):
@@ -648,6 +662,25 @@ def upgrade() -> None:
     # Una cotización se usa en UN job vivo (F3 de T3): la red ante la carrera.
     _unique_alive(t, "quote_id", where="quote_id IS NOT NULL")
     _unique_alive(t, "legacy_id", where="legacy_id IS NOT NULL")
+
+    # Adenda C1: los servicios del job se suman.
+    t = "job_items"
+    _create_table(
+        t,
+        _uuid("job_id"),
+        _uuid("service_id"),
+        sa.Column("position", sa.SmallInteger(), nullable=False),
+        _text("service_name_snapshot", nullable=False),
+        _int("duration_min"),
+        _cents("price_cents"),
+        _fk(t, "job_id", "jobs"),
+        _fk(t, "service_id", "services"),
+        _check(t, "duracion_positiva", "duration_min > 0"),
+        _check(t, "precio_positivo", "price_cents > 0"),
+    )
+    _index(t, "job_id")
+    _index(t, "service_id")
+    _unique_alive(t, "job_id", "service_id")
 
     t = "job_events"
     _create_table(

@@ -119,9 +119,7 @@ def _turno(
         "start_at": inicio,
         "end_at": inicio + timedelta(minutes=minutos),
         "customer_id": lav.customer,
-        "service_id": lav.service,
         "vehicle_size_id": lav.size,
-        "service_name_snapshot": "Lavado completo",
         "duration_min": minutos,
         "price_cents": 2_000_000,
     }
@@ -133,11 +131,9 @@ def _job(lav: Lavadero, **over: Any) -> dict[str, Any]:
         "tenant_id": lav.tenant,
         "vehicle_id": lav.vehicle,
         "vehicle_size_id": lav.size,
-        "service_id": lav.service,
         "responsible_user_id": lav.user,
         "channel": "CALLE",
         "status": "PRESENTE",
-        "service_name_snapshot": "Lavado completo",
         "base_price_cents": 2_000_000,
         "arrived_at": DIEZ,
     }

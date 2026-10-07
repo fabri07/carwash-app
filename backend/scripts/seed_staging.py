@@ -205,11 +205,13 @@ async def _seed_domain(
     suv = await catalogo.create_vehicle_size("SUV", "SUV", sort_order=1)
     lavado = await catalogo.create_service("Lavado completo", PricingMode.PRECIO_FIJO)
     premium = await catalogo.create_service("Lavado premium", PricingMode.PRECIO_FIJO)
+    motor = await catalogo.create_service("Lavado de motor", PricingMode.PRECIO_FIJO)
     tapizado = await catalogo.create_service(
         "Limpieza de tapizados", PricingMode.A_COTIZAR, notes="Se cotiza al ver el auto"
     )
     for size, extra in ((auto, 0), (suv, 500_000)):
         await catalogo.set_price(lavado.id, size.id, price_cents=2_000_000 + extra, duration_min=60)
+        await catalogo.set_price(motor.id, size.id, price_cents=800_000 + extra, duration_min=30)
         await catalogo.set_price(
             premium.id, size.id, price_cents=3_000_000 + extra, duration_min=90, deposit_bps=3000
         )
@@ -266,7 +268,7 @@ async def _seed_domain(
             start_at=_en(minutos),
             customer_id=cliente_id,
             vehicle_id=vehiculo_id,
-            service_id=servicio,
+            service_ids=[servicio],
             vehicle_size_id=auto.id,
             hold_expires_at=hold,
             now=RESERVA,
@@ -373,7 +375,8 @@ async def _seed_domain(
         arrived_at=_en(300),
         vehicle_id=walk_in_auto.vehicle.id,
         vehicle_size_id=suv.id,
-        service_id=lavado.id,
+        # Los servicios se suman (adenda C1): lavado + motor.
+        service_ids=[lavado.id, motor.id],
         channel=Channel.CALLE,
     )
     return True

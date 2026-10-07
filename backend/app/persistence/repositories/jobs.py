@@ -10,7 +10,8 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.persistence.models.job import Job, JobEvent, JobInspection
+from app.domain.enums import JobStatus
+from app.persistence.models.job import Job, JobEvent, JobInspection, JobItem
 from app.persistence.repositories.base import BaseRepository, Page, one_or_none
 
 
@@ -23,6 +24,40 @@ class JobRepository(BaseRepository[Job]):
             self._session,
             select(Job).where(Job.booking_id == booking_id, *self._scope(tenant_id, False)),
         )
+
+    async def list_other_for_customer(
+        self,
+        customer_id: uuid.UUID,
+        statuses: frozenset[JobStatus],
+        tenant_id: uuid.UUID,
+        *,
+        excluding: uuid.UUID,
+    ) -> list[Job]:
+        """Los otros jobs vivos del cliente en alguno de `statuses` (adenda C2)."""
+        result = await self._session.scalars(
+            select(Job)
+            .where(
+                Job.customer_id == customer_id,
+                Job.id != excluding,
+                Job.status.in_(statuses),
+                *self._scope(tenant_id, False),
+            )
+            .order_by(Job.arrived_at, Job.id)
+        )
+        return list(result.all())
+
+
+class JobItemRepository(BaseRepository[JobItem]):
+    model = JobItem
+
+    async def list_for_job(self, job_id: uuid.UUID, tenant_id: uuid.UUID) -> list[JobItem]:
+        """Los servicios vivos del job, en el orden en que se cargaron (adenda C1)."""
+        result = await self._session.scalars(
+            select(JobItem)
+            .where(JobItem.job_id == job_id, *self._scope(tenant_id, False))
+            .order_by(JobItem.position)
+        )
+        return list(result.all())
 
 
 class JobInspectionRepository(BaseRepository[JobInspection]):

@@ -30,12 +30,12 @@ from app.domain.enums import (
 from app.domain.exceptions import GuardFailedError, InvalidTransition
 from app.persistence.models import CashMovement, Payment, Quote
 from app.persistence.models.cancellation import DEFAULT_REASON
+from app.persistence.repositories.agenda import BookingItemRepository
 from app.tests.application._armado import (
     AHORA,
     PRECIO_CON_SENA,
     PRECIO_FIJO,
     SENA,
-    SENA_BPS,
     Lavadero,
     T,
     armar,
@@ -65,8 +65,38 @@ async def test_alta_sin_sena_nace_confirmada_con_snapshots(lav):
     assert booking.duration_min == 60
     assert booking.end_at == T + timedelta(minutes=60)
     assert booking.deposit_required_cents == 0
-    assert booking.service_name_snapshot == "Lavado completo"
+    items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
+    assert [(i.service_name_snapshot, i.price_cents, i.duration_min) for i in items] == [
+        ("Lavado completo", PRECIO_FIJO, 60)
+    ]
     assert booking.terms_accepted_at is None  # el panel no estampa aceptación (C-15)
+
+
+async def test_los_servicios_se_suman(lav):
+    """Adenda C1 (respuesta 7 del dueño): duración, precio y seña son la suma de los ítems, y
+    el turno ocupa el puesto por la duración total."""
+    booking = await lav.turno(servicios=[lav.lavado, lav.lavado_con_sena], hold=HOLD)
+    assert booking.status == S.PENDIENTE_SENA  # alcanza con que un servicio pida seña
+    assert booking.duration_min == 60 + 90
+    assert booking.end_at == T + timedelta(minutes=150)
+    assert booking.price_cents == PRECIO_FIJO + PRECIO_CON_SENA
+    assert booking.deposit_required_cents == SENA  # la seña es solo la del premium
+    items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
+    assert [(i.position, i.service_id) for i in items] == [
+        (0, lav.lavado),
+        (1, lav.lavado_con_sena),
+    ]
+
+
+async def test_servicios_vacios_repetidos_o_dos_a_cotizar_fallan(lav):
+    with pytest.raises(GuardFailedError, match="at least one"):
+        await lav.turno(servicios=[])
+    with pytest.raises(GuardFailedError, match="twice"):
+        await lav.turno(servicios=[lav.lavado, lav.lavado])
+    otro = await lav.catalogo.create_service("Pulido", PricingMode.A_COTIZAR)
+    await lav.catalogo.set_price(otro.id, lav.auto, price_cents=None, duration_min=60)
+    with pytest.raises(GuardFailedError, match="at most one"):
+        await lav.turno(servicios=[lav.tapizado, otro.id], hold=HOLD)
 
 
 async def test_alta_con_sena_queda_pendiente_y_exige_hold(lav):
@@ -74,7 +104,6 @@ async def test_alta_con_sena_queda_pendiente_y_exige_hold(lav):
         await lav.turno(servicio=lav.lavado_con_sena)
     booking = await _con_sena(lav)
     assert booking.status == S.PENDIENTE_SENA
-    assert booking.deposit_bps == SENA_BPS
     assert booking.deposit_required_cents == SENA
     assert booking.hold_expires_at == HOLD
 

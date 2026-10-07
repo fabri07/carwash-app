@@ -30,7 +30,7 @@ from app.persistence.db._savepoint import (
 )
 from app.persistence.models.agenda import BOOKING_OVERLAP_CONSTRAINT
 from app.persistence.models.quote import Quote
-from app.persistence.repositories.agenda import BookingRepository
+from app.persistence.repositories.agenda import BookingItemRepository, BookingRepository
 from app.persistence.repositories.catalog import ServiceRepository, VehicleSizeRepository
 from app.persistence.repositories.customers import CustomerRepository, VehicleRepository
 from app.persistence.repositories.quotes import QuoteRepository
@@ -112,8 +112,11 @@ class QuoteService(ServiceBase):
         now: datetime,
         hold_expires_at: datetime | None = None,
     ) -> Quote:
-        """`COTIZADO → ACEPTADO`. Con turno: precio y duración pasan al turno, que queda
-        `CONFIRMADO` (sin seña) o `PENDIENTE_SEÑA` (con seña, exige hold).
+        """`COTIZADO → ACEPTADO`. Con turno: los totales del turno suman precio y duración
+        acordados a los de los demás ítems (adenda C1; el ítem cotizado queda sin precio y el
+        job toma el acuerdo al recibir); la seña es la de los
+        demás ítems (uno a cotizar no lleva seña, §1.1). El turno queda `CONFIRMADO` (sin seña)
+        o `PENDIENTE_SEÑA` (con seña, exige hold).
 
         Si la duración acordada alarga el turno sobre otro, el `EXCLUDE` lo rechaza
         (`SlotTakenError`). Antes vence los holds del puesto (§1.3): si el del propio turno
@@ -147,7 +150,20 @@ class QuoteService(ServiceBase):
         await BookingService(self._session, self._tenant_id, self._actor_user_id).expire_holds(
             booking.resource_id, now
         )
-        deposit = deposit_required(quote.agreed_price_cents, booking.deposit_bps)
+        items = await BookingItemRepository(self._session).list_for_booking(
+            booking.id, self._tenant_id
+        )
+        quoted = [item for item in items if item.price_cents is None]
+        if [item.service_id for item in quoted] != [
+            quote.service_id
+        ]:  # pragma: no cover  # `BookingService.create` lo garantiza
+            raise GuardFailedError("the quote is not for the booking's item to be quoted")
+        others = [item for item in items if item.price_cents is not None]
+        # Adenda C1: el ítem sigue "a cotizar" (precio NULL: así se reconoce al recibir); el
+        # acuerdo vive en la cotización y el turno guarda los totales.
+        duration = quote.agreed_duration_min + sum(item.duration_min for item in others)
+        price = quote.agreed_price_cents + sum(item.price_cents or 0 for item in others)
+        deposit = sum(deposit_required(item.price_cents, item.deposit_bps) for item in others)
         action = (
             BookingAction.ACCEPT_QUOTE_WITH_DEPOSIT
             if deposit > 0
@@ -159,11 +175,9 @@ class QuoteService(ServiceBase):
         hold = hold_expires_at if hold_expires_at is not None else booking.hold_expires_at
         try:
             async with guarded_savepoint(self._session, _OVERLAP):
-                booking.price_cents = quote.agreed_price_cents
-                booking.duration_min = quote.agreed_duration_min
-                booking.end_at = as_aware(booking.start_at) + timedelta(
-                    minutes=quote.agreed_duration_min
-                )
+                booking.price_cents = price
+                booking.duration_min = duration
+                booking.end_at = as_aware(booking.start_at) + timedelta(minutes=duration)
                 booking.deposit_required_cents = deposit
                 booking.status = booking_target
                 booking.hold_expires_at = (

@@ -255,6 +255,15 @@ async def _ocupa_el_horario(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any
     return turno if await repo.slot_taken(sonda, tenant_id) else None
 
 
+async def _cliente_con_historia(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+    """`list_other_for_customer` con el cliente de A y cualquier estado (adenda C2)."""
+    from app.domain.enums import JobStatus  # noqa: PLC0415
+
+    return await repo.list_other_for_customer(
+        a.ids["customers"], frozenset(JobStatus), tenant_id, excluding=uuid.uuid4()
+    )
+
+
 #: Cada caso recibe (repo, datos de A, tenant con el que se pregunta).
 CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("BookingRepository", "lock_expired_holds"): lambda r, a, t: r.lock_expired_holds(
@@ -279,6 +288,11 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
         a.ids["customers"], a.ids["vehicles"], t
     ),
     ("JobRepository", "find_by_booking"): lambda r, a, t: r.find_by_booking(a.ids["bookings"], t),
+    ("JobRepository", "list_other_for_customer"): _cliente_con_historia,
+    ("BookingItemRepository", "list_for_booking"): lambda r, a, t: r.list_for_booking(
+        a.ids["bookings"], t
+    ),
+    ("JobItemRepository", "list_for_job"): lambda r, a, t: r.list_for_job(a.ids["jobs"], t),
     ("JobInspectionRepository", "find_by_job"): lambda r, a, t: r.find_by_job(a.ids["jobs"], t),
     ("JobEventRepository", "get_by_key"): lambda r, a, t: r.get_by_key(a.claves["event_key"], t),
     ("JobEventRepository", "list_for_job"): lambda r, a, t: r.list_for_job(a.ids["jobs"], t),

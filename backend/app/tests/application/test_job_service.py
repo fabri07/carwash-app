@@ -2,7 +2,8 @@
 
 Incluye los casos B13 del legacy que son de aplicación: segundo cobro suma; walk-in no se
 cancela por demora; cancelar por demora un `FINALIZADO` falla; finalizar sin iniciar falla;
-recibir dos veces el mismo turno devuelve el mismo job. Y A1 (anular un cobro de un `COBRADO`).
+recibir dos veces el mismo turno devuelve el mismo job. Y la adenda del checkpoint: C2 (retirar
+con deuda) y C3 (anular un cobro de un cerrado no lo reabre).
 Lo que SQLite no puede (locks, carrera, EXCLUDE, trigger) está en `test_servicios_pg.py`.
 """
 
@@ -76,7 +77,10 @@ async def test_recibir_un_turno_toma_snapshots_demora_y_pasa_el_turno_a_recibido
     assert job.status == JobStatus.PRESENTE
     assert job.booking_id == booking.id
     assert job.base_price_cents == PRECIO_FIJO
-    assert job.service_name_snapshot == "Lavado completo"
+    items = await lav.jobs.items(job.id)
+    assert [(i.service_name_snapshot, i.price_cents, i.duration_min) for i in items] == [
+        ("Lavado completo", PRECIO_FIJO, 60)
+    ]
     assert job.scheduled_at == T
     assert job.arrival_delay_min == 7
     assert job.customer_id == lav.cliente
@@ -195,7 +199,7 @@ async def test_walk_in_a_cotizar_exige_cotizacion_aceptada_del_mismo_servicio(la
         "arrived_at": T,
         "vehicle_id": lav.vehiculo,
         "vehicle_size_id": lav.auto,
-        "service_id": lav.tapizado,
+        "service_ids": [lav.tapizado],
         "channel": Channel.CALLE,
         "customer_id": lav.cliente,
     }
@@ -220,6 +224,54 @@ async def test_walk_in_a_cotizar_exige_cotizacion_aceptada_del_mismo_servicio(la
     job = await lav.jobs.receive(idempotency_key="w4", quote_id=quote.id, **base)
     assert job.base_price_cents == 5_000_000
     assert job.quote_id == quote.id
+    assert [(i.price_cents, i.duration_min) for i in await lav.jobs.items(job.id)] == [
+        (5_000_000, 180)  # precio y duración de la cotización
+    ]
+
+
+async def test_walk_in_con_varios_servicios_los_suma(lav):
+    """Adenda C1: el lavado del catálogo más el tapizado cotizado, en el orden pedido."""
+    quote = await _cotizacion_aceptada(lav, precio=4_000_000)
+    job = await lav.jobs.receive(
+        idempotency_key="w",
+        arrived_at=T,
+        vehicle_id=lav.vehiculo,
+        vehicle_size_id=lav.auto,
+        service_ids=[lav.lavado, lav.tapizado],
+        channel=Channel.CALLE,
+        quote_id=quote.id,
+    )
+    assert job.base_price_cents == PRECIO_FIJO + 4_000_000
+    assert job.quote_id == quote.id
+    items = await lav.jobs.items(job.id)
+    assert [(i.position, i.service_id, i.price_cents) for i in items] == [
+        (0, lav.lavado, PRECIO_FIJO),
+        (1, lav.tapizado, 4_000_000),
+    ]
+    sin_cotizar = await lav.walk_in(servicios=[lav.lavado, lav.lavado_con_sena])
+    assert sin_cotizar.base_price_cents == PRECIO_FIJO + PRECIO_CON_SENA
+    assert sin_cotizar.quote_id is None
+
+
+async def test_recibir_un_turno_con_varios_servicios_copia_los_items(lav):
+    booking = await lav.turno(
+        servicios=[lav.lavado_con_sena, lav.tapizado], hold=AHORA + timedelta(hours=1)
+    )
+    assert booking.quote_id is not None
+    await lav.cotizaciones.quote(
+        booking.quote_id, agreed_price_cents=1_000_000, agreed_duration_min=45, quoted_at=AHORA
+    )
+    await lav.cotizaciones.accept(
+        booking.quote_id, decided_at=AHORA, now=AHORA, hold_expires_at=AHORA + timedelta(hours=1)
+    )
+    job = await lav.recibido(booking)
+    assert job.base_price_cents == PRECIO_CON_SENA + 1_000_000 == booking.price_cents
+    assert job.deposit_required_cents == SENA
+    items = await lav.jobs.items(job.id)
+    assert [(i.service_id, i.price_cents, i.duration_min) for i in items] == [
+        (lav.lavado_con_sena, PRECIO_CON_SENA, 90),
+        (lav.tapizado, 1_000_000, 45),
+    ]
 
 
 async def test_walk_in_sin_precio_de_catalogo_es_incoherencia(lav):
@@ -231,7 +283,7 @@ async def test_walk_in_sin_precio_de_catalogo_es_incoherencia(lav):
             arrived_at=T,
             vehicle_id=lav.vehiculo,
             vehicle_size_id=lav.auto,
-            service_id=servicio.id,
+            service_ids=[servicio.id],
             channel=Channel.CALLE,
         )
 
@@ -330,10 +382,87 @@ async def test_finalizar_con_saldo_cero_encadena_el_cobro(lav):
     assert (await _eventos(lav, job.id))[-2:] == [E.JOB_FINISHED, E.JOB_SETTLED]
 
 
-async def test_no_se_retira_sin_cobrar(lav):
-    job = await lav.finalizado()
-    with pytest.raises(InvalidTransition):
+# ── Retirar con deuda (adenda C2, respuesta 4 del dueño) ────────────────────
+
+
+async def test_c2_un_cliente_nuevo_no_retira_con_deuda(lav):
+    sin_cliente = await lav.finalizado()
+    with pytest.raises(GuardFailedError, match="first-time"):
+        await lav.jobs.pick_up(sin_cliente.id, idempotency_key="r1", occurred_at=T)
+    primero = await lav.finalizado(await lav.walk_in(cliente=lav.cliente))
+    with pytest.raises(GuardFailedError, match="first-time"):
+        await lav.jobs.pick_up(primero.id, idempotency_key="r2", occurred_at=T)
+    # Otro job del cliente que terminó pero no se cobró tampoco lo vuelve cliente con historia.
+    segundo = await lav.finalizado(await lav.walk_in(cliente=lav.cliente))
+    with pytest.raises(GuardFailedError, match="first-time"):
+        await lav.jobs.pick_up(segundo.id, idempotency_key="r3", occurred_at=T)
+    assert (primero.status, segundo.status) == (JobStatus.FINALIZADO, JobStatus.FINALIZADO)
+
+
+async def test_c2_un_cliente_con_un_servicio_cobrado_retira_con_deuda(lav):
+    anterior = await lav.finalizado(await lav.walk_in(cliente=lav.cliente))
+    await lav.jobs.record_payment(anterior.id, lav.pago(PRECIO_FIJO))
+    assert anterior.status == JobStatus.COBRADO
+
+    job = await lav.finalizado(await lav.walk_in(cliente=lav.cliente))
+    await lav.jobs.record_payment(job.id, lav.pago(500_000))
+    await lav.jobs.pick_up(job.id, idempotency_key="r", occurred_at=T + timedelta(hours=1))
+    assert job.status == JobStatus.RETIRADO
+    assert job.picked_up_at == T + timedelta(hours=1)
+    assert job.settled_at is None  # no pasó por COBRADO
+    retiro = (await lav.jobs.history(job.id))[-1]
+    assert (retiro.event_type, retiro.from_status) == (E.JOB_PICKED_UP, JobStatus.FINALIZADO)
+    assert retiro.event_metadata == {"balance_due_cents": PRECIO_FIJO - 500_000}
+    assert await lav.jobs.balance(job.id) == PRECIO_FIJO - 500_000
+
+    # La deuda se cobra después sin cambiar el estado.
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO - 500_000))
+    assert job.status == JobStatus.RETIRADO
+    assert await lav.jobs.balance(job.id) == 0
+    with pytest.raises(InvalidAmountError):  # no se cobra de más
+        await lav.jobs.record_payment(job.id, lav.pago(1))
+
+
+async def test_c2_r2_un_finalizado_con_saldo_a_favor_no_se_retira(lav):
+    """Revisión R2: se devuelve primero y pasa a COBRADO; nada llega a RETIRADO salteando el
+    cierre del cobro."""
+    job = await lav.walk_in()
+    await lav.jobs.start(job.id, idempotency_key="ini", occurred_at=T)
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+    await lav.jobs.adjust_price(
+        job.id,
+        idempotency_key="aj",
+        occurred_at=T,
+        surcharge_cents=0,
+        discount_cents=100_000,
+        reason="Cortesía",
+    )
+    await lav.jobs.finish(job.id, idempotency_key="fin", occurred_at=T)
+    assert job.status == JobStatus.FINALIZADO and await lav.jobs.balance(job.id) == -100_000
+    with pytest.raises(GuardFailedError, match="refunded"):
         await lav.jobs.pick_up(job.id, idempotency_key="r", occurred_at=T)
+    await lav.jobs.record_payment(job.id, lav.pago(100_000), kind=PaymentKind.DEVOLUCION)
+    assert job.status == JobStatus.COBRADO
+    await lav.jobs.pick_up(job.id, idempotency_key="r", occurred_at=T)
+    assert job.status == JobStatus.RETIRADO
+
+
+async def test_c2_r1_anular_el_cobro_no_saltea_la_guarda_del_cliente_nuevo(lav):
+    """Revisión R1: un cliente nuevo cobra, se anula el cobro y el COBRADO queda con deuda.
+    Ni se retira debiendo, ni ese job cuenta como servicio previo para otro."""
+    primero = await lav.finalizado(await lav.walk_in(cliente=lav.cliente))
+    pago = await lav.jobs.record_payment(primero.id, lav.pago(PRECIO_FIJO))
+    await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Error")
+    assert primero.status == JobStatus.COBRADO
+    with pytest.raises(GuardFailedError, match="first-time"):
+        await lav.jobs.pick_up(primero.id, idempotency_key="r1", occurred_at=T)
+    segundo = await lav.finalizado(await lav.walk_in(cliente=lav.cliente))
+    with pytest.raises(GuardFailedError, match="first-time"):
+        await lav.jobs.pick_up(segundo.id, idempotency_key="r2", occurred_at=T)
+    # Pagada la deuda del primero, el cliente ya tiene un servicio pagado: el segundo sale.
+    await lav.jobs.record_payment(primero.id, lav.pago(PRECIO_FIJO))
+    await lav.jobs.pick_up(segundo.id, idempotency_key="r3", occurred_at=T)
+    assert segundo.status == JobStatus.RETIRADO
 
 
 async def test_job_ajeno_o_inexistente_no_existe(lav, db_session):
@@ -434,16 +563,26 @@ async def test_medio_solo_de_egresos_no_cobra(lav):
         await lav.jobs.record_payment(job.id, lav.pago(100, medio=uuid.uuid4()))
 
 
-# ── Anular cobros (A1) ───────────────────────────────────────────────────────
+# ── Anular cobros (A1, reemplazada por la adenda C3) ─────────────────────────
 
 
-async def test_a1_anular_un_cobro_de_un_cobrado_que_deja_saldo_falla(lav):
+async def test_c3_anular_un_cobro_de_un_cerrado_no_reabre_el_job(lav):
+    """Respuesta 11 del dueño: la anulación va aparte; el job queda COBRADO y la diferencia
+    es deuda derivada."""
     job = await lav.finalizado()
     pago = await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
     assert job.status == JobStatus.COBRADO
-    with pytest.raises(GuardFailedError):
-        await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Error")
-    assert pago.voided_at is None
+    await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Contracargo")
+    assert pago.voided_at is not None
+    assert job.status == JobStatus.COBRADO
+    assert await lav.jobs.balance(job.id) == PRECIO_FIJO
+    anulacion = (await lav.jobs.history(job.id))[-1]
+    assert anulacion.event_type == E.PAYMENT_VOIDED
+    assert anulacion.actor_user_id == lav.owner_id
+    assert anulacion.event_metadata["reason"] == "Contracargo"
+    # La deuda se vuelve a cobrar sin reabrir.
+    await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
+    assert (job.status, await lav.jobs.balance(job.id)) == (JobStatus.COBRADO, 0)
 
 
 async def test_a1_anular_en_un_cobrado_lo_que_deja_saldo_cero_si_se_puede(lav):
@@ -729,13 +868,13 @@ async def test_f1_una_devolucion_que_deja_deuda_en_un_cobrado_se_rechaza(lav):
     job = await lav.finalizado()
     await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
     assert job.status == JobStatus.COBRADO
-    with pytest.raises(GuardFailedError, match="A1"):
+    with pytest.raises(GuardFailedError, match="A11"):
         await lav.jobs.record_payment(job.id, lav.pago(1_500_000), kind=PaymentKind.DEVOLUCION)
     assert await lav.jobs.balance(job.id) == 0
     pagos = (await lav.session.scalars(select(Payment).where(Payment.job_id == job.id))).all()
     assert len(pagos) == 1
     await lav.jobs.pick_up(job.id, idempotency_key="ret", occurred_at=T)
-    with pytest.raises(GuardFailedError, match="A1"):  # tampoco en RETIRADO
+    with pytest.raises(GuardFailedError, match="A11"):  # tampoco en RETIRADO
         await lav.jobs.record_payment(job.id, lav.pago(1), kind=PaymentKind.DEVOLUCION)
 
 
@@ -802,7 +941,7 @@ def _walk_in_cotizado(lav: Lavadero, clave: str, quote_id: uuid.UUID):
         arrived_at=T,
         vehicle_id=lav.vehiculo,
         vehicle_size_id=lav.auto,
-        service_id=lav.tapizado,
+        service_ids=[lav.tapizado],
         channel=Channel.CALLE,
         quote_id=quote_id,
     )

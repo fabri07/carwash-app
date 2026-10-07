@@ -33,6 +33,8 @@ TRANSICIONES: dict[tuple[JobStatus | None, JobEventType], JobStatus] = {
     (J.EN_PROCESO, E.JOB_FINISHED): J.FINALIZADO,
     (J.FINALIZADO, E.JOB_SETTLED): J.COBRADO,
     (J.COBRADO, E.JOB_PICKED_UP): J.RETIRADO,
+    # Retirar con deuda (adenda C2): la guarda del primer servicio es del servicio.
+    (J.FINALIZADO, E.JOB_PICKED_UP): J.RETIRADO,
     (J.PRESENTE, E.JOB_CANCELLED_DELAY): J.CANCELADO_DEMORA,
 }
 

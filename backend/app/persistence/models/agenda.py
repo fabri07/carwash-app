@@ -13,7 +13,7 @@ misma transacción, antes de insertar o confirmar (vencimiento perezoso, §1.3).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Integer, Text, literal_column, text
+from sqlalchemy import BigInteger, DateTime, Integer, SmallInteger, Text, literal_column, text
 from sqlalchemy.dialects.postgresql import UUID, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,7 +65,6 @@ class Booking(TenantScopedModel):
         tenant_fk("resource_id", "resources"),
         tenant_fk("customer_id", "customers"),
         tenant_fk("vehicle_id", "vehicles"),
-        tenant_fk("service_id", "services"),
         tenant_fk("vehicle_size_id", "vehicle_sizes"),
         # Ciclo con `quotes.booking_id`: esta FK se agrega con ALTER después de crear `quotes`.
         tenant_fk("quote_id", "quotes", use_alter=True),
@@ -73,7 +72,6 @@ class Booking(TenantScopedModel):
         tenant_index("bookings", "resource_id", "start_at"),
         tenant_index("bookings", "customer_id"),
         tenant_index("bookings", "vehicle_id"),
-        tenant_index("bookings", "service_id"),
         tenant_index("bookings", "vehicle_size_id"),
         tenant_index("bookings", "quote_id"),
         # [corregir] R-T-020: el código de turno no tenía unicidad.
@@ -86,7 +84,6 @@ class Booking(TenantScopedModel):
         ),
         check("duration_min > 0", "duracion_positiva"),
         check("price_cents IS NULL OR price_cents > 0", "precio_positivo"),
-        check("deposit_bps BETWEEN 0 AND 10000", "sena_bps_rango"),
         check("deposit_required_cents >= 0", "sena_no_negativa"),
         # [corregir] R-C-032: sin precio no hay seña.
         check("price_cents IS NOT NULL OR deposit_required_cents = 0", "sin_precio_sin_sena"),
@@ -121,14 +118,13 @@ class Booking(TenantScopedModel):
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     #: La patente es opcional en la web (R-T-016).
     vehicle_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     vehicle_size_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    service_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
-    #: Snapshot: el bloqueo usa esta copia, no la duración actual del catálogo (R-T-012).
+    #: Total snapshot de los ítems (adenda C1): el bloqueo usa esta copia, no la duración
+    #: actual del catálogo (R-T-012).
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
-    #: Snapshot; NULL mientras sea a cotizar.
+    #: Total snapshot de los ítems; NULL mientras haya un ítem a cotizar.
     price_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    deposit_bps: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    #: Suma de la seña de cada ítem.
     deposit_required_cents: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"
     )
@@ -140,6 +136,37 @@ class Booking(TenantScopedModel):
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     legacy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BookingItem(TenantScopedModel):
+    """Un servicio del turno (adenda C1): los servicios se suman. Snapshot del catálogo.
+
+    A lo sumo uno es a cotizar (`price_cents` NULL); lo valida `BookingService`.
+    """
+
+    __tablename__ = "booking_items"
+    __table_args__ = voidable_table_args(
+        tenant_fk("booking_id", "bookings"),
+        tenant_fk("service_id", "services"),
+        tenant_index("booking_items", "booking_id"),
+        tenant_index("booking_items", "service_id"),
+        unique_alive("booking_items", "booking_id", "service_id"),
+        check("duration_min > 0", "duracion_positiva"),
+        check("price_cents IS NULL OR price_cents > 0", "precio_positivo"),
+        check("deposit_bps BETWEEN 0 AND 10000", "sena_bps_rango"),
+        # [corregir] R-C-032: sin precio no hay seña.
+        check("price_cents IS NOT NULL OR deposit_bps = 0", "sin_precio_sin_sena"),
+    )
+
+    booking_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    #: Orden en que se cargaron.
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    service_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: NULL mientras sea a cotizar.
+    price_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    deposit_bps: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class ScheduleBlock(TenantScopedModel):

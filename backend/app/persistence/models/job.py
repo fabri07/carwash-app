@@ -10,7 +10,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Integer,
+    SmallInteger,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,7 +72,6 @@ class Job(TenantScopedModel):
         tenant_fk("customer_id", "customers"),
         tenant_fk("vehicle_id", "vehicles"),
         tenant_fk("vehicle_size_id", "vehicle_sizes"),
-        tenant_fk("service_id", "services"),
         tenant_fk("resource_id", "resources"),
         tenant_fk("responsible_user_id", "users"),
         tenant_index("jobs", "booking_id"),
@@ -70,7 +79,6 @@ class Job(TenantScopedModel):
         tenant_index("jobs", "customer_id"),
         tenant_index("jobs", "vehicle_id"),
         tenant_index("jobs", "vehicle_size_id"),
-        tenant_index("jobs", "service_id"),
         tenant_index("jobs", "resource_id"),
         tenant_index("jobs", "responsible_user_id"),
         unique_alive("jobs", "booking_id", where="booking_id IS NOT NULL"),
@@ -95,7 +103,6 @@ class Job(TenantScopedModel):
     vehicle_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     #: Nunca texto libre (R-O-005).
     vehicle_size_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     #: En qué puesto se lava; la ocupación de walk-ins es F5/F6.
     resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     #: Reemplaza el literal hardcodeado (R-O-038).
@@ -103,8 +110,8 @@ class Job(TenantScopedModel):
     channel: Mapped[Channel] = mapped_column(pg_enum(Channel, CHANNEL_ENUM), nullable=False)
     #: Caché del último `job_events.to_status` (§2.2).
     status: Mapped[JobStatus] = mapped_column(pg_enum(JobStatus, JOB_STATUS_ENUM), nullable=False)
-    service_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
-    #: De `service_prices` o de la cotización aceptada (D-006, C-17).
+    #: Suma de los ítems (adenda C1): de `service_prices` o de la cotización aceptada (D-006,
+    #: C-17).
     base_price_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     #: Separados (R-O-032).
     surcharge_cents: Mapped[int] = mapped_column(
@@ -133,6 +140,30 @@ class Job(TenantScopedModel):
     legacy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Señales de revisión de la migración (D-008).
     legacy_review_flags: Mapped[list[str] | None] = mapped_column(PGTEXTARRAY, nullable=True)
+
+
+class JobItem(TenantScopedModel):
+    """Un servicio del job (adenda C1): los servicios se suman. Snapshot del turno o del
+    catálogo; siempre con precio (un ítem a cotizar llega con la cotización aceptada)."""
+
+    __tablename__ = "job_items"
+    __table_args__ = voidable_table_args(
+        tenant_fk("job_id", "jobs"),
+        tenant_fk("service_id", "services"),
+        tenant_index("job_items", "job_id"),
+        tenant_index("job_items", "service_id"),
+        unique_alive("job_items", "job_id", "service_id"),
+        check("duration_min > 0", "duracion_positiva"),
+        check("price_cents > 0", "precio_positivo"),
+    )
+
+    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    #: Orden en que se cargaron.
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    service_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class JobEvent(Base, UUIDPrimaryKeyMixin, TenantMixin):

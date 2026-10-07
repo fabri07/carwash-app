@@ -20,6 +20,7 @@ cotización → turno. Nadie toma turno → job, así que no hay ciclo de espera
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -33,8 +34,8 @@ from app.application.services._base import (
     require_instant,
     require_key,
 )
+from app.application.services._items import catalog_items
 from app.application.services._payments import PaymentInput, create_payment
-from app.application.services.catalog_service import check_price_coherence
 from app.application.services.errors import (
     AlreadyExistsError,
     CatalogIncoherentError,
@@ -48,7 +49,7 @@ from app.domain.booking_state import (
     classify_cancellation,
     next_booking_status,
 )
-from app.domain.deposit import deposit_required, deposit_status_for
+from app.domain.deposit import deposit_status_for
 from app.domain.enums import (
     BookingSource,
     BookingStatus,
@@ -56,7 +57,6 @@ from app.domain.enums import (
     CancellationInitiator,
     Channel,
     PaymentKind,
-    PricingMode,
 )
 from app.domain.exceptions import GuardFailedError, InvalidTransition
 from app.domain.quote_state import QuoteAction, next_quote_status
@@ -65,7 +65,12 @@ from app.persistence.db._savepoint import (
     guarded_savepoint,
     unique_violation_classifier,
 )
-from app.persistence.models.agenda import BOOKING_OVERLAP_CONSTRAINT, Booking, ScheduleBlock
+from app.persistence.models.agenda import (
+    BOOKING_OVERLAP_CONSTRAINT,
+    Booking,
+    BookingItem,
+    ScheduleBlock,
+)
 from app.persistence.models.cancellation import (
     CANCELLATIONS_BOOKING_UNIQUE,
     DEFAULT_REASON,
@@ -79,8 +84,6 @@ from app.persistence.repositories.cancellations import CancellationRepository
 from app.persistence.repositories.catalog import (
     PaymentMethodRepository,
     ResourceRepository,
-    ServicePriceRepository,
-    ServiceRepository,
     VehicleSizeRepository,
 )
 from app.persistence.repositories.customers import CustomerRepository, VehicleRepository
@@ -151,7 +154,7 @@ class BookingService(ServiceBase):
         resource_id: uuid.UUID,
         start_at: datetime,
         customer_id: uuid.UUID,
-        service_id: uuid.UUID,
+        service_ids: Sequence[uuid.UUID],
         vehicle_size_id: uuid.UUID,
         now: datetime,
         vehicle_id: uuid.UUID | None = None,
@@ -162,7 +165,11 @@ class BookingService(ServiceBase):
     ) -> Booking:
         """Alta de un turno con estado, precio, duración y seña **snapshot** del catálogo.
 
-        - `A_COTIZAR` → `PENDIENTE_COTIZACION` y nace su cotización `PENDIENTE`.
+        Los servicios **se suman** (adenda C1): un ítem por servicio, y el turno guarda los
+        totales (duración y precio sumados; seña, la suma de la de cada ítem).
+
+        - Con un ítem `A_COTIZAR` (a lo sumo uno) → `PENDIENTE_COTIZACION`, sin precio ni seña
+          hasta aceptar la cotización, y nace su cotización `PENDIENTE` para ese servicio.
         - Con seña requerida > 0 → `PENDIENTE_SEÑA`. Sin seña → `CONFIRMADO`.
 
         Los estados con hold exigen `hold_expires_at`. Un choque del `EXCLUDE` es
@@ -176,17 +183,15 @@ class BookingService(ServiceBase):
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
         if vehicle_id is not None:
             await self._require(VehicleRepository(self._session), vehicle_id)
-        service = await self._require(ServiceRepository(self._session), service_id)
-        price_row = await ServicePriceRepository(self._session).find_for(
-            service_id, vehicle_size_id, self._tenant_id
-        )
-        if price_row is None:
+        items = await catalog_items(self._session, self._tenant_id, service_ids, vehicle_size_id)
+        durations = [item.duration_min for item in items]
+        if None in durations:
             raise CatalogIncoherentError("the service has no price row for that vehicle size")
-        check_price_coherence(service.pricing_mode, price_row.price_cents, price_row.deposit_bps)
-
-        price = price_row.price_cents
-        deposit = deposit_required(price, price_row.deposit_bps)
-        if service.pricing_mode == PricingMode.A_COTIZAR:
+        duration = sum(d for d in durations if d is not None)
+        quoted = next((item for item in items if item.quoted), None)
+        price = None if quoted is not None else sum(item.price_cents or 0 for item in items)
+        deposit = 0 if quoted is not None else sum(item.deposit_cents for item in items)
+        if quoted is not None:
             action = BookingAction.CREATE_FOR_QUOTE
         elif deposit > 0:
             action = BookingAction.CREATE_WITH_DEPOSIT
@@ -209,16 +214,13 @@ class BookingService(ServiceBase):
             status=status,
             resource_id=resource_id,
             start_at=start_at,
-            end_at=start_at + timedelta(minutes=price_row.duration_min),
+            end_at=start_at + timedelta(minutes=duration),
             hold_expires_at=hold_expires_at,
             customer_id=customer_id,
             vehicle_id=vehicle_id,
-            service_id=service_id,
             vehicle_size_id=vehicle_size_id,
-            service_name_snapshot=service.name,
-            duration_min=price_row.duration_min,
+            duration_min=duration,
             price_cents=price,
-            deposit_bps=price_row.deposit_bps,
             deposit_required_cents=deposit,
             notes=notes,
             terms_version=terms_version,
@@ -229,13 +231,27 @@ class BookingService(ServiceBase):
                 self._session.add(booking)
         except SavepointConflictError as exc:
             raise _conflict_error(exc) from exc
+        for position, item in enumerate(items):
+            self._session.add(
+                BookingItem(
+                    tenant_id=self._tenant_id,
+                    booking_id=booking.id,
+                    service_id=item.service_id,
+                    position=position,
+                    service_name_snapshot=item.name,
+                    duration_min=item.duration_min,
+                    price_cents=item.price_cents,
+                    deposit_bps=item.deposit_bps,
+                )
+            )
+        await self._session.flush()
 
-        if action == BookingAction.CREATE_FOR_QUOTE:
+        if quoted is not None:
             quote = Quote(
                 tenant_id=self._tenant_id,
                 customer_id=customer_id,
                 vehicle_id=vehicle_id,
-                service_id=service_id,
+                service_id=quoted.service_id,
                 vehicle_size_id=vehicle_size_id,
                 booking_id=booking.id,
                 status=next_quote_status(None, QuoteAction.CREATE),

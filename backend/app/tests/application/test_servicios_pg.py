@@ -7,7 +7,7 @@ Lo que SQLite no puede probar:
 - `SELECT … FOR UPDATE`: dos cobros concurrentes se serializan y el segundo ve al primero.
 - Idempotencia ante la carrera: dos sesiones con la misma clave aplican **una** vez.
 - `job_events` append-only: el runtime no puede modificar la historia que escriben los servicios.
-- B13 de punta a punta y A1.
+- B13 de punta a punta y C3 (anular un cobro de un cerrado no lo reabre).
 
 Todos los servicios corren sobre sesiones **sin** contexto de tenant: lo fijan ellos (`SET
 LOCAL`), que es lo que se afirma de paso en cada test. Las sesiones de la carrera usan un engine
@@ -104,6 +104,19 @@ async def test_reservar_sobre_un_hold_vigente_choca_y_la_transaccion_sigue(fabri
         otro = await lv.turno(puesto=lv.puesto_2)
         borde = await lv.turno(inicio=T + timedelta(minutes=90))  # el de seña dura 90
         assert otro.status == borde.status == BookingStatus.CONFIRMADO
+
+
+async def test_los_servicios_sumados_ocupan_el_puesto_por_la_duracion_total(fabrica, lav):
+    """Adenda C1: lavado (60) + premium (90) = 150 min en el `EXCLUDE`."""
+    await _en_tx(
+        fabrica, lav, lambda lv: lv.turno(servicios=[lv.lavado, lv.lavado_con_sena], hold=HOLD)
+    )
+    async with fabrica() as s, s.begin():
+        lv = lav.en(s)
+        with pytest.raises(SlotTakenError):  # a los 120 min sigue ocupado
+            await lv.turno(inicio=T + timedelta(minutes=120), ahora=AHORA)
+        borde = await lv.turno(inicio=T + timedelta(minutes=150), ahora=AHORA)
+        assert borde.status == BookingStatus.CONFIRMADO
 
 
 async def test_confirmacion_tardia_sobre_un_horario_ya_tomado_choca(fabrica, lav):
@@ -318,10 +331,10 @@ async def test_los_servicios_fijan_el_tenant_y_rls_filtra_el_resto(fabrica, lav,
         assert (await s.scalars(select(Customer))).all() != []
 
 
-# ── B13 de punta a punta y A1 ────────────────────────────────────────────────
+# ── B13 de punta a punta y C3 ────────────────────────────────────────────────
 
 
-async def test_b13_y_a1_contra_postgres(fabrica, lav, pg_admin_engine):
+async def test_b13_y_c3_contra_postgres(fabrica, lav, pg_admin_engine):
     # recibir dos veces el mismo turno devuelve el mismo job
     turno = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
     await _en_tx(
@@ -341,15 +354,18 @@ async def test_b13_y_a1_contra_postgres(fabrica, lav, pg_admin_engine):
     async with fabrica() as s, s.begin():
         assert (await lav.en(s).jobs.get(job.id)).status == JobStatus.COBRADO
 
-    # A1: anular un cobro de un COBRADO que dejaría saldo > 0 falla
-    with pytest.raises(GuardFailedError):
-        await _en_tx(
-            fabrica,
-            lav,
-            lambda lv: lv.jobs.void_payment(
-                ultimo.id, idempotency_key="v", occurred_at=T, reason="Error de carga"
-            ),
-        )
+    # C3 (reemplaza A1): anular un cobro de un COBRADO se registra aparte y no lo reabre
+    await _en_tx(
+        fabrica,
+        lav,
+        lambda lv: lv.jobs.void_payment(
+            ultimo.id, idempotency_key="v", occurred_at=T, reason="Error de carga"
+        ),
+    )
+    async with fabrica() as s, s.begin():
+        cerrado = lav.en(s).jobs
+        assert (await cerrado.get(job.id)).status == JobStatus.COBRADO
+        assert await cerrado.balance(job.id) == saldo_final
 
     # cancelar por demora un FINALIZADO (acá ya COBRADO) falla
     with pytest.raises(InvalidTransition):
@@ -440,7 +456,7 @@ async def test_f3_dos_walk_in_concurrentes_con_la_misma_cotizacion_dan_un_job(
             arrived_at=T,
             vehicle_id=lv.vehiculo,
             vehicle_size_id=lv.auto,
-            service_id=lv.tapizado,
+            service_ids=[lv.tapizado],
             channel=Channel.CALLE,
             quote_id=quote.id,
         )

@@ -20,7 +20,7 @@ from app.domain.enums import (
 )
 from app.domain.exceptions import GuardFailedError, InvalidAmountError, InvalidTransition
 from app.persistence.models import CashMovement, Payment
-from app.tests.application._armado import AHORA, SENA, Lavadero, T, armar
+from app.tests.application._armado import AHORA, PRECIO_CON_SENA, SENA, Lavadero, T, armar
 
 Q = QuoteStatus
 HOLD = AHORA + timedelta(hours=2)
@@ -106,8 +106,12 @@ async def test_aceptar_con_turno_pasa_precio_y_duracion_y_confirma(lav):
 
 
 async def test_aceptar_con_seña_deja_el_turno_esperando_la_sena(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
-    booking.deposit_bps = 2000  # un A_COTIZAR con seña es incoherente en catálogo, no acá
+    """Adenda C1: el tapizado se cotiza y el premium lleva seña. Mientras se cotiza el turno
+    no tiene precio ni seña; al aceptar, la seña es la del premium (el ítem cotizado no
+    lleva, §1.1) y los totales suman los dos servicios."""
+    booking = await lav.turno(servicios=[lav.tapizado, lav.lavado_con_sena], hold=HOLD)
+    assert (booking.price_cents, booking.deposit_required_cents) == (None, 0)
+    assert booking.duration_min == 120 + 90
     assert booking.quote_id is not None
     await _cotizada(lav, booking.quote_id, precio=1_000_000)
     nuevo_hold = AHORA + timedelta(minutes=30)
@@ -115,7 +119,8 @@ async def test_aceptar_con_seña_deja_el_turno_esperando_la_sena(lav):
         booking.quote_id, decided_at=AHORA, now=AHORA, hold_expires_at=nuevo_hold
     )
     assert booking.status == BookingStatus.PENDIENTE_SENA
-    assert booking.deposit_required_cents == 200_000
+    assert booking.deposit_required_cents == SENA
+    assert booking.price_cents == 1_000_000 + PRECIO_CON_SENA
     assert booking.hold_expires_at == nuevo_hold
 
 

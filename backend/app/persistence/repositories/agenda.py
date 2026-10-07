@@ -7,7 +7,7 @@ from sqlalchemy import exists, select
 
 from app.domain.booking_state import BLOCKING_BOOKING_STATUSES
 from app.domain.enums import BookingStatus
-from app.persistence.models.agenda import Booking, ScheduleBlock
+from app.persistence.models.agenda import Booking, BookingItem, ScheduleBlock
 from app.persistence.repositories.base import BaseRepository
 
 #: Estados con hold (`hold_expires_at`): los únicos que vencen (§2.1).
@@ -61,6 +61,21 @@ class BookingRepository(BaseRepository[Booking]):
             *self._scope(tenant_id, False),
         )
         return bool(await self._session.scalar(select(other)))
+
+
+class BookingItemRepository(BaseRepository[BookingItem]):
+    model = BookingItem
+
+    async def list_for_booking(
+        self, booking_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> list[BookingItem]:
+        """Los servicios vivos del turno, en el orden en que se cargaron (adenda C1)."""
+        result = await self._session.scalars(
+            select(BookingItem)
+            .where(BookingItem.booking_id == booking_id, *self._scope(tenant_id, False))
+            .order_by(BookingItem.position)
+        )
+        return list(result.all())
 
 
 class ScheduleBlockRepository(BaseRepository[ScheduleBlock]):

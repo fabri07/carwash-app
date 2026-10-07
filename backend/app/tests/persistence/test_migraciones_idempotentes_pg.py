@@ -37,8 +37,9 @@ async def test_reaplicar_con_stamp_atrasado_no_falla(pg_admin_engine):
     # hardcodeado, cada migración nueva rompe este test por una razón que no es la suya.
     assert version == head_de_alembic()
     # F2: tenants, users, dummy_resources, idempotency_keys + lectura del dueño (5);
-    # F3: una política de aislamiento por cada una de las 18 tablas nuevas.
-    assert politicas == 5 + 18
+    # F3: una política de aislamiento por cada una de las 20 tablas nuevas (18 + los ítems
+    # de turno y de job de la adenda C1).
+    assert politicas == 5 + 20
     assert funciones == 1
     # Re-aplicar no duplica lo que no tiene `IF NOT EXISTS` nativo.
     assert triggers == 1

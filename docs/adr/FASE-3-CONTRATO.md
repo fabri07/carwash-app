@@ -579,17 +579,38 @@ motivo escrito, salvo pérdida de datos o fuga entre lavaderos.
 El esquema **no las cierra**: quedan nullable o como guarda configurable, así cualquier respuesta entra
 sin migración destructiva.
 
+Respuestas del dueño (2026-10-07). **→ esquema** = cambia F3; **→ F*n*** = entra como está y se
+construye en esa fase.
+
 1. ¿El alta rápida exige cliente (nombre y WhatsApp) o alcanza con la patente? (`jobs.customer_id` NULL)
-2. ¿Dos clientes pueden compartir WhatsApp (familia)? (hoy único)
-3. ¿Se puede recibir un turno con la seña sin pagar? (R-O-010)
-4. ¿Se permite "retirado con deuda" (`FINALIZADO → RETIRADO` con saldo)? (R-O-026 vs D-003) — hoy no.
-5. Reversar la retención por demora: ¿revierte la cancelación? ¿adónde va la plata (devolución, crédito)?
-6. Cotizaciones: ¿un `A_COTIZAR` puede tener precio de referencia? ¿la agenda interna con precio a mano
-   es una cotización implícita o un override?
-7. ¿`Lavado completo + lavado de motor` es servicio o adicional? ¿`Otro` es un tamaño?
-8. Tasas reales de comisión de débito y crédito del Point.
-9. ¿Existen las ventanas manuales de lunes a jueves (`DISPONIBILIDAD_SEMANAL` vacía)?
-10. Apertura y cierre de caja: ¿hacen falta?
+   **Nombre y WhatsApp, normalmente.** La patente se pide solo cuando el auto está en el local (al paso o
+   turno pedido en el lugar); en los demás casos es invasivo pedirla. → entra: `bookings.vehicle_id` NULL,
+   `jobs.vehicle_id` NN (el job nace con el auto presente).
+2. ¿Dos clientes pueden compartir WhatsApp (familia)? **No: un teléfono por cliente.** Un cliente puede
+   tener muchos autos. → entra (único vivo por teléfono, `customer_vehicles` N).
+3. ¿Se puede recibir un turno con la seña sin pagar? (R-O-010) **Sí; el admin configura si la seña es
+   obligatoria.** → F4/F6 (configuración del negocio + guarda de recepción).
+4. ¿Se permite "retirado con deuda"? (R-O-026 vs D-003) **Sí, salvo que sea el primer servicio del
+   cliente.** Un cliente nuevo no retira con saldo; uno con lavados anteriores, sí. → **esquema** (adenda
+   del checkpoint).
+5. Reversar la retención por demora. **Si la seña es obligatoria y el cliente no avisó, la seña queda
+   para el negocio.** → entra (`DEPOSIT_RETAINED`); la reversión con motivo queda solo para corregir errores.
+6. ¿Precio de referencia en `A_COTIZAR`? **Precio fijo al que se suman recargos.** → entra
+   (`surcharge_cents`).
+7. ¿`Lavado completo + lavado de motor` es servicio o adicional? **Son servicios distintos que se suman.**
+   Cada admin define sus servicios y tamaños; lo del Sheet es un caso particular. → **esquema** (adenda
+   del checkpoint): un turno y un job llevan N servicios.
+8. Tasas de comisión del Point. **Se integra con la API de Mercado Pago más adelante.** → hasta entonces,
+   `commission_bps` cargado a mano; la integración es posterior a F7.
+9. ¿Ventanas manuales de lunes a jueves? **El admin decide días y horarios.** → F5.
+10. ¿Apertura y cierre de caja? **Mejor que esté disponible** (opcional). → F7.
+11. (adenda T2) Anular un cobro de un job cerrado. **Se registra aparte, el job no se reabre:** si no,
+    cualquier usuario puede manipular lo cobrado. → el job conserva su estado; la anulación lleva actor y
+    motivo; quién puede anular es F4 (roles).
+12. (adenda T3) ¿Una devolución con tarjeta recupera la comisión? **La devolución se hace por el medio
+    que prefiera el cliente** (tarjeta, efectivo o transferencia), aunque el cobro haya sido con tarjeta.
+    → entra: la `DEVOLUCION` se registra con el medio por el que se devuelve. Si la comisión de una
+    devolución a tarjeta se recupera se fija con la integración de Mercado Pago (post-F7).
 
 ---
 
@@ -639,3 +660,50 @@ pregunta 12.
 
 **Pregunta 12 para el dueño:** una devolución con tarjeta, ¿recupera la comisión del medio de pago?
 Hoy se calcula comisión también sobre la devolución (decisión de F7).
+
+## Adenda del checkpoint (2026-10-07) — respuestas 4, 7 y 11 del dueño
+
+Reabre la fase con el dueño (regla 5 del roadmap). `0003_dominio` no llegó a ninguna base desplegada:
+se corrige en el lugar, sin migración nueva.
+
+**C1 — Servicios que se suman (respuesta 7).** Un turno y un job llevan **N servicios**.
+
+| Tabla | Columnas propias | Constraints |
+|---|---|---|
+| `booking_items` | `booking_id` FK NN, `service_id` FK NN, `position` smallint NN, `service_name_snapshot` text NN, `duration_min` integer NN, `price_cents` bigint NULL, `deposit_bps` integer NN default 0 | `duration_min > 0`; `price_cents IS NULL OR price_cents > 0`; `deposit_bps BETWEEN 0 AND 10000`; `price_cents IS NOT NULL OR deposit_bps = 0`; único vivo `(tenant_id, booking_id, service_id)` |
+| `job_items` | `job_id` FK NN, `service_id` FK NN, `position` smallint NN, `service_name_snapshot` text NN, `duration_min` integer NN, `price_cents` bigint NN | `duration_min > 0`; `price_cents > 0`; único vivo `(tenant_id, job_id, service_id)` |
+
+- Salen `bookings.service_id`, `bookings.service_name_snapshot`, `bookings.deposit_bps`,
+  `jobs.service_id` y `jobs.service_name_snapshot`. El tamaño sigue en el turno y en el job: es del auto.
+- `bookings.duration_min`, `bookings.price_cents` y `bookings.deposit_required_cents` quedan como
+  **totales snapshot** de los ítems: los usa el `EXCLUDE` (`end_at`) y los CHECKs del turno. Duración =
+  suma; precio = suma, o NULL si hay un ítem a cotizar; seña = suma de `round_half_up(precio × bps)` por
+  ítem. `jobs.base_price_cents` = suma de los ítems del job.
+- **A lo sumo un servicio `A_COTIZAR` por turno o job.** `quotes.service_id` es ese servicio. Aceptar
+  la cotización recalcula los totales del turno; el ítem del turno **queda sin precio** (así se reconoce
+  al recibir, y una cotización de otro servicio se rechaza) y el ítem del job toma precio y duración
+  acordados.
+- Recibir copia los ítems del turno al job; un walk-in arma los suyos del catálogo (y de la cotización
+  suelta aceptada, si hay un ítem a cotizar). Agregar un servicio a un job ya recibido es F6.
+- `booking_items` y `job_items` son tablas de tenant: RLS forzado y FKs compuestas como las demás (B4–B7).
+
+**C2 — Retirar con deuda (respuesta 4).** `JOB_PICKED_UP` pasa a `COBRADO, FINALIZADO → RETIRADO`.
+Desde `FINALIZADO` con saldo derivado > 0, guarda: el job tiene cliente y el cliente tiene **otro job
+vivo `COBRADO` o `RETIRADO`** (no es su primer servicio). Sin cliente o primer servicio:
+`GuardFailedError`. El evento guarda `metadata.balance_due_cents`. La deuda no es una columna (X9): es un
+`RETIRADO` con saldo derivado > 0, y se cobra con `PAYMENT_RECORDED` sin cambiar el estado.
+
+**C3 — Anular un cobro de un job cerrado (respuesta 11).** Reemplaza la guarda de A1: anular un cobro de
+un `COBRADO`/`RETIRADO` **se permite** aunque deje saldo > 0. El job **no se reabre**: el estado queda y la
+diferencia es deuda derivada (C2). La anulación ya es un registro aparte (`PAYMENT_VOIDED` con actor y
+motivo, pago y movimiento de caja anulados, nunca borrados). Qué roles pueden anular es F4. La guarda de
+A11 sobre `DEVOLUCION` sigue: devolver plata no puede crear deuda.
+
+**Ronda de revisión del checkpoint (2026-10-07).** Una ronda de revisor adversarial y una verificación.
+
+| # | Hallazgo | Resolución |
+|---|---|---|
+| R1 | C2 se salteaba con C3: un cliente nuevo cobraba, se anulaba el cobro y el `COBRADO` con deuda se retiraba sin guarda; ese job además contaba como "servicio previo". | La guarda de C2 corre con saldo > 0 **desde cualquier origen**, y "servicio previo" es otro job `COBRADO`/`RETIRADO` **con saldo <= 0**. |
+| R2 | Un `FINALIZADO` con saldo a favor se retiraba sin pasar por `COBRADO`. | Desde `FINALIZADO`, `JOB_PICKED_UP` exige saldo > 0; con saldo a favor se devuelve primero. |
+| R3 | Al recibir un turno, la cotización no se comparaba contra el ítem a cotizar. | El ítem del turno queda sin precio al aceptar y la recepción exige que la cotización sea de ese ítem. |
+| R4 | `settled_at` queda NULL en un `RETIRADO` cuya deuda se cobró después. | **Diferido a F7** (caja y reportes): es coherente con C2 (cobrar la deuda no cambia el estado), y nada de F3 lee `settled_at`; F7 no debe usarlo para saber si un job está pago. |

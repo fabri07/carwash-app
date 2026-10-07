@@ -6,6 +6,7 @@ patentes `AB123CD`, emails `.invalid`. Nada sale de `docs/spec/` ni de `docs/leg
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
@@ -107,6 +108,7 @@ class Lavadero:
         *,
         inicio: datetime = T,
         servicio: uuid.UUID | None = None,
+        servicios: Sequence[uuid.UUID] | None = None,
         puesto: uuid.UUID | None = None,
         hold: datetime | None = None,
         vehiculo: uuid.UUID | None | object = ...,
@@ -120,7 +122,7 @@ class Lavadero:
             resource_id=puesto or self.puesto,
             start_at=inicio,
             customer_id=self.cliente,
-            service_id=servicio or self.lavado,
+            service_ids=servicios if servicios is not None else [servicio or self.lavado],
             vehicle_size_id=self.auto,
             vehicle_id=self.vehiculo if vehiculo is ... else vehiculo,  # type: ignore[arg-type]
             hold_expires_at=hold,
@@ -137,13 +139,21 @@ class Lavadero:
             booking_id=booking.id,
         )
 
-    async def walk_in(self, *, clave: str | None = None, llegada: datetime = T) -> Job:
+    async def walk_in(
+        self,
+        *,
+        clave: str | None = None,
+        llegada: datetime = T,
+        servicios: Sequence[uuid.UUID] | None = None,
+        cliente: uuid.UUID | None = None,
+    ) -> Job:
         return await self.jobs.receive(
             idempotency_key=clave or f"rec-{uuid.uuid4()}",
             arrived_at=llegada,
             vehicle_id=self.vehiculo,
             vehicle_size_id=self.auto,
-            service_id=self.lavado,
+            service_ids=servicios or [self.lavado],
+            customer_id=cliente,
             channel=Channel.CALLE,
         )
 

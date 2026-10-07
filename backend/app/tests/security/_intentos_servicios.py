@@ -191,7 +191,7 @@ def _walk_in(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
         "arrived_at": T,
         "vehicle_id": ib["vehiculo"],
         "vehicle_size_id": ib["auto"],
-        "service_id": ib["lavado"],
+        "service_ids": [ib["lavado"]],
         "channel": Channel.CALLE,
     }
     return lv.jobs.receive(**{**datos, **pisar})
@@ -205,7 +205,7 @@ def _turno_b(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
         "resource_id": ib["puesto"],
         "start_at": T + timedelta(days=3),
         "customer_id": ib["cliente"],
-        "service_id": ib["lavado"],
+        "service_ids": [ib["lavado"]],
         "vehicle_size_id": ib["auto"],
         "vehicle_id": ib["vehiculo"],
         "now": AHORA,
@@ -229,6 +229,9 @@ INTENTOS: dict[str, Intento] = {
     "job.get": Intento("job_presente", "jobs", lambda lv, ib, x: lv.jobs.get(x), "JobService.get"),
     "job.history": Intento(
         "job_presente", "jobs", lambda lv, ib, x: lv.jobs.history(x), "JobService.history"
+    ),
+    "job.items": Intento(
+        "job_presente", "jobs", lambda lv, ib, x: lv.jobs.items(x), "JobService.items"
     ),
     "job.balance": Intento(
         "job_finalizado", "jobs", lambda lv, ib, x: lv.jobs.balance(x), "JobService.balance"
@@ -328,7 +331,10 @@ INTENTOS: dict[str, Intento] = {
         "JobService.receive",
     ),
     "job.receive.service": Intento(
-        "lavado", "services", lambda lv, ib, x: _walk_in(lv, ib, service_id=x), "JobService.receive"
+        "lavado",
+        "services",
+        lambda lv, ib, x: _walk_in(lv, ib, service_ids=[x]),
+        "JobService.receive",
     ),
     "job.receive.customer": Intento(
         "cliente",
@@ -346,7 +352,7 @@ INTENTOS: dict[str, Intento] = {
         "quote_aceptado",
         "quotes",
         # servicio A_COTIZAR de B con la cotización ACEPTADO de A
-        lambda lv, ib, x: _walk_in(lv, ib, service_id=ib["tapizado"], quote_id=x),
+        lambda lv, ib, x: _walk_in(lv, ib, service_ids=[ib["tapizado"]], quote_id=x),
         "JobService.receive",
     ),
     "job.receive.responsible": Intento(
@@ -439,7 +445,7 @@ INTENTOS: dict[str, Intento] = {
     "booking.create.service": Intento(
         "lavado",
         "services",
-        lambda lv, ib, x: _turno_b(lv, ib, service_id=x),
+        lambda lv, ib, x: _turno_b(lv, ib, service_ids=[x]),
         "BookingService.create",
     ),
     "booking.create.vehicle_size": Intento(
