@@ -15,18 +15,20 @@ repo nuevo, infra portada a mano.
 Decisiones tomadas por el usuario en esta sesión:
 - **Alcance de la primera entrega:** núcleo operativo — turnero público, agenda, operación rápida, caja,
   clientes/vehículos — **más un mínimo de costos** (gastos, retiros, empleados y el resultado operativo),
-  porque sin eso el Sheet no se puede apagar. Comisiones automáticas, liquidaciones, analytics de empleados,
+  porque sin eso un negocio no puede dejar su planilla. Comisiones automáticas, liquidaciones, analytics de empleados,
   dashboard avanzado, WhatsApp y Mercado Pago quedan fuera (v2, alimentados por el uso real).
 - **Stack:** base Véktor (FastAPI + Next.js, Railway + Vercel).
 - **Fuente de la spec:** la planilla de Drive, que yo extraigo.
 - **Modo de trabajo:** equipos de agentes por fase, con checkpoint de aprobación humana al cierre de cada una.
 
-**Definición de "primera entrega" (criterio de éxito único):** Sola CleanCars opera una semana completa
-100% en la app, con el Sheet apagado como sistema operativo y conservado solo como backup histórico.
-El MVP **no** se declara terminado porque "la app funciona".
+**Definición de "primera entrega" (criterio de éxito único, actualizado 2026-10-07):** uno o dos
+negocios reales en beta (lavadero o taller de detailing) operan **una semana completa solo con la app**.
+Sola CleanCars fue la base para diseñar y es la fuente de las reglas de negocio, pero la app no depende
+de que Sola la use: puede ser uno de los negocios beta, no es requisito. El MVP **no** se declara
+terminado porque "la app funciona".
 
 **Orden de ejecución:**
-`F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Migración/go-live → F9 Productos y ventas`
+`F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Go-live beta → F9 Productos y ventas`
 
 No se escribe un modelo SQL ni una pantalla hasta que `docs/spec/02-reglas-negocio.md` esté congelado:
 ese archivo decide prácticamente todo lo que viene después.
@@ -271,48 +273,36 @@ el lavadero B no ve nada del lavadero A en ningún recurso.
 
 ---
 
-## Fase 4 — Configuración del negocio y onboarding
+## Fase 4 — Configuración del negocio, cuentas y onboarding
 
-**Objetivo:** que un dueño de lavadero pueda dar de alta su negocio solo, sin que vos toques la base.
+**Objetivo:** que un dueño de lavadero o de taller de detailing dé de alta su negocio solo, con su
+catálogo con precios, su marca y su equipo, sin que nadie toque la base.
 
-Alcance: datos del negocio (nombre, logo, dirección, WhatsApp, horarios, medios de pago, % de seña,
-política de cancelación) · tamaños de vehículo · catálogo de servicios con precio y duración por tamaño ·
-**wizard de alta guiado**, no un formulario de configuración.
+**Contrato:** `docs/adr/FASE-4-CONTRATO.md` (decisiones del dueño D4-1…D4-9, tablas, endpoints,
+permisos, aceptación).
 
-El onboarding no es cosmético: es el primer filtro de adopción. Un dueño de lavadero no es técnico.
-Arranca con una plantilla de servicios precargada que puede editar, no con una tabla vacía.
+Decisiones del dueño (2026-10-07):
+- **Admin y subcuentas:** el `OWNER` crea empleados con usuario y contraseña y les asigna un **perfil de
+  permisos editable** (Encargado, Cajero, Lavador vienen armados).
+- **Seña global:** un interruptor en Configuración la activa o desactiva para todos los servicios, con
+  un único %. Sin pagar, el auto se recibe igual y la seña queda en el saldo.
+- **Todo servicio tiene precio base por tamaño.** Los "a cotizar" muestran "desde $X"; la cotización
+  fija el final y la seña se calcula sobre el acordado. No hay plantillas sin precio.
+- **Base de vehículos:** marca, modelo, tipo de carrocería y color del mercado argentino, más lo que sume
+  cada negocio; la carrocería sugiere el tamaño.
+- **Ningún servicio fijo en el código:** el glosario del rubro (`docs/GLOSARIO-RUBRO.md`) alimenta
+  plantillas (solo términos `servicio`/`adicional`), sinónimos y el mapeo defecto → servicio. Búsqueda
+  tolerante sin tildes, en castellano o en inglés; sin librería de lenguaje natural.
+- **Personalización** con el patrón de app-gim: paletas curadas, tipografías, logo con paleta sugerida y
+  vista previa en vivo. **Registros** (tablas, filtros, CSV) con el patrón de Véktor, desde F7.
 
-**Lavaderos y talleres de detailing (decisión del dueño, 2026-10-07).** La app es para los dos rubros y
-**ningún servicio queda fijo en el código**: cada negocio define sus servicios, categorías, tamaños y
-precios. Lo que aporta la app es vocabulario del rubro, no un catálogo cerrado:
+**PRs:** 4.1 base de front + cuentas y permisos → 4.2 configuración, seña global y precio base →
+4.3 servicios, glosario y búsqueda ‖ 4.4 base de vehículos ‖ 4.5 personalización → 4.6 wizard de alta.
 
-- **Glosario del rubro** (`docs/GLOSARIO-RUBRO.md` → datos versionados en el backend): términos en
-  español rioplatense con sus equivalentes en inglés, que en detailing se usan tal cual (*ceramic coating*,
-  *PPF*, *paint correction*). Argentina primero; las variantes de otros países se suman después.
-- **Plantillas sugeridas** en el wizard: dos puntos de partida (lavadero, taller de detailing). El admin
-  tilda las que le sirven y edita nombre, precio y duración. Nada se crea sin que lo elija. Cada término
-  del glosario lleva un **tipo**: solo `servicio` y `adicional` se sugieren como ítems; una `tecnica`
-  ("clay bar") o un `defecto` ("swirls") nunca llegan al catálogo.
-- **Categorías de servicio definidas por el negocio** (`service_categories`, FK nullable en `services`:
-  aditivo, sin migración destructiva). Las plantillas proponen lavado, detailing exterior, interior y
-  protección.
-- **Búsqueda tolerante**: "ceramico" encuentra "Ceramic Coating", "ppf" encuentra "Film de protección
-  de pintura". Con `unaccent` + `pg_trgm` y los sinónimos del glosario, en capas: exacta, sinónimo,
-  prefijo, trigramas (glosario §13). Buscar un **defecto** ("sacar rayas") devuelve los servicios que lo
-  resuelven: es una relación muchos a muchos, no texto. Las dos extensiones las crea el
-  superusuario desde la Console de Railway, igual que `btree_gist` (X11 de F3).
-- No se usa una librería de lenguaje natural: para buscar y sugerir en un vocabulario acotado alcanza un
-  glosario curado, y una dependencia pesada no agrega precisión.
-
-**Equipo:**
-| T | Agente | Dueño de |
-|---|---|---|
-| T1 | Contrato-API | schemas + endpoints + OpenAPI congelado |
-| T2 | Backend-config ‖ Frontend-wizard ‖ Diseño-UI | `api/v1/`, `services/` ‖ `app/(protected)/configuracion/`, `features/onboarding/` ‖ design system, shadcn, tokens |
-| T3 | Tester-aislamiento ‖ Revisor-adversarial | | |
-
-**Checkpoint:** creás un lavadero ficticio de cero y cargás 5 servicios sin ayuda; creás un taller de
-detailing ficticio desde su plantilla, y buscás un servicio escribiéndolo sin tilde o en inglés.
+**Checkpoint:** alta de un lavadero y de un taller de detailing con el wizard; 5 servicios con precio;
+logo con paleta sugerida; un "Cajero" que entra con usuario, cambia la clave y no puede anular cobros
+ni editar precios; prender y apagar la seña; cargar un auto por marca y modelo con tamaño sugerido;
+buscar "ceramico", "ppf" y "sacar rayas".
 
 ---
 
@@ -420,9 +410,10 @@ Fuera de la entrega por completo: comisiones automáticas, liquidaciones y analy
 
 ## Fase 7B — Costos mínimos: gastos, retiros y empleados
 
-**Por qué está en la primera entrega y no en v2:** el criterio de éxito es que el Sheet se apague. Hoy esos
-procesos ya viven en el Sheet, así que dejarlos afuera obligaría a Sola CleanCars a seguir abriéndolo —
-y el MVP no se podría declarar terminado. Es la fase más chica de todas y existe únicamente para cerrar
+**Por qué está en la primera entrega y no en v2:** el criterio de éxito es que un negocio beta opere una
+semana solo con la app. Gastos, retiros y pagos a empleados son parte de la operación diaria (en Sola
+viven en la planilla), así que dejarlos afuera obligaría a llevarlos por fuera y el MVP no se podría
+declarar terminado. Es la fase más chica de todas y existe únicamente para cerrar
 esa brecha.
 
 **Alcance, deliberadamente mínimo — cuatro tablas planas y una cuenta:**
@@ -457,37 +448,34 @@ con tu cálculo a mano.
 
 ---
 
-## Fase 8 — Migración de Sola CleanCars y go-live
+## Fase 8 — Go-live con negocios beta
 
-**Objetivo:** el Sheet se apaga como sistema operativo.
+**Objetivo:** uno o dos negocios reales operan una semana completa solo con la app (criterio de éxito).
 
-1. **Script de migración** Sheet → Postgres: clientes, vehículos, turnos, registros, servicios, pagos,
-   gastos, retiros y empleados. Idempotente y re-ejecutable (se va a correr muchas veces antes de salir bien).
-2. **Reconciliación**: reporte automático que compara conteos y totales Sheet vs base y falla si no cuadran.
-   Sin esto la migración es un acto de fe.
-3. **Segundo tenant de prueba** cargado con datos sintéticos. El primer stress test real de aislamiento es
-   cuando entra el segundo lavadero — con uno solo, los bugs de tenancy no se ven.
-4. **Hardening**: `/security-review`, rate limits del turnero público, scrubbing de Sentry con
-   `_PATENTE_VALUE_RE` (**la patente es el PII fuerte de este dominio**, equivale al CUIT en Véktor),
-   backups verificados con una restauración de prueba.
-5. **Runbook operativo**: qué hacer si se cae un sábado a las 8am. Aunque seas vos, escrito.
-6. **Semana en paralelo**: Sheet y app conviviendo. Después, Sheet a solo-lectura.
+1. **Alta asistida de los negocios beta** con el wizard de F4. Si alguno viene de una planilla (Sola u
+   otro), un **importador opcional** de clientes y vehículos, idempotente y con reporte de conteos.
+2. **Dos tenants reales a la vez**: el primer stress test de aislamiento con datos reales.
+3. **Hardening**: `/security-review`, rate limits del turnero público, scrubbing de Sentry con
+   `_PATENTE_VALUE_RE` (**la patente es el PII fuerte de este dominio**), backups verificados con una
+   restauración de prueba.
+4. **Runbook operativo**: qué hacer si se cae un sábado a las 8am.
+5. **Semana de operación** acompañada, con un canal para reportar problemas.
 
 **Equipo:**
 | T | Agente | Dueño de |
 |---|---|---|
-| T1 | Contrato-migración | mapeo campo a campo Sheet → tabla, con las transformaciones |
-| T2 | Migrador ‖ Reconciliador ‖ Hardening | script ‖ reporte de diferencias ‖ security review + rate limits |
-| T3 | Tester-segundo-tenant ‖ Revisor-adversarial | | |
+| T1 | Contrato-go-live | checklist de alta, importador (si hace falta), runbook |
+| T2 | Importador ‖ Hardening | script ‖ security review + rate limits + backups |
+| T3 | Tester-dos-tenants ‖ Revisor-adversarial | | |
 
-**Checkpoint (el que importa):** una semana operando sin volver al Sheet.
+**Checkpoint (el que importa):** una semana operando solo con la app.
 
 ---
 
 ## Fase 9 — Productos, proveedores y ventas (después del go-live)
 
-**Por qué después de F8:** Sola CleanCars no vende productos hoy, así que no la obliga a abrir el Sheet
-(criterio de la primera entrega). Pero el rubro es **híbrido**: un taller de detailing presta servicios,
+**Por qué después de F8:** decisión del dueño (2026-10-07): la venta de productos no es requisito
+para que un negocio beta opere con la app. Pero el rubro es **híbrido**: un taller de detailing presta servicios,
 a veces vende un producto junto con el servicio y a veces vende solo productos. Sin esto la app no se
 puede ofrecer a ese nicho. Decisión del dueño, 2026-10-07.
 
