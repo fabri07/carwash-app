@@ -1,71 +1,26 @@
 {
   "components": {
     "schemas": {
-      "DummyResourceCreate": {
+      "ChangePasswordRequest": {
         "properties": {
-          "name": {
-            "maxLength": 200,
+          "current_password": {
+            "maxLength": 72,
             "minLength": 1,
-            "title": "Name",
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 72,
+            "minLength": 8,
+            "title": "New Password",
             "type": "string"
           }
         },
         "required": [
-          "name"
+          "current_password",
+          "new_password"
         ],
-        "title": "DummyResourceCreate",
-        "type": "object"
-      },
-      "DummyResourceResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "tenant_id",
-          "name",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "DummyResourceResponse",
-        "type": "object"
-      },
-      "DummyResourceUpdate": {
-        "properties": {
-          "name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "DummyResourceUpdate",
+        "title": "ChangePasswordRequest",
         "type": "object"
       },
       "ErrorCode": {
@@ -77,6 +32,10 @@
           "ORIGIN_NOT_ALLOWED",
           "INVALID_CREDENTIALS",
           "EMAIL_TAKEN",
+          "USERNAME_TAKEN",
+          "NAME_TAKEN",
+          "PROFILE_IN_USE",
+          "PASSWORD_CHANGE_REQUIRED",
           "CONFLICT",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
@@ -169,9 +128,10 @@
       },
       "LoginRequest": {
         "properties": {
-          "email": {
-            "format": "email",
-            "title": "Email",
+          "identifier": {
+            "maxLength": 254,
+            "minLength": 1,
+            "title": "Identifier",
             "type": "string"
           },
           "password": {
@@ -182,15 +142,26 @@
           }
         },
         "required": [
-          "email",
+          "identifier",
           "password"
         ],
         "title": "LoginRequest",
         "type": "object"
       },
       "MeResponse": {
-        "description": "Lo que devuelven registro, login, refresh y `/me`. **Nunca** los tokens (ADR-0009).",
+        "description": "Lo que devuelven registro, login, refresh y `/me`. **Nunca** los tokens (ADR-0009).\n\n`permissions`: lo que el usuario puede hacer ahora (el `OWNER`, todo). El frontend lo\nusa para ocultar menús y botones; la decisión real la toma el servidor en cada request.\n`must_change_password`: mientras sea `true`, solo responden `me`, `change-password`,\n`refresh` y `logout` (FASE-4-CONTRATO §2.3).",
         "properties": {
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
           "tenant": {
             "$ref": "#/components/schemas/TenantResponse"
           },
@@ -200,12 +171,14 @@
         },
         "required": [
           "user",
-          "tenant"
+          "tenant",
+          "permissions",
+          "must_change_password"
         ],
         "title": "MeResponse",
         "type": "object"
       },
-      "PaginatedResponse_DummyResourceResponse_": {
+      "PaginatedResponse_PermissionProfileResponse_": {
         "properties": {
           "has_more": {
             "readOnly": true,
@@ -214,7 +187,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/DummyResourceResponse"
+              "$ref": "#/components/schemas/PermissionProfileResponse"
             },
             "title": "Items",
             "type": "array"
@@ -239,7 +212,161 @@
           "offset",
           "has_more"
         ],
-        "title": "PaginatedResponse[DummyResourceResponse]",
+        "title": "PaginatedResponse[PermissionProfileResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_StaffResponse_": {
+        "properties": {
+          "has_more": {
+            "readOnly": true,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StaffResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "title": "PaginatedResponse[StaffResponse]",
+        "type": "object"
+      },
+      "Permission": {
+        "enum": [
+          "AGENDA_VER",
+          "TURNOS_GESTIONAR",
+          "JOBS_OPERAR",
+          "COBROS_REGISTRAR",
+          "COBROS_ANULAR",
+          "CAJA_VER",
+          "CATALOGO_EDITAR",
+          "PRECIOS_EDITAR",
+          "CLIENTES_VER",
+          "CLIENTES_EDITAR",
+          "GASTOS_REGISTRAR",
+          "REPORTES_VER"
+        ],
+        "title": "Permission",
+        "type": "string"
+      },
+      "PermissionProfileCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 40,
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ],
+        "title": "PermissionProfileCreate",
+        "type": "object"
+      },
+      "PermissionProfileResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "name",
+          "permissions",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PermissionProfileResponse",
+        "type": "object"
+      },
+      "PermissionProfileUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Permission"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions"
+          }
+        },
+        "title": "PermissionProfileUpdate",
         "type": "object"
       },
       "ReadyCheck": {
@@ -329,6 +456,180 @@
         "title": "Role",
         "type": "string"
       },
+      "StaffCreate": {
+        "description": "El dueño elige el usuario y una clave inicial; el empleado la cambia al entrar.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "password": {
+            "maxLength": 72,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "permission_profile_id": {
+            "format": "uuid",
+            "title": "Permission Profile Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password",
+          "permission_profile_id"
+        ],
+        "title": "StaffCreate",
+        "type": "object"
+      },
+      "StaffPasswordReset": {
+        "properties": {
+          "password": {
+            "maxLength": 72,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "StaffPasswordReset",
+        "type": "object"
+      },
+      "StaffResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "permission_profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Profile Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "username",
+          "email",
+          "role",
+          "permission_profile_id",
+          "must_change_password",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StaffResponse",
+        "type": "object"
+      },
+      "StaffUpdate": {
+        "description": "Campos ausentes no se tocan. `email: null` explícito borra el email.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "permission_profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Profile Id"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "title": "StaffUpdate",
+        "type": "object"
+      },
       "TenantResponse": {
         "properties": {
           "id": {
@@ -351,13 +652,32 @@
       "UserResponse": {
         "properties": {
           "email": {
-            "title": "Email",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "permission_profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Profile Id"
           },
           "role": {
             "$ref": "#/components/schemas/Role"
@@ -366,13 +686,26 @@
             "format": "uuid",
             "title": "Tenant Id",
             "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
           "id",
           "tenant_id",
           "email",
-          "role"
+          "username",
+          "role",
+          "permission_profile_id"
         ],
         "title": "UserResponse",
         "type": "object"
@@ -475,6 +808,88 @@
         "summary": "Readiness Check",
         "tags": [
           "Infra"
+        ]
+      }
+    },
+    "/v1/auth/change-password": {
+      "post": {
+        "description": "Verifica la clave actual, guarda la nueva y rota la sesión.\n\nSube `token_version`: las otras sesiones (otro celular, la que abrió el dueño al\nprobar) mueren; esta sigue con cookies nuevas. 400 y no 401 si la clave actual no\ncoincide: un 401 haría que el frontend intente refrescar la sesión.",
+        "operationId": "change_password_v1_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cambia la clave propia; obligatorio si la eligió el dueño",
+        "tags": [
+          "Auth"
         ]
       }
     },
@@ -588,7 +1003,7 @@
             "description": "Not Found"
           }
         },
-        "summary": "Usuario y tenant de la sesión actual",
+        "summary": "Usuario, tenant, permisos y si hay que cambiar la clave",
         "tags": [
           "Auth"
         ]
@@ -676,9 +1091,9 @@
         ]
       }
     },
-    "/v1/dummy-resources": {
+    "/v1/permission-profiles": {
       "get": {
-        "operationId": "list_dummy_resources_v1_dummy_resources_get",
+        "operationId": "list_permission_profiles_v1_permission_profiles_get",
         "parameters": [
           {
             "in": "query",
@@ -709,7 +1124,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_DummyResourceResponse_"
+                  "$ref": "#/components/schemas/PaginatedResponse_PermissionProfileResponse_"
                 }
               }
             },
@@ -756,13 +1171,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Dummy Resources",
+        "summary": "List Permission Profiles",
         "tags": [
-          "Dummy resources"
+          "Equipo"
         ]
       },
       "post": {
-        "operationId": "create_dummy_resource_v1_dummy_resources_post",
+        "operationId": "create_permission_profile_v1_permission_profiles_post",
         "parameters": [
           {
             "in": "header",
@@ -787,7 +1202,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DummyResourceCreate"
+                "$ref": "#/components/schemas/PermissionProfileCreate"
               }
             }
           },
@@ -798,7 +1213,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DummyResourceResponse"
+                  "$ref": "#/components/schemas/PermissionProfileResponse"
                 }
               }
             },
@@ -855,15 +1270,438 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Dummy Resource",
+        "summary": "Create Permission Profile",
         "tags": [
-          "Dummy resources"
+          "Equipo"
         ]
       }
     },
-    "/v1/dummy-resources/{id}": {
+    "/v1/permission-profiles/{id}": {
       "delete": {
-        "operationId": "delete_dummy_resource_v1_dummy_resources__id__delete",
+        "operationId": "delete_permission_profile_v1_permission_profiles__id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Permission Profile",
+        "tags": [
+          "Equipo"
+        ]
+      },
+      "get": {
+        "operationId": "get_permission_profile_v1_permission_profiles__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Permission Profile",
+        "tags": [
+          "Equipo"
+        ]
+      },
+      "patch": {
+        "operationId": "update_permission_profile_v1_permission_profiles__id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Permission Profile",
+        "tags": [
+          "Equipo"
+        ]
+      }
+    },
+    "/v1/staff": {
+      "get": {
+        "operationId": "list_staff_v1_staff_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_StaffResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Staff",
+        "tags": [
+          "Equipo"
+        ]
+      },
+      "post": {
+        "operationId": "create_staff_v1_staff_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Staff",
+        "tags": [
+          "Equipo"
+        ]
+      }
+    },
+    "/v1/staff/{id}": {
+      "delete": {
+        "operationId": "delete_staff_v1_staff__id__delete",
         "parameters": [
           {
             "in": "path",
@@ -921,13 +1759,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Dummy Resource",
+        "summary": "Delete Staff",
         "tags": [
-          "Dummy resources"
+          "Equipo"
         ]
       },
       "get": {
-        "operationId": "get_dummy_resource_v1_dummy_resources__id__get",
+        "operationId": "get_staff_v1_staff__id__get",
         "parameters": [
           {
             "in": "path",
@@ -945,7 +1783,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DummyResourceResponse"
+                  "$ref": "#/components/schemas/StaffResponse"
                 }
               }
             },
@@ -992,13 +1830,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Dummy Resource",
+        "summary": "Get Staff",
         "tags": [
-          "Dummy resources"
+          "Equipo"
         ]
       },
       "patch": {
-        "operationId": "update_dummy_resource_v1_dummy_resources__id__patch",
+        "operationId": "update_staff_v1_staff__id__patch",
         "parameters": [
           {
             "in": "path",
@@ -1015,7 +1853,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DummyResourceUpdate"
+                "$ref": "#/components/schemas/StaffUpdate"
               }
             }
           },
@@ -1026,7 +1864,100 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DummyResourceResponse"
+                  "$ref": "#/components/schemas/StaffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Staff",
+        "tags": [
+          "Equipo"
+        ]
+      }
+    },
+    "/v1/staff/{id}/reset-password": {
+      "post": {
+        "operationId": "reset_staff_password_v1_staff__id__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffPasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponse"
                 }
               }
             },
@@ -1073,9 +2004,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Dummy Resource",
+        "summary": "Reset Staff Password",
         "tags": [
-          "Dummy resources"
+          "Equipo"
         ]
       }
     }

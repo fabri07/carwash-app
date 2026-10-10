@@ -129,6 +129,9 @@ def test_los_checks_solo_de_postgres_son_los_que_sqlite_no_entiende():
         "ck_vehicles_patente_normalizada",
         "ck_job_events_reversion_con_motivo",
         "ck_cancellations_cierre_con_motivo",
+        # F4: regex y `<@` sobre `text[]`.
+        "ck_users_username_formato",
+        "ck_permission_profiles_permisos_conocidos",
     }
 
 

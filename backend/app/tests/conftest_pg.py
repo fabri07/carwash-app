@@ -171,11 +171,22 @@ async def pg_user_factory(pg_admin_engine: AsyncEngine, pg_clean: None) -> PgFac
 
     async def _make(tenant_id: uuid.UUID, email: str, role: Role = Role.OWNER) -> uuid.UUID:
         user_id = uuid.uuid4()
+        profile_id = uuid.uuid4() if role == Role.STAFF else None
         async with pg_admin_engine.begin() as conn:
+            if profile_id is not None:
+                # Un STAFF siempre tiene perfil (CHECK `perfil_segun_rol`, F4).
+                await conn.execute(
+                    text(
+                        "INSERT INTO permission_profiles (id, tenant_id, name, permissions) "
+                        "VALUES (:id, :t, :name, ARRAY['AGENDA_VER'])"
+                    ),
+                    {"id": profile_id, "t": tenant_id, "name": f"perfil {profile_id.hex[:8]}"},
+                )
             await conn.execute(
                 text(
-                    "INSERT INTO users (id, tenant_id, email, password_hash, role) "
-                    "VALUES (:id, :tenant_id, :email, :hash, :role)"
+                    "INSERT INTO users "
+                    "(id, tenant_id, email, password_hash, role, permission_profile_id) "
+                    "VALUES (:id, :tenant_id, :email, :hash, :role, :profile)"
                 ),
                 {
                     "id": user_id,
@@ -183,6 +194,7 @@ async def pg_user_factory(pg_admin_engine: AsyncEngine, pg_clean: None) -> PgFac
                     "email": email,
                     "hash": hash_password("correct-horse-battery"),
                     "role": role.value,
+                    "profile": profile_id,
                 },
             )
         return user_id
@@ -201,14 +213,18 @@ async def pg_tenant_b(pg_tenant_factory: PgFactory) -> uuid.UUID:
 
 
 @pytest_asyncio.fixture
-async def pg_dummy_de_a(pg_admin_engine: AsyncEngine, pg_tenant_a: uuid.UUID) -> uuid.UUID:
-    dummy_id = uuid.uuid4()
+async def pg_perfil_de_a(pg_admin_engine: AsyncEngine, pg_tenant_a: uuid.UUID) -> uuid.UUID:
+    """Perfil de permisos de A: el recurso de los tests cruzados (antes `dummy_resources`)."""
+    perfil_id = uuid.uuid4()
     async with pg_admin_engine.begin() as conn:
         await conn.execute(
-            text("INSERT INTO dummy_resources (id, tenant_id, name) VALUES (:id, :t, 'de A')"),
-            {"id": dummy_id, "t": pg_tenant_a},
+            text(
+                "INSERT INTO permission_profiles (id, tenant_id, name, permissions) "
+                "VALUES (:id, :t, 'de A', ARRAY['AGENDA_VER'])"
+            ),
+            {"id": perfil_id, "t": pg_tenant_a},
         )
-    return dummy_id
+    return perfil_id
 
 
 @pytest_asyncio.fixture

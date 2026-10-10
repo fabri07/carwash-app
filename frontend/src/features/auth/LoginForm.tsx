@@ -29,7 +29,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { identifier: "", password: "" },
   });
 
   async function submit(values: LoginInput) {
@@ -46,12 +46,21 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       <form onSubmit={form.handleSubmit(submit)} noValidate className="space-y-4">
         <FormField
           control={form.control}
-          name="email"
+          name="identifier"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>Email o usuario</FormLabel>
               <FormControl>
-                <Input type="email" autoComplete="email" inputMode="email" {...field} />
+                {/* `type="text"`: un usuario de empleado no es un email. `username`
+                    es el autocompletado correcto para los dos casos. */}
+                <Input
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

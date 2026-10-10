@@ -1,11 +1,12 @@
-"""Router central v1: `auth` y `dummy-resources`."""
+"""Router central v1."""
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, dummy_resources
+from app.api.v1 import auth, permission_profiles, staff
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(
-    dummy_resources.router, prefix="/dummy-resources", tags=["Dummy resources"]
+    permission_profiles.router, prefix="/permission-profiles", tags=["Equipo"]
 )
+api_router.include_router(staff.router, prefix="/staff", tags=["Equipo"])

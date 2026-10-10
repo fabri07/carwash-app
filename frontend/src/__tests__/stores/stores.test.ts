@@ -5,8 +5,17 @@ import { itemsOwnedBy, useOfflineQueueStore } from "@/stores/offlineQueueStore";
 import { TOAST_DURATION, toast, useToastStore } from "@/stores/toastStore";
 
 const session = {
-  user: { id: "u1", email: "a@b.com", role: "OWNER" as const, tenant_id: "t1" },
+  user: {
+    id: "u1",
+    email: "a@b.com",
+    role: "OWNER" as const,
+    tenant_id: "t1",
+    username: null,
+    permission_profile_id: null,
+  },
   tenant: { id: "t1", name: "Lavadero" },
+  permissions: [],
+  must_change_password: false,
 };
 
 describe("authStore", () => {
@@ -18,7 +27,12 @@ describe("authStore", () => {
 
   it("setSession guarda usuario y tenant y etiqueta Sentry sin email", () => {
     useAuthStore.getState().setSession(session);
-    expect(useAuthStore.getState()).toMatchObject(session);
+    expect(useAuthStore.getState()).toMatchObject({
+      user: session.user,
+      tenant: session.tenant,
+      permissions: [],
+      mustChangePassword: false,
+    });
     expect(Sentry.setUser).toHaveBeenCalledWith({ id: "u1" });
     expect(Sentry.setTag).toHaveBeenCalledWith("tenant_id", "t1");
   });
@@ -30,6 +44,22 @@ describe("authStore", () => {
     const persisted = JSON.parse(raw!) as { state: Record<string, unknown> };
     expect(Object.keys(persisted.state).sort()).toEqual(["tenant", "user"]);
     expect(raw).not.toMatch(/token/i);
+  });
+
+  it("permisos y cambio de clave viven en memoria: no se persisten (§2.3)", () => {
+    useAuthStore.getState().setSession({
+      ...session,
+      permissions: ["AGENDA_VER"],
+      must_change_password: true,
+    });
+    expect(useAuthStore.getState().permissions).toEqual(["AGENDA_VER"]);
+    expect(useAuthStore.getState().mustChangePassword).toBe(true);
+    const raw = window.localStorage.getItem("carwash_auth")!;
+    expect(raw).not.toMatch(/AGENDA_VER|mustChange|must_change/);
+    useAuthStore.getState().setMustChangePassword(false);
+    expect(useAuthStore.getState().mustChangePassword).toBe(false);
+    useAuthStore.getState().clear();
+    expect(useAuthStore.getState().permissions).toEqual([]);
   });
 
   it("clear limpia el estado y el contexto de Sentry", () => {

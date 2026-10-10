@@ -8,11 +8,15 @@ import {
   ChevronRight,
   Droplets,
   LayoutDashboard,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/authStore";
+import type { PermissionCode, User } from "@/types/api";
 
 /**
  * Navegación lateral. Reescrito (manifiesto de portado): de Véktor se toma la
@@ -26,12 +30,42 @@ export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** Encabezado del grupo. Ítems consecutivos con la misma sección van juntos. */
+  section?: string;
+  /** Se muestra solo a quien tiene este permiso (el OWNER los tiene todos). */
+  permission?: PermissionCode;
+  /** Solo el dueño (configuración del negocio y del equipo, Y5). */
+  ownerOnly?: boolean;
 }
 
-// Fase 2: sin dominio de lavadero. Las fases siguientes agregan acá.
+// Cada fase agrega acá sus pantallas, con el permiso que las habilita.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Inicio", href: "/dashboard", icon: LayoutDashboard },
+  {
+    label: "Equipo",
+    href: "/configuracion/equipo",
+    icon: Users,
+    section: "Configuración",
+    ownerOnly: true,
+  },
 ];
+
+/**
+ * Ítems que ve este usuario. Ocultar no es autorizar: el backend responde 403
+ * igual si alguien escribe la URL (FASE-4-CONTRATO §2.3). Sin usuario (store
+ * todavía vacío) solo quedan los ítems sin requisito.
+ */
+export function visibleNavItems(
+  items: NavItem[],
+  user: Pick<User, "role"> | null,
+  permissions: readonly PermissionCode[],
+): NavItem[] {
+  return items.filter((item) => {
+    if (item.ownerOnly && user?.role !== "OWNER") return false;
+    if (item.permission && !can(user, permissions, item.permission)) return false;
+    return true;
+  });
+}
 
 export function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -39,29 +73,44 @@ export function isActive(pathname: string, href: string): boolean {
 
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const user = useAuthStore((s) => s.user);
+  const permissions = useAuthStore((s) => s.permissions);
+  const items = visibleNavItems(NAV_ITEMS, user, permissions);
   return (
     <nav aria-label="Principal" className="flex flex-1 flex-col gap-1 p-2">
-      {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+      {items.map(({ label, href, icon: Icon, section }, i) => {
         const active = isActive(pathname, href);
+        const startsSection = section !== undefined && section !== items[i - 1]?.section;
         return (
-          <Link
-            key={href}
-            href={href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            title={collapsed ? label : undefined}
-            className={cn(
-              "flex min-h-touch items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              active
-                ? "bg-sidebar-accent text-sidebar-foreground"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-              collapsed && "justify-center px-0",
+          <div key={href} className="contents">
+            {startsSection && (
+              <p
+                className={cn(
+                  "mt-3 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/50",
+                  collapsed && "sr-only",
+                )}
+              >
+                {section}
+              </p>
             )}
-          >
-            <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-            <span className={cn(collapsed && "sr-only")}>{label}</span>
-          </Link>
+            <Link
+              href={href}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
+              title={collapsed ? label : undefined}
+              className={cn(
+                "flex min-h-touch items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active
+                  ? "bg-sidebar-accent text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                collapsed && "justify-center px-0",
+              )}
+            >
+              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span className={cn(collapsed && "sr-only")}>{label}</span>
+            </Link>
+          </div>
         );
       })}
     </nav>

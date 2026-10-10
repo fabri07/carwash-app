@@ -98,7 +98,14 @@ async def test_el_commit_ocurre_antes_de_enviar_la_respuesta(app_con_commits_rea
 
     event.listen(Session, "before_commit", _al_commitear)
     try:
-        await _llamar_asgi(app, "POST", "/v1/dummy-resources", {"name": "x"}, cookies, eventos)
+        await _llamar_asgi(
+            app,
+            "POST",
+            "/v1/permission-profiles",
+            {"name": "x", "permissions": []},
+            cookies,
+            eventos,
+        )
     finally:
         event.remove(Session, "before_commit", _al_commitear)
 
@@ -124,7 +131,14 @@ async def test_un_commit_que_falla_no_se_reporta_como_exito(app_con_commits_real
         # cabeceras de CORS y el navegador pueda leerlo), así que la app responde 500
         # en vez de explotar hacia afuera. Lo que el test cuida es lo mismo de antes y
         # se afirma más directo: un commit roto no puede terminar en 201.
-        await _llamar_asgi(app, "POST", "/v1/dummy-resources", {"name": "x"}, cookies, eventos)
+        await _llamar_asgi(
+            app,
+            "POST",
+            "/v1/permission-profiles",
+            {"name": "x", "permissions": []},
+            cookies,
+            eventos,
+        )
     finally:
         event.remove(Session, "before_commit", _falla)
     assert "status:201" not in eventos, f"se respondió 201 con el commit roto: {eventos}"

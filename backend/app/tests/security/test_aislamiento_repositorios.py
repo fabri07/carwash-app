@@ -25,6 +25,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -264,6 +265,42 @@ async def _cliente_con_historia(repo: Any, a: Lavadero, tenant_id: uuid.UUID) ->
     )
 
 
+async def _staff_de_a(repo: Any, a: Lavadero) -> uuid.UUID:
+    """Un `STAFF` de A con el perfil sembrado (F4). La receta de `users` es el OWNER, sin
+    perfil: los métodos de equipo necesitan un empleado. Se crea una sola vez por test."""
+    if "staff" not in a.ids:
+        users = Base.metadata.tables["users"]
+        a.ids["staff"] = uuid.uuid4()
+        await repo._session.execute(
+            insert(users).values(
+                id=a.ids["staff"],
+                tenant_id=a.tenant_id,
+                username=f"staff-{a.tenant_id.hex[:12]}",
+                password_hash="no-es-un-hash",
+                role="STAFF",
+                permission_profile_id=a.ids["permission_profiles"],
+            )
+        )
+    return a.ids["staff"]
+
+
+async def _equipo_de_a(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+    """`list_staff`: con el tenant A lista al empleado de A; con B, nada (ni lo cuenta)."""
+    await _staff_de_a(repo, a)
+    page = await repo.list_staff(tenant_id, limit=50, offset=0)
+    assert page.total == len(page.items)
+    return page
+
+
+async def _perfil_en_uso(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+    """`count_alive_staff` devuelve un número: se traduce a "encontró el perfil de A" si
+    cuenta al empleado de A, para compararlo como los demás casos."""
+    await _staff_de_a(repo, a)
+    perfil = a.ids["permission_profiles"]
+    n = await repo.count_alive_staff(perfil, tenant_id)
+    return [SimpleNamespace(id=perfil)] if n else None
+
+
 #: Cada caso recibe (repo, datos de A, tenant con el que se pregunta).
 CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("BookingRepository", "lock_expired_holds"): lambda r, a, t: r.lock_expired_holds(
@@ -308,6 +345,8 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
         a.ids["payments"], t
     ),
     ("UserRepository", "get_active"): lambda r, a, t: r.get_active(a.ids["users"], t),
+    ("UserRepository", "list_staff"): _equipo_de_a,
+    ("PermissionProfileRepository", "count_alive_staff"): _perfil_en_uso,
 }
 
 #: Métodos propios sin `tenant_id`, con el motivo por el que no cruzan.

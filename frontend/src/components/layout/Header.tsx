@@ -44,7 +44,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
   const tenant = useAuthStore((s) => s.tenant);
   const { logout, loggingOut } = useLogout();
 
-  const displayName = user?.email ?? "";
+  const displayName = user?.email ?? user?.username ?? "";
   const initials = getInitials(tenant?.name || displayName || "U");
 
   return (
