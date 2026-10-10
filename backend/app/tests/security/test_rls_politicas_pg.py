@@ -25,6 +25,7 @@ pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 TABLAS_TENANT = {t.name for t in Base.metadata.tables.values() if "tenant_id" in t.c}
 #: L3: `tenants` no tiene `tenant_id` (se aísla por `id`), pero también lleva RLS.
 TABLAS_CON_RLS = TABLAS_TENANT | {"tenants"}
+PERFILES = "/v1/permission-profiles"
 
 
 def _request_con_token(tenant_id: uuid.UUID) -> Request:
@@ -112,22 +113,24 @@ async def test_el_contexto_no_sobrevive_a_la_transaccion(pg_engine, pg_tenant_a)
         )
 
 
-async def test_rls_filtra_sin_ayuda_del_repositorio(pg_session_factory, pg_tenant_b, pg_dummy_de_a):
+async def test_rls_filtra_sin_ayuda_del_repositorio(
+    pg_session_factory, pg_tenant_b, pg_perfil_de_a
+):
     # SQL crudo, sin cláusula tenant_id: si RLS no estuviera cableado, esto devolvería 1.
     async with pg_session_factory() as session, session.begin():
         await set_tenant_context(session, pg_tenant_b)
-        assert await session.scalar(text("SELECT count(*) FROM dummy_resources")) == 0
+        assert await session.scalar(text("SELECT count(*) FROM permission_profiles")) == 0
 
 
-async def test_el_duenio_ve_lo_suyo(pg_session_factory, pg_tenant_a, pg_dummy_de_a):
+async def test_el_duenio_ve_lo_suyo(pg_session_factory, pg_tenant_a, pg_perfil_de_a):
     async with pg_session_factory() as session, session.begin():
         await set_tenant_context(session, pg_tenant_a)
-        assert await session.scalar(text("SELECT count(*) FROM dummy_resources")) == 1
+        assert await session.scalar(text("SELECT count(*) FROM permission_profiles")) == 1
 
 
-async def test_sin_contexto_no_hay_datos(pg_session_factory, pg_dummy_de_a):
+async def test_sin_contexto_no_hay_datos(pg_session_factory, pg_perfil_de_a):
     async with pg_session_factory() as session, session.begin():
-        assert await session.scalar(text("SELECT count(*) FROM dummy_resources")) == 0
+        assert await session.scalar(text("SELECT count(*) FROM permission_profiles")) == 0
         assert await session.scalar(text("SELECT count(*) FROM users")) == 0
 
 
@@ -139,7 +142,10 @@ async def test_with_check_impide_escribir_en_el_tenant_ajeno(
             async with session.begin():
                 await set_tenant_context(session, pg_tenant_b)
                 await session.execute(
-                    text("INSERT INTO dummy_resources (id, tenant_id, name) VALUES (:i, :t, 'x')"),
+                    text(
+                        "INSERT INTO permission_profiles (id, tenant_id, name, permissions) "
+                        "VALUES (:i, :t, 'x', ARRAY['AGENDA_VER'])"
+                    ),
                     {"i": uuid.uuid4(), "t": pg_tenant_a},
                 )
 
@@ -214,13 +220,18 @@ async def test_flujo_http_completo_con_rls(pg_client):
         json={"email": "pg@example.com", "password": "correct-horse-battery", "tenant": "PG"},
     )
     assert reg.status_code == 201, reg.text
-    creado = await pg_client.post("/v1/dummy-resources", json={"name": "uno"})
+    # El registro pasa por `provision_tenant`: el negocio nace con los 3 perfiles (§2.2).
+    defecto = (await pg_client.get(PERFILES)).json()
+    assert sorted(i["name"] for i in defecto["items"]) == ["Cajero", "Encargado", "Lavador"]
+    creado = await pg_client.post(PERFILES, json={"name": "uno", "permissions": ["AGENDA_VER"]})
     assert creado.status_code == 201, creado.text
-    listado = (await pg_client.get("/v1/dummy-resources")).json()
-    assert listado["total"] == 1
+    listado = (await pg_client.get(PERFILES)).json()
+    assert listado["total"] == 4
     replay = [
         await pg_client.post(
-            "/v1/dummy-resources", json={"name": "i"}, headers={"Idempotency-Key": "pg-k"}
+            PERFILES,
+            json={"name": "i", "permissions": ["AGENDA_VER"]},
+            headers={"Idempotency-Key": "pg-k"},
         )
         for _ in range(2)
     ]
@@ -229,11 +240,11 @@ async def test_flujo_http_completo_con_rls(pg_client):
 
     pg_client.cookies.clear()
     login = await pg_client.post(
-        "/v1/auth/login", json={"email": "pg@example.com", "password": "correct-horse-battery"}
+        "/v1/auth/login", json={"identifier": "pg@example.com", "password": "correct-horse-battery"}
     )
     assert login.status_code == 200, login.text
     assert (await pg_client.get("/v1/auth/me")).status_code == 200
-    borrado = await pg_client.delete(f"/v1/dummy-resources/{creado.json()['id']}")
+    borrado = await pg_client.delete(f"{PERFILES}/{creado.json()['id']}")
     assert borrado.status_code == 204
     dup = await pg_client.post(
         "/v1/auth/register",

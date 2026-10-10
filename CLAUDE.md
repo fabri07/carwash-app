@@ -19,8 +19,13 @@ salir de la app para hacerlo?* Si sí, entra. Si no, va a v2.
 
 **Fases 1 (spec), 2 (infraestructura) y 3 (dominio) completas.** Hay backend (FastAPI, auth con cookies
 httpOnly, RLS en todas las tablas, el dominio de turnos, jobs, cobros y cotizaciones con su aislamiento
-probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA). Todavía no hay endpoints
-ni pantallas del negocio: llegan desde la Fase 4 (contrato: `docs/adr/FASE-4-CONTRATO.md`).
+probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA).
+
+**Fase 4 en curso** (contrato: `docs/adr/FASE-4-CONTRATO.md`, 6 PRs). PR 4.1: cuentas de empleados
+(login usuario o email, cambio de clave obligatorio), perfiles de permisos editables
+(`require_permission`), `/configuracion/equipo` y la base de componentes del front (`SmartTable`,
+`MoneyInput`, etc.). Siguen 4.2 configuración y seña global → 4.3 servicios ‖ 4.4 vehículos ‖ 4.5
+personalización → 4.6 wizard.
 
 Roadmap completo: `docs/ROADMAP.md`.
 

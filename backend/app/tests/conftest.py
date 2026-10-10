@@ -32,12 +32,13 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine  # noqa: E402
 
 from app.config.settings import get_settings  # noqa: E402
+from app.domain.permissions import ALL_PERMISSIONS, Permission, sorted_permissions  # noqa: E402
 from app.domain.roles import Role  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.persistence.db.base import Base  # noqa: E402
 from app.persistence.db.redis import get_redis  # noqa: E402
 from app.persistence.db.session import get_db_session  # noqa: E402
-from app.persistence.models import DummyResource, Tenant, User  # noqa: E402
+from app.persistence.models import PermissionProfile, Tenant, User  # noqa: E402
 from app.utils import security as _security  # noqa: E402
 from app.utils.cookies import ACCESS_COOKIE  # noqa: E402
 from app.utils.security import create_access_token, hash_password  # noqa: E402
@@ -191,13 +192,47 @@ async def make_tenant(session: AsyncSession, name: str) -> Tenant:
     return tenant
 
 
-async def make_user(session: AsyncSession, tenant: Tenant, role: Role, email: str) -> User:
+async def make_profile(
+    session: AsyncSession,
+    tenant: Tenant,
+    name: str,
+    permissions: frozenset[Permission] | set[Permission] = ALL_PERMISSIONS,
+) -> PermissionProfile:
+    profile = PermissionProfile(
+        id=uuid.uuid4(),
+        tenant_id=tenant.id,
+        name=name,
+        permissions=[p.value for p in sorted_permissions(permissions)],
+    )
+    session.add(profile)
+    await session.flush()
+    return profile
+
+
+async def make_user(
+    session: AsyncSession,
+    tenant: Tenant,
+    role: Role,
+    email: str | None,
+    *,
+    username: str | None = None,
+    profile: PermissionProfile | None = None,
+    must_change_password: bool = False,
+) -> User:
+    """Un `STAFF` siempre tiene perfil (CHECK `perfil_segun_rol`): si no se pasa, se le crea
+    uno con todos los permisos, como el Encargado que recibieron los empleados de antes de
+    F4 en la migración 0004."""
+    if role == Role.STAFF and profile is None:
+        profile = await make_profile(session, tenant, f"Perfil {uuid.uuid4().hex[:8]}")
     user = User(
         id=uuid.uuid4(),
         tenant_id=tenant.id,
         email=email,
+        username=username,
         password_hash=hash_password(TEST_PASSWORD),
         role=role,
+        permission_profile_id=profile.id if profile is not None else None,
+        must_change_password=must_change_password,
     )
     session.add(user)
     await session.flush()
@@ -256,17 +291,15 @@ def staff_cookies(staff: User) -> dict[str, str]:
 
 
 @pytest_asyncio.fixture
-async def dummy_a(db_session: AsyncSession, tenant_a: Tenant) -> DummyResource:
-    """Recurso dummy del tenant A."""
-    dummy = DummyResource(id=uuid.uuid4(), tenant_id=tenant_a.id, name="dummy de A")
-    db_session.add(dummy)
-    await db_session.flush()
-    return dummy
+async def perfil_a(db_session: AsyncSession, tenant_a: Tenant) -> PermissionProfile:
+    """Perfil de permisos del tenant A: el recurso sobre el que corren los tests cruzados
+    (tomó el lugar de `dummy_resources`, FASE-4-CONTRATO Y12)."""
+    return await make_profile(db_session, tenant_a, "perfil de A", {Permission.AGENDA_VER})
 
 
 @pytest.fixture
-def id_de_a(dummy_a: DummyResource) -> uuid.UUID:
-    return dummy_a.id
+def id_de_a(perfil_a: PermissionProfile) -> uuid.UUID:
+    return perfil_a.id
 
 
 # Alias con los nombres de Véktor. `*_headers` llevan la cookie en el header

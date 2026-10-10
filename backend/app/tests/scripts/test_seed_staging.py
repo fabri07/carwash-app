@@ -125,11 +125,24 @@ async def test_seed_completa_el_dominio_de_un_staging_sembrado_en_fase_2(pg_admi
                 text("INSERT INTO tenants (id, name) VALUES (:id, :name)"),
                 {"id": tenant_id, "name": spec["name"]},
             )
-            for email, role in ((spec["owner"], "OWNER"), (spec["staff"], "STAFF")):
+            # Como queda después de la migración 0004: el STAFF de antes tiene Encargado.
+            perfil = uuid.uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO permission_profiles (id, tenant_id, name, permissions) "
+                    "VALUES (:id, :t, 'Encargado', ARRAY['AGENDA_VER'])"
+                ),
+                {"id": perfil, "t": tenant_id},
+            )
+            for email, role, profile in (
+                (spec["owner"], "OWNER", None),
+                (spec["staff"], "STAFF", perfil),
+            ):
                 await conn.execute(
                     text(
-                        "INSERT INTO users (id, tenant_id, email, password_hash, role) "
-                        "VALUES (:id, :t, :email, :hash, :role)"
+                        "INSERT INTO users "
+                        "(id, tenant_id, email, password_hash, role, permission_profile_id) "
+                        "VALUES (:id, :t, :email, :hash, :role, :profile)"
                     ),
                     {
                         "id": uuid.uuid4(),
@@ -137,6 +150,7 @@ async def test_seed_completa_el_dominio_de_un_staging_sembrado_en_fase_2(pg_admi
                         "email": email,
                         "hash": hash_password("x"),
                         "role": role,
+                        "profile": profile,
                     },
                 )
 
@@ -145,9 +159,7 @@ async def test_seed_completa_el_dominio_de_un_staging_sembrado_en_fase_2(pg_admi
     assert "dominio sembrado" in corrida.stdout
     conteos = await _conteos(pg_admin_engine)
     assert conteos["tenants"] == len(seed_staging.TENANTS)
-    vacias = [
-        t for t, n in conteos.items() if n == 0 and t not in {"dummy_resources", "idempotency_keys"}
-    ]
+    vacias = [t for t, n in conteos.items() if n == 0 and t not in {"idempotency_keys"}]
     assert not vacias, f"el seed no completó: {vacias}"
     async with pg_admin_engine.connect() as conn:
         por_tenant = await conn.scalar(text("SELECT count(DISTINCT tenant_id) FROM job_events"))

@@ -1,9 +1,19 @@
 /**
  * @jest-environment node
  */
+import fs from "node:fs";
+import path from "node:path";
 import { NextRequest } from "next/server";
 
-import { config, cookieNames, hasSession, isJwtShaped, middleware, readJwtExp } from "@/middleware";
+import {
+  config,
+  cookieNames,
+  hasSession,
+  isJwtShaped,
+  middleware,
+  PROTECTED_PREFIXES,
+  readJwtExp,
+} from "@/middleware";
 
 const APP = "https://app.carwash.app";
 
@@ -61,6 +71,30 @@ describe("middleware (ADR-0009)", () => {
   it("no rebota desde /login?expired=1 aunque queden cookies (evita el loop)", () => {
     const res = middleware(req("/login?expired=1", { refresh_token: jwt({ exp: future }) }));
     expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("protege configuración, onboarding y el cambio de clave (FASE 4)", () => {
+    for (const p of ["/configuracion/equipo", "/onboarding", "/cambiar-clave"]) {
+      const res = middleware(req(p));
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toBe(`${APP}/login?next=${encodeURIComponent(p)}`);
+      expect(middleware(req(p, { access_token: jwt({ exp: future }) })).status).toBe(200);
+    }
+    expect(middleware(req("/configuracionx")).headers.get("location")).toBeNull();
+  });
+
+  it("toda carpeta de ruta con sesión está cubierta por un prefijo protegido", () => {
+    // Una pantalla nueva bajo `(protected)` o `(account)` sin prefijo acá le
+    // mandaría el HTML al anónimo.
+    const app = path.resolve(__dirname, "../app");
+    const rutas = ["(protected)", "(account)"].flatMap((group) =>
+      fs
+        .readdirSync(path.join(app, group), { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => `/${d.name}`),
+    );
+    expect(rutas.length).toBeGreaterThanOrEqual(3);
+    for (const r of rutas) expect(PROTECTED_PREFIXES).toContain(r);
   });
 
   it("no toca rutas públicas", () => {

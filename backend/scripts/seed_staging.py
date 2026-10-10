@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Seed SINTÉTICO de staging — ADR-0012, punto 3.
 
-Crea dos tenants de mentira, cada uno con un OWNER, un STAFF, recursos dummy y el
-dominio del lavadero. Todo es inventado: emails bajo el dominio reservado `.invalid`
+Crea dos tenants de mentira, cada uno con un OWNER, un STAFF (Cajero, entra con usuario)
+y el dominio del lavadero. El alta pasa por `provision_tenant` (FASE-4-CONTRATO Y3).
+Todo es inventado: emails bajo el dominio reservado `.invalid`
 (RFC 2606), clientes sin nombres de personas ("Cliente Demo n"), y teléfonos y patentes
 **inconfundiblemente falsos**: `11 0000-00xx` (`+549110000xxxx`, una numeración que no se
 asigna) y `ZZ0xxZZ` (serie Mercosur que no se emitirá en décadas). Pasan los CHECK de
@@ -66,6 +67,7 @@ from app.application.services import (  # noqa: E402
     QuoteService,
     VehicleService,
 )
+from app.application.services.tenant_provisioning import provision_tenant  # noqa: E402
 from app.domain.enums import (  # noqa: E402
     BookingSource,
     Channel,
@@ -76,9 +78,7 @@ from app.domain.enums import (  # noqa: E402
 from app.domain.roles import Role  # noqa: E402
 from app.persistence.models.agenda import Booking  # noqa: E402
 from app.persistence.models.catalog import VehicleSize  # noqa: E402
-from app.persistence.models.dummy_resource import DummyResource  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
-from app.persistence.models.tenant import Tenant  # noqa: E402
 from app.persistence.models.user import User  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
@@ -97,13 +97,13 @@ TENANTS: list[dict[str, object]] = [
         "name": "Lavadero Demo Norte",
         "owner": "owner@norte.staging.invalid",
         "staff": "staff@norte.staging.invalid",
-        "recursos": ["Recurso de prueba A", "Recurso de prueba B"],
+        "staff_username": "cajero.norte",
     },
     {
         "name": "Lavadero Demo Sur",
         "owner": "owner@sur.staging.invalid",
         "staff": "staff@sur.staging.invalid",
-        "recursos": ["Recurso de prueba C"],
+        "staff_username": "cajero.sur",
     },
 ]
 
@@ -150,6 +150,9 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
         ).all()
         for user in users:
             user.password_hash = pw_hash
+            # Staging sembrado antes de F4: el empleado todavía no tenía usuario.
+            if user.role == Role.STAFF and user.username is None:
+                user.username = str(spec["staff_username"])
         await session.flush()
         _p(f"{spec['name']}: ya existe; contraseña actualizada en {len(users)} usuarios")
         # Un staging sembrado antes de la Fase 3 tiene el tenant pero no el dominio.
@@ -162,28 +165,27 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
             _p(f"{spec['name']}: dominio sembrado")
         return
 
-    # El contexto va ANTES del INSERT del tenant: la política de `tenants` es
-    # `id = app.tenant_id` también en el WITH CHECK.
-    tenant_id = uuid.uuid4()
-    await _set_tenant(session, tenant_id)
-    tenant = Tenant(id=tenant_id, name=str(spec["name"]))
-    session.add(tenant)
-    await session.flush()
-
-    nuevos = {
-        role: User(tenant_id=tenant.id, email=email, password_hash=pw_hash, role=role)
-        for email, role in emails.items()
-    }
-    session.add_all(nuevos.values())
-    recursos = spec["recursos"]
-    assert isinstance(recursos, list)
-    session.add_all(DummyResource(tenant_id=tenant.id, name=str(n)) for n in recursos)
+    # El mismo camino que el registro: tenant, OWNER y perfiles por defecto.
+    provisioned = await provision_tenant(
+        session, name=str(spec["name"]), owner_email=owner_email, owner_password_hash=pw_hash
+    )
+    tenant = provisioned.tenant
+    # Sin `must_change_password`: es una cuenta de prueba compartida, con la clave del seed.
+    staff = User(
+        tenant_id=tenant.id,
+        email=str(spec["staff"]),
+        username=str(spec["staff_username"]),
+        password_hash=pw_hash,
+        role=Role.STAFF,
+        permission_profile_id=provisioned.profiles["Cajero"].id,
+    )
+    session.add(staff)
     # Una clave de idempotencia de ejemplo: el test de cobertura del seed exige
     # al menos una fila en TODA tabla con tenant_id, y esta también lo es.
     session.add(IdempotencyKey(tenant_id=tenant.id, key=f"seed-{tenant.id}", action="seed"))
     await session.flush()
-    await _seed_domain(session, tenant.id, nuevos[Role.OWNER].id, nuevos[Role.STAFF].id)
-    _p(f"{spec['name']}: creado (2 usuarios, {len(recursos)} recursos, dominio sembrado)")
+    await _seed_domain(session, tenant.id, provisioned.owner.id, staff.id)
+    _p(f"{spec['name']}: creado (2 usuarios, 3 perfiles, dominio sembrado)")
 
 
 def _en(minutos: int) -> datetime:

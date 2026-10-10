@@ -28,7 +28,14 @@ function respond(config: InternalAxiosRequestConfig, status: number, data: unkno
   return Promise.resolve(response);
 }
 
-const user = { id: "u1", email: "a@b.com", role: "OWNER" as const, tenant_id: "t1" };
+const user = {
+  id: "u1",
+  email: "a@b.com",
+  role: "OWNER" as const,
+  tenant_id: "t1",
+  username: null,
+  permission_profile_id: null,
+};
 
 describe("lib/api", () => {
   let apiHandler: Handler;
@@ -135,6 +142,23 @@ describe("lib/api", () => {
     apiHandler = (config) => respond(config, 403);
     await expect(api.get("/x")).rejects.toMatchObject({ response: { status: 403 } });
     expect(refreshHandler).not.toHaveBeenCalled();
+  });
+
+  it("un 403 PASSWORD_CHANGE_REQUIRED lleva a /cambiar-clave y marca el store (§2.3)", async () => {
+    window.history.pushState({}, "", "/dashboard");
+    apiHandler = (config) =>
+      respond(config, 403, { detail: { code: "PASSWORD_CHANGE_REQUIRED", message: "x" } });
+    await expect(api.get("/staff")).rejects.toMatchObject({ response: { status: 403 } });
+    expect(useAuthStore.getState().mustChangePassword).toBe(true);
+    expect(assignSpy).toHaveBeenCalledWith("/cambiar-clave");
+    expect(refreshHandler).not.toHaveBeenCalled();
+
+    // Ya en la pantalla: no recarga.
+    assignSpy.mockClear();
+    window.history.pushState({}, "", "/cambiar-clave");
+    await expect(api.get("/staff")).rejects.toBeInstanceOf(AxiosError);
+    expect(assignSpy).not.toHaveBeenCalled();
+    useAuthStore.setState({ mustChangePassword: false });
   });
 
   it("un 5xx deja breadcrumb y no fabrica un evento propio", async () => {

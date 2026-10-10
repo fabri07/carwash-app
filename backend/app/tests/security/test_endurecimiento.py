@@ -48,8 +48,8 @@ def test_scrub_limpia_el_message_de_los_breadcrumbs():
 @pytest.mark.parametrize(
     "body",
     [
-        {"email": "a\x00b@example.com", "password": PASSWORD},
-        {"email": "ok@example.com", "password": "abc\x00defgh"},
+        {"identifier": "a\x00b@example.com", "password": PASSWORD},
+        {"identifier": "ok@example.com", "password": "abc\x00defgh"},
     ],
     ids=["nul-en-email", "nul-en-password"],
 )
@@ -66,17 +66,22 @@ async def test_password_de_mas_de_72_bytes_es_422(client):
     largo = {"email": "largo@example.com", "password": "ñ" * 37, "tenant": "T"}
     assert (await client.post("/v1/auth/register", json=largo)).status_code == 422
     assert (
-        await client.post("/v1/auth/login", json={"email": "x@example.com", "password": "a" * 73})
+        await client.post(
+            "/v1/auth/login", json={"identifier": "x@example.com", "password": "a" * 73}
+        )
     ).status_code == 422
 
 
 # ── H2 · el log de validación no trae lo que mandó el cliente ─────────────────
 
 
-async def test_password_en_el_campo_email_no_aparece_en_el_log(client, caplog):
+async def test_password_en_el_campo_identifier_no_aparece_en_el_log(client, caplog):
+    # Desde F4 el `identifier` es texto libre (email o usuario): una clave pegada ahí por
+    # error ya no es inválida por formato. Se fuerza el 422 con el largo (> 254) para que
+    # la clave llegue al validador y se verifique que el log no la arrastra.
     secreto = "MiClaveSecreta-987"
     with caplog.at_level(logging.WARNING):
-        r = await client.post("/v1/auth/login", json={"email": secreto, "password": "x"})
+        r = await client.post("/v1/auth/login", json={"identifier": secreto * 20, "password": "x"})
     assert r.status_code == 422
     assert "request.body_validation_error" in caplog.text
     assert secreto not in caplog.text
@@ -261,7 +266,7 @@ async def test_ids_de_correlacion_validos_se_respetan(client):
 
 async def test_prefijo_de_cookies(settings_env, client, owner):
     settings_env(COOKIE_NAME_PREFIX="stg_")
-    r = await client.post("/v1/auth/login", json={"email": owner.email, "password": PASSWORD})
+    r = await client.post("/v1/auth/login", json={"identifier": owner.email, "password": PASSWORD})
     nombres = {c.split("=", 1)[0] for c in r.headers.get_list("set-cookie")}
     assert nombres == {"stg_access_token", "stg_refresh_token"}
     me = await client.get(

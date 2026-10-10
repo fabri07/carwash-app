@@ -45,4 +45,4 @@ def test_toda_ruta_con_sesion_depende_de_current_user():
 
 def test_el_detector_ve_las_dependencias_anidadas():
     rutas = {r.path: r for r in create_app().routes if isinstance(r, APIRoute)}
-    assert get_current_user in _llamadas(rutas["/v1/dummy-resources/{id}"].dependant)
+    assert get_current_user in _llamadas(rutas["/v1/permission-profiles/{id}"].dependant)

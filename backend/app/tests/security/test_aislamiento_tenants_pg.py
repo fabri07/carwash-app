@@ -47,6 +47,7 @@ TABLAS_TENANT = sorted(t.name for t in Base.metadata.tables.values() if "tenant_
 #: Append-only (FASE-3-CONTRATO X8): el runtime solo tiene SELECT e INSERT.
 APPEND_ONLY = {"job_events"}
 PASSWORD = "correct-horse-battery"
+PERFILES = "/v1/permission-profiles"
 
 
 @pytest.fixture
@@ -82,7 +83,8 @@ def _cookies(user_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, str]:
 async def test_las_tablas_cubiertas_son_las_esperadas():
     # si aparece una tabla con tenant nueva, los tests de abajo la recorren sola; y si
     # `poblar` no sabe llenarla, `sembrado` falla con el nombre (no la saltea)
-    assert set(TABLAS_TENANT) >= {"users", "dummy_resources", "idempotency_keys"}
+    assert set(TABLAS_TENANT) >= {"users", "permission_profiles", "idempotency_keys"}
+    assert "dummy_resources" not in TABLAS_TENANT  # salió en 0004 (Y12)
     assert set(TABLAS_TENANT) == set(RECETAS)
 
 
@@ -133,7 +135,8 @@ async def test_con_tenant_a_solo_se_ve_a(pg_session_factory, sembrado, tabla):
 
 
 def _unicos_globales(tabla: Table) -> set[str]:
-    """Columnas con un único que NO incluye `tenant_id` (hoy solo `users.email`)."""
+    """Columnas con un único que NO incluye `tenant_id` (hoy `users.email` y, desde F4,
+    `users.username`)."""
     columnas: set[str] = set()
     for restriccion in tabla.constraints:
         if isinstance(restriccion, UniqueConstraint | PrimaryKeyConstraint):
@@ -162,7 +165,15 @@ async def _insert_en(
     async with admin.connect() as conn:
         fila = dict((await conn.execute(select(t).where(t.c.id == molde))).mappings().one())
     for columna in _unicos_globales(t):
-        fila[columna] = f"intruso-{nuevo.hex[:12]}@ejemplo.invalid"
+        if fila[columna] is None:
+            continue  # NULL no choca con ningún único
+        # `username` no admite `@` (CHECK `username_formato`): un valor válido por columna,
+        # para que lo único que pueda rechazar la fila sea la política.
+        fila[columna] = (
+            f"intruso-{nuevo.hex[:12]}"
+            if columna == "username"
+            else f"intruso-{nuevo.hex[:12]}@ejemplo.invalid"
+        )
     fila.update(id=nuevo, tenant_id=tenant)
     return insert(t).values(**fila)
 
@@ -212,13 +223,16 @@ async def _foto(admin: AsyncEngine, tabla: str, fila_id: uuid.UUID) -> str | Non
 @pytest.mark.parametrize("tabla", sorted(set(TABLAS_TENANT) - APPEND_ONLY))
 async def test_update_sobre_filas_de_b_no_toca_nada(pg_engine, pg_admin_engine, sembrado, tabla):
     """Toda tabla escribible: el UPDATE sobre la fila de B afecta 0 filas y la fila, vista por
-    el superusuario, queda idéntica. `SET id = id` vale para toda tabla; `dummy_resources` y
-    `users` conservan además el UPDATE "de verdad" que tenía el test de F2."""
+    el superusuario, queda idéntica. `SET id = id` vale para toda tabla; `permission_profiles`
+    (antes `dummy_resources`) y `users` conservan además el UPDATE "de verdad" de F2."""
     a, b = sembrado["a"], sembrado["b"]
     antes = await _foto(pg_admin_engine, tabla, b[tabla])
     sentencias = [f"UPDATE {tabla} SET id = id WHERE id = :i"]
-    if tabla == "dummy_resources":
-        sentencias.append("UPDATE dummy_resources SET name = 'pisado' WHERE id = :i")
+    if tabla == "permission_profiles":
+        sentencias.append("UPDATE permission_profiles SET name = 'pisado' WHERE id = :i")
+        sentencias.append(
+            "UPDATE permission_profiles SET permissions = ARRAY['COBROS_ANULAR'] WHERE id = :i"
+        )
     if tabla == "users":
         sentencias.append("UPDATE users SET token_version = 99 WHERE id = :i")
     async with pg_engine.connect() as conn, conn.begin():
@@ -236,7 +250,7 @@ async def test_el_rol_de_runtime_no_puede_borrar_filas(pg_engine, sembrado):
         with pytest.raises(DBAPIError, match="permission denied"):
             async with conn.begin():
                 await conn.execute(text(f"SET LOCAL app.tenant_id = '{sembrado['b']['tenant']}'"))
-                await conn.execute(text("DELETE FROM dummy_resources"))
+                await conn.execute(text("DELETE FROM permission_profiles"))
 
 
 async def test_tabla_tenants_tiene_rls_y_el_rol_de_runtime_solo_ve_y_edita_el_propio(
@@ -291,7 +305,7 @@ async def test_request_de_a_no_deja_el_tenant_en_la_conexion(
     a, b = sembrado["a"], sembrado["b"]
     pid_antes, *_ = await _estado_de_la_conexion(pg_session_factory)
 
-    r = await pg_client.get("/v1/dummy-resources", cookies=_cookies(a["users"], a["tenant"]))
+    r = await pg_client.get(PERFILES, cookies=_cookies(a["users"], a["tenant"]))
     assert r.status_code == 200 and r.json()["total"] == 1
 
     pid, tenant, _, filas = await _estado_de_la_conexion(pg_session_factory)
@@ -300,8 +314,8 @@ async def test_request_de_a_no_deja_el_tenant_en_la_conexion(
     assert filas == 0
 
     # y el request siguiente, de B, por la misma conexión, ve solo lo de B
-    r = await pg_client.get("/v1/dummy-resources", cookies=_cookies(b["users"], b["tenant"]))
-    assert [i["id"] for i in r.json()["items"]] == [str(b["dummy_resources"])]
+    r = await pg_client.get(PERFILES, cookies=_cookies(b["users"], b["tenant"]))
+    assert [i["id"] for i in r.json()["items"]] == [str(b["permission_profiles"])]
     pid_b, tenant_b, _, filas_b = await _estado_de_la_conexion(pg_session_factory)
     assert pid_b == pid_antes and tenant_b in (None, "") and filas_b == 0
 
@@ -311,7 +325,7 @@ async def test_request_que_falla_tampoco_deja_el_tenant(pg_client, pg_session_fa
     pid_antes, *_ = await _estado_de_la_conexion(pg_session_factory)
     # 404 levantado DENTRO de la transacción, después del SET LOCAL → rollback
     r = await pg_client.get(
-        f"/v1/dummy-resources/{b['dummy_resources']}", cookies=_cookies(a["users"], a["tenant"])
+        f"{PERFILES}/{b['permission_profiles']}", cookies=_cookies(a["users"], a["tenant"])
     )
     assert r.status_code == 404
     pid, tenant, _, filas = await _estado_de_la_conexion(pg_session_factory)
@@ -323,9 +337,9 @@ async def test_request_sin_cookie_tras_uno_autenticado_no_hereda(
 ):
     a = sembrado["a"]
     assert (
-        await pg_client.get("/v1/dummy-resources", cookies=_cookies(a["users"], a["tenant"]))
+        await pg_client.get(PERFILES, cookies=_cookies(a["users"], a["tenant"]))
     ).status_code == 200
-    assert (await pg_client.get("/v1/dummy-resources")).status_code == 401
+    assert (await pg_client.get(PERFILES)).status_code == 401
     _, tenant, _, filas = await _estado_de_la_conexion(pg_session_factory)
     assert tenant in (None, "") and filas == 0
 
@@ -446,7 +460,7 @@ async def test_login_fija_el_tenant_y_solo_ve_el_usuario_propio(
 
     monkeypatch.setattr(auth, "_me", espia)
     r = await pg_client.post(
-        "/v1/auth/login", json={"email": "owner-a@rls.example.com", "password": PASSWORD}
+        "/v1/auth/login", json={"identifier": "owner-a@rls.example.com", "password": PASSWORD}
     )
     assert r.status_code == 200, r.text
     assert visto["tenant"] == str(sembrado["a"]["tenant"])
@@ -464,7 +478,7 @@ async def test_login_fija_el_tenant_y_solo_ve_el_usuario_propio(
 async def test_login_fallido_no_deja_contexto(
     pg_client, pg_session_factory, sembrado, email, password
 ):
-    r = await pg_client.post("/v1/auth/login", json={"email": email, "password": password})
+    r = await pg_client.post("/v1/auth/login", json={"identifier": email, "password": password})
     assert r.status_code == 401
     _, tenant, lookup, filas = await _estado_de_la_conexion(pg_session_factory)
     assert tenant in (None, "") and lookup in (None, "", "off") and filas == 0
@@ -477,7 +491,7 @@ async def test_login_con_cookie_de_otro_tenant_no_mezcla_contextos(
     a, b = sembrado["a"], sembrado["b"]
     r = await pg_client.post(
         "/v1/auth/login",
-        json={"email": "owner-a@rls.example.com", "password": PASSWORD},
+        json={"identifier": "owner-a@rls.example.com", "password": PASSWORD},
         cookies=_cookies(b["users"], b["tenant"]),
     )
     assert r.status_code == 200

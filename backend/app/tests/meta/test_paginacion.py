@@ -15,11 +15,15 @@ def _rutas_de_coleccion(app):
             continue
         modelo = r.response_model
         es_generico_paginado = isinstance(modelo, type) and issubclass(modelo, PaginatedResponse)
-        tiene_items = (
-            isinstance(modelo, type)
-            and issubclass(modelo, BaseModel)
-            and any(get_origin(f.annotation) is list for f in modelo.model_fields.values())
+        # Una colección es un modelo con `items: list[...]`. No alcanza con "tiene algún
+        # campo lista": `/auth/me` y un perfil llevan `permissions: list[...]` y son un
+        # solo recurso (F4).
+        campos = (
+            modelo.model_fields
+            if isinstance(modelo, type) and issubclass(modelo, BaseModel)
+            else {}
         )
+        tiene_items = "items" in campos and get_origin(campos["items"].annotation) is list
         if es_generico_paginado or tiene_items or get_origin(modelo) is list:
             yield r
 

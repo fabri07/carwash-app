@@ -72,12 +72,15 @@ Receta = Callable[[_Contexto], dict[str, Any]]
 
 RECETAS: dict[str, Receta] = {
     # ── F2 ──
+    # ── F4 · cuentas ──
+    # `users` es el OWNER: sin perfil (CHECK `perfil_segun_rol`). La FK `users` →
+    # `permission_profiles` la recorren los tests de `test_cuentas_pg.py` con un STAFF.
+    "permission_profiles": lambda c: {"name": f"perfil de {c.tag}", "permissions": ["AGENDA_VER"]},
     "users": lambda c: {
         "email": f"usuario-{c.tag}@ejemplo.invalid",
         "password_hash": "no-es-un-hash",
         "role": "OWNER",
     },
-    "dummy_resources": lambda c: {"name": f"dummy de {c.tag}"},
     "idempotency_keys": lambda c: {"key": f"clave-{c.tag}", "action": "poblar"},
     # ── 1.1 Catálogo ──
     "vehicle_sizes": lambda c: {"code": f"AUTO_{c.TAG}", "label": "Auto", "sort_order": 1},
@@ -287,6 +290,20 @@ RECETAS: dict[str, Receta] = {
         "notes": "sintético",
     },
 }
+
+
+#: FKs cuya columna está atada a otra por un CHECK: para apuntarla a otro padre hay que mover
+#: también la otra, o el CHECK corta antes que la FK y el test no prueba la FK. La fila de
+#: `users` es el OWNER (sin perfil, `perfil_segun_rol`): para probar la FK de su perfil pasa
+#: a STAFF en el mismo UPDATE.
+_SET_ACOMPANANTE: dict[tuple[str, str], str] = {
+    ("users", "permission_profile_id"): "role = 'STAFF', ",
+}
+
+
+def set_que_apunta(tabla: str, columna: str, parametro: str = ":padre_a") -> str:
+    """Cláusula `SET` que apunta `tabla.columna` a `parametro` sin chocar con un CHECK."""
+    return f"{_SET_ACOMPANANTE.get((tabla, columna), '')}{columna} = {parametro}"
 
 
 def verificar_recetas() -> None:

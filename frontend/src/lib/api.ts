@@ -1,6 +1,8 @@
 import * as Sentry from "@sentry/nextjs";
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
+import { apiErrorCode } from "@/lib/errors";
+import { CHANGE_PASSWORD_PATH } from "@/lib/routes";
 import { useAuthStore } from "@/stores/authStore";
 import type { AuthResponse } from "@/types/api";
 
@@ -76,6 +78,19 @@ export function onSessionExpired(): void {
   }
 }
 
+/**
+ * El servidor cortó con 403 `PASSWORD_CHANGE_REQUIRED`: la clave la eligió el
+ * dueño (alta o reset) y hay que cambiarla antes de hacer cualquier otra cosa.
+ * Lo decide el backend en `CurrentUser`, no el frontend; acá solo se lleva al
+ * usuario adonde puede seguir. Si ya está en esa pantalla, no se recarga.
+ */
+export function onPasswordChangeRequired(): void {
+  useAuthStore.getState().setMustChangePassword(true);
+  if (typeof window !== "undefined" && window.location.pathname !== CHANGE_PASSWORD_PATH) {
+    browserNavigation.assign(CHANGE_PASSWORD_PATH);
+  }
+}
+
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // Trazabilidad: una correlación por request (frontend → API → response).
   if (!config.headers["X-Trace-Id"]) {
@@ -141,6 +156,10 @@ export async function handleApiResponseError(error: AxiosError): Promise<unknown
       return Promise.reject(refreshError);
     }
     return api.request(originalRequest);
+  }
+
+  if (error.response.status === 403 && apiErrorCode(error) === "PASSWORD_CHANGE_REQUIRED") {
+    onPasswordChangeRequired();
   }
 
   return Promise.reject(error);
