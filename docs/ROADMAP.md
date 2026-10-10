@@ -283,11 +283,13 @@ permisos, aceptación).
 
 Decisiones del dueño (2026-10-07):
 - **Admin y subcuentas:** el `OWNER` crea empleados con usuario y contraseña y les asigna un **perfil de
-  permisos editable** (Encargado, Cajero, Lavador vienen armados).
+  permisos editable** (Encargado, Cajero, Lavador vienen armados; cajero y lavador suelen ser la misma
+  persona, y Cajero incluye a Lavador). El empleado ve precios aunque no los edite.
 - **Seña global:** un interruptor en Configuración la activa o desactiva para todos los servicios, con
-  un único %. Sin pagar, el auto se recibe igual y la seña queda en el saldo.
+  un único % (sugerido 20%). Sin pagar, el auto se recibe igual y la seña queda en el saldo.
 - **Todo servicio tiene precio base por tamaño.** Los "a cotizar" muestran "desde $X"; la cotización
-  fija el final y la seña se calcula sobre el acordado. No hay plantillas sin precio.
+  fija el final y la seña se calcula sobre el acordado. No hay plantillas sin precio. Un turno a cotizar
+  **no reserva horario** hasta que el cliente acepta.
 - **Base de vehículos:** marca, modelo, tipo de carrocería y color del mercado argentino, más lo que sume
   cada negocio; la carrocería sugiere el tamaño.
 - **Ningún servicio fijo en el código:** el glosario del rubro (`docs/GLOSARIO-RUBRO.md`) alimenta
@@ -300,8 +302,9 @@ Decisiones del dueño (2026-10-07):
 4.3 servicios, glosario y búsqueda ‖ 4.4 base de vehículos ‖ 4.5 personalización → 4.6 wizard de alta.
 
 **Checkpoint:** alta de un lavadero y de un taller de detailing con el wizard; 5 servicios con precio;
-logo con paleta sugerida; un "Cajero" que entra con usuario, cambia la clave y no puede anular cobros
-ni editar precios; prender y apagar la seña; cargar un auto por marca y modelo con tamaño sugerido;
+logo con paleta sugerida; un "Cajero" que entra con usuario, cambia la clave y ve el menú según su
+perfil (que no pueda anular cobros se prueba automático hasta que exista la pantalla de cobro);
+prender y apagar la seña; cargar un auto por marca y modelo con tamaño sugerido;
 buscar "ceramico", "ppf" y "sacar rayas".
 
 ---
