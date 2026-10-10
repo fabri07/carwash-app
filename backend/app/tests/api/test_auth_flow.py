@@ -32,15 +32,15 @@ async def test_registro_invalido_es_422(client):
 
 
 async def test_login_con_password_incorrecta_es_401(client, owner):
-    r = await client.post("/v1/auth/login", json={"email": owner.email, "password": "nope"})
+    r = await client.post("/v1/auth/login", json={"identifier": owner.email, "password": "nope"})
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "INVALID_CREDENTIALS"
 
 
 async def test_login_con_email_inexistente_da_el_mismo_401(client, owner):
-    malo = await client.post("/v1/auth/login", json={"email": owner.email, "password": "nope"})
+    malo = await client.post("/v1/auth/login", json={"identifier": owner.email, "password": "nope"})
     nadie = await client.post(
-        "/v1/auth/login", json={"email": "nadie@example.com", "password": "nope"}
+        "/v1/auth/login", json={"identifier": "nadie@example.com", "password": "nope"}
     )
     assert malo.status_code == nadie.status_code == 401
     assert malo.json() == nadie.json()
@@ -114,7 +114,9 @@ async def test_logout_sin_sesion_igual_vence_las_cookies(client):
 async def test_login_rate_limit_es_429_con_error_response(client, owner):
     codes = []
     for _ in range(11):
-        r = await client.post("/v1/auth/login", json={"email": owner.email, "password": "nope"})
+        r = await client.post(
+            "/v1/auth/login", json={"identifier": owner.email, "password": "nope"}
+        )
         codes.append(r.status_code)
     assert codes[-1] == 429
     assert r.json()["detail"]["code"] == "RATE_LIMITED"

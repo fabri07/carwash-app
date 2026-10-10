@@ -62,13 +62,14 @@ async def test_en_sqlite_el_contexto_es_no_op(db_session):
 def test_sql_de_rls_tiene_using_y_with_check_identicos():
     from app.persistence.db.rls import (
         create_auth_lookup,
+        create_auth_lookup_by_identifier,
         disable_rls,
         drop_auth_lookup,
         enable_rls,
         grant_app_role,
     )
 
-    create = enable_rls("dummy_resources")
+    create = enable_rls("permission_profiles")
     assert any("FORCE ROW LEVEL SECURITY" in s for s in create)
     policy = next(s for s in create if s.startswith("CREATE POLICY"))
     using, with_check = policy.split(" WITH CHECK ")
@@ -83,3 +84,8 @@ def test_sql_de_rls_tiene_using_y_with_check_identicos():
     assert "REVOKE ALL ON FUNCTION auth_lookup_user(text) FROM PUBLIC" in lookup
     assert "FOR SELECT TO CURRENT_USER" in lookup
     assert any("DROP FUNCTION" in s for s in drop_auth_lookup())
+
+    por_identificador = "\n".join(create_auth_lookup_by_identifier())
+    assert "SECURITY DEFINER" in por_identificador and "SET search_path" in por_identificador
+    assert "u.username = lower(p_identifier)" in por_identificador
+    assert "REVOKE ALL ON FUNCTION auth_lookup_user(text) FROM PUBLIC" in por_identificador

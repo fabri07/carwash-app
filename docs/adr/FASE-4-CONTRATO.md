@@ -92,7 +92,7 @@ cuando son personas distintas.
   `CATALOGO_EDITAR` **y** `PRECIOS_EDITAR`; el `PATCH` de un servicio no acepta campos de precio.
 - **Cambio de clave obligatorio:** con `must_change_password` solo responden `GET /auth/me`,
   `POST /auth/change-password`, `POST /auth/logout` y `POST /auth/refresh` (el refresh conserva el
-  flag). Todo lo demás: 403 con código `password_change_required`, cortado en el servidor desde
+  flag). Todo lo demás: 403 con código `PASSWORD_CHANGE_REQUIRED`, cortado en el servidor desde
   `CurrentUser`, no en el frontend.
 - **Reset de clave** (`/staff/{id}/reset-password`): sube `token_version` (revoca sesiones) y pone
   `must_change_password`.
@@ -114,7 +114,7 @@ default `'{}'`, CHECK `permissions <@ ARRAY[<valores del enum>]::text[]`.
 | Columna | Cambio |
 |---|---|
 | `email` | pasa a **nullable**; sigue único global |
-| `username` | **nueva**, text nullable, único global, CHECK `^[a-z0-9._-]{3,40}$` |
+| `username` | **nueva**, text nullable, único global **también entre anulados** (como `email` desde F2: excepción a X7, porque el login busca sin tenant y un usuario dado de baja no se reasigna a otra persona), CHECK `^[a-z0-9._-]{3,40}$` |
 | `permission_profile_id` | **nueva**, FK compuesta; CHECK `(role = 'OWNER') = (permission_profile_id IS NULL)` |
 | `must_change_password` | **nueva**, bool NN default false |
 | — | CHECK `email IS NOT NULL OR username IS NOT NULL`; CHECK `role <> 'OWNER' OR email IS NOT NULL` |

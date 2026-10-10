@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { AuthResponse, Tenant, User } from "@/types/api";
+import type { AuthResponse, PermissionCode, Tenant, User } from "@/types/api";
 
 /**
  * Estado de sesión del cliente.
@@ -11,14 +11,25 @@ import type { AuthResponse, Tenant, User } from "@/types/api";
  * que se persiste es `user` y `tenant`, para pintar el shell sin parpadeo al recargar.
  * La autoridad sobre "¿hay sesión?" es el backend (y, para evitar el HTML
  * filtrado, el `middleware.ts`), no este store.
+ *
+ * `permissions` y `mustChangePassword` (FASE-4-CONTRATO §2.3) se guardan en
+ * memoria y NO se persisten: el backend los lee de la base en cada request y
+ * pueden cambiar entre una visita y otra (el dueño edita el perfil). Llegan
+ * frescos con cada `/auth/me`, que el shell pide al montar.
  */
 interface AuthState {
   user: User | null;
   tenant: Tenant | null;
+  /** Lo que el usuario puede hacer (el OWNER recibe todos). Solo para mostrar u ocultar. */
+  permissions: PermissionCode[];
+  /** Mientras sea `true`, la única pantalla útil es `/cambiar-clave`. */
+  mustChangePassword: boolean;
   _hasHydrated: boolean;
   /** Guarda lo que devuelven login, registro, refresh y `/auth/me`. */
   setSession: (session: AuthResponse) => void;
   setHasHydrated: (state: boolean) => void;
+  /** Lo marca un 403 `PASSWORD_CHANGE_REQUIRED` de cualquier request (`lib/api.ts`). */
+  setMustChangePassword: (value: boolean) => void;
   /** Limpia el estado local. No habla con el backend: eso es `auth.service.logout`. */
   clear: () => void;
 }
@@ -40,15 +51,18 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       tenant: null,
+      permissions: [],
+      mustChangePassword: false,
       _hasHydrated: false,
-      setSession: ({ user, tenant }) => {
+      setSession: ({ user, tenant, permissions, must_change_password }) => {
         syncSentryContext(user);
-        set({ user, tenant });
+        set({ user, tenant, permissions, mustChangePassword: must_change_password });
       },
       setHasHydrated: (state) => set({ _hasHydrated: state }),
+      setMustChangePassword: (value) => set({ mustChangePassword: value }),
       clear: () => {
         syncSentryContext(null);
-        set({ user: null, tenant: null });
+        set({ user: null, tenant: null, permissions: [], mustChangePassword: false });
       },
     }),
     {

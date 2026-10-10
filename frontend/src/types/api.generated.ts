@@ -38,6 +38,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cambia la clave propia; obligatorio si la eligió el dueño
+         * @description Verifica la clave actual, guarda la nueva y rota la sesión.
+         *
+         *     Sube `token_version`: las otras sesiones (otro celular, la que abrió el dueño al
+         *     probar) mueren; esta sigue con cookies nuevas. 400 y no 401 si la clave actual no
+         *     coincide: un 401 haría que el frontend intente refrescar la sesión.
+         */
+        post: operations["change_password_v1_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/login": {
         parameters: {
             query?: never;
@@ -79,7 +103,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Usuario y tenant de la sesión actual */
+        /** Usuario, tenant, permisos y si hay que cambiar la clave */
         get: operations["me_v1_auth_me_get"];
         put?: never;
         post?: never;
@@ -123,87 +147,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/dummy-resources": {
+    "/v1/permission-profiles": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Dummy Resources */
-        get: operations["list_dummy_resources_v1_dummy_resources_get"];
+        /** List Permission Profiles */
+        get: operations["list_permission_profiles_v1_permission_profiles_get"];
         put?: never;
-        /** Create Dummy Resource */
-        post: operations["create_dummy_resource_v1_dummy_resources_post"];
+        /** Create Permission Profile */
+        post: operations["create_permission_profile_v1_permission_profiles_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/dummy-resources/{id}": {
+    "/v1/permission-profiles/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Dummy Resource */
-        get: operations["get_dummy_resource_v1_dummy_resources__id__get"];
+        /** Get Permission Profile */
+        get: operations["get_permission_profile_v1_permission_profiles__id__get"];
         put?: never;
         post?: never;
-        /** Delete Dummy Resource */
-        delete: operations["delete_dummy_resource_v1_dummy_resources__id__delete"];
+        /** Delete Permission Profile */
+        delete: operations["delete_permission_profile_v1_permission_profiles__id__delete"];
         options?: never;
         head?: never;
-        /** Update Dummy Resource */
-        patch: operations["update_dummy_resource_v1_dummy_resources__id__patch"];
+        /** Update Permission Profile */
+        patch: operations["update_permission_profile_v1_permission_profiles__id__patch"];
+        trace?: never;
+    };
+    "/v1/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Staff */
+        get: operations["list_staff_v1_staff_get"];
+        put?: never;
+        /** Create Staff */
+        post: operations["create_staff_v1_staff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/staff/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Staff */
+        get: operations["get_staff_v1_staff__id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Staff */
+        delete: operations["delete_staff_v1_staff__id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Staff */
+        patch: operations["update_staff_v1_staff__id__patch"];
+        trace?: never;
+    };
+    "/v1/staff/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Staff Password */
+        post: operations["reset_staff_password_v1_staff__id__reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** DummyResourceCreate */
-        DummyResourceCreate: {
-            /** Name */
-            name: string;
-        };
-        /** DummyResourceResponse */
-        DummyResourceResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /**
-             * Tenant Id
-             * Format: uuid
-             */
-            tenant_id: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** DummyResourceUpdate */
-        DummyResourceUpdate: {
-            /** Name */
-            name: string;
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
         };
         /**
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
+        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "PASSWORD_CHANGE_REQUIRED" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             code: components["schemas"]["ErrorCode"];
@@ -237,34 +287,99 @@ export interface components {
         };
         /** LoginRequest */
         LoginRequest: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
+            /** Identifier */
+            identifier: string;
             /** Password */
             password: string;
         };
         /**
          * MeResponse
          * @description Lo que devuelven registro, login, refresh y `/me`. **Nunca** los tokens (ADR-0009).
+         *
+         *     `permissions`: lo que el usuario puede hacer ahora (el `OWNER`, todo). El frontend lo
+         *     usa para ocultar menús y botones; la decisión real la toma el servidor en cada request.
+         *     `must_change_password`: mientras sea `true`, solo responden `me`, `change-password`,
+         *     `refresh` y `logout` (FASE-4-CONTRATO §2.3).
          */
         MeResponse: {
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Permissions */
+            permissions: components["schemas"]["Permission"][];
             tenant: components["schemas"]["TenantResponse"];
             user: components["schemas"]["UserResponse"];
         };
-        /** PaginatedResponse[DummyResourceResponse] */
-        PaginatedResponse_DummyResourceResponse_: {
+        /** PaginatedResponse[PermissionProfileResponse] */
+        PaginatedResponse_PermissionProfileResponse_: {
             /** Has More */
             readonly has_more: boolean;
             /** Items */
-            items: components["schemas"]["DummyResourceResponse"][];
+            items: components["schemas"]["PermissionProfileResponse"][];
             /** Limit */
             limit: number;
             /** Offset */
             offset: number;
             /** Total */
             total: number;
+        };
+        /** PaginatedResponse[StaffResponse] */
+        PaginatedResponse_StaffResponse_: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            items: components["schemas"]["StaffResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * Permission
+         * @enum {string}
+         */
+        Permission: "AGENDA_VER" | "TURNOS_GESTIONAR" | "JOBS_OPERAR" | "COBROS_REGISTRAR" | "COBROS_ANULAR" | "CAJA_VER" | "CATALOGO_EDITAR" | "PRECIOS_EDITAR" | "CLIENTES_VER" | "CLIENTES_EDITAR" | "GASTOS_REGISTRAR" | "REPORTES_VER";
+        /** PermissionProfileCreate */
+        PermissionProfileCreate: {
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: components["schemas"]["Permission"][];
+        };
+        /** PermissionProfileResponse */
+        PermissionProfileResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: components["schemas"]["Permission"][];
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PermissionProfileUpdate */
+        PermissionProfileUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Permissions */
+            permissions?: components["schemas"]["Permission"][] | null;
         };
         /** ReadyCheck */
         ReadyCheck: {
@@ -302,6 +417,72 @@ export interface components {
          * @enum {string}
          */
         Role: "OWNER" | "STAFF";
+        /**
+         * StaffCreate
+         * @description El dueño elige el usuario y una clave inicial; el empleado la cambia al entrar.
+         */
+        StaffCreate: {
+            /** Email */
+            email?: string | null;
+            /** Password */
+            password: string;
+            /**
+             * Permission Profile Id
+             * Format: uuid
+             */
+            permission_profile_id: string;
+            /** Username */
+            username: string;
+        };
+        /** StaffPasswordReset */
+        StaffPasswordReset: {
+            /** Password */
+            password: string;
+        };
+        /** StaffResponse */
+        StaffResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Permission Profile Id */
+            permission_profile_id: string | null;
+            role: components["schemas"]["Role"];
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Username */
+            username: string | null;
+        };
+        /**
+         * StaffUpdate
+         * @description Campos ausentes no se tocan. `email: null` explícito borra el email.
+         */
+        StaffUpdate: {
+            /** Email */
+            email?: string | null;
+            /** Permission Profile Id */
+            permission_profile_id?: string | null;
+            /** Username */
+            username?: string | null;
+        };
         /** TenantResponse */
         TenantResponse: {
             /**
@@ -315,18 +496,22 @@ export interface components {
         /** UserResponse */
         UserResponse: {
             /** Email */
-            email: string;
+            email: string | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Permission Profile Id */
+            permission_profile_id: string | null;
             role: components["schemas"]["Role"];
             /**
              * Tenant Id
              * Format: uuid
              */
             tenant_id: string;
+            /** Username */
+            username: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -395,6 +580,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+        };
+    };
+    change_password_v1_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -577,7 +831,7 @@ export interface operations {
             };
         };
     };
-    list_dummy_resources_v1_dummy_resources_get: {
+    list_permission_profiles_v1_permission_profiles_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -595,7 +849,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse_DummyResourceResponse_"];
+                    "application/json": components["schemas"]["PaginatedResponse_PermissionProfileResponse_"];
                 };
             };
             /** @description Unauthorized */
@@ -636,7 +890,7 @@ export interface operations {
             };
         };
     };
-    create_dummy_resource_v1_dummy_resources_post: {
+    create_permission_profile_v1_permission_profiles_post: {
         parameters: {
             query?: never;
             header?: {
@@ -647,7 +901,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DummyResourceCreate"];
+                "application/json": components["schemas"]["PermissionProfileCreate"];
             };
         };
         responses: {
@@ -657,7 +911,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DummyResourceResponse"];
+                    "application/json": components["schemas"]["PermissionProfileResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -707,7 +961,7 @@ export interface operations {
             };
         };
     };
-    get_dummy_resource_v1_dummy_resources__id__get: {
+    get_permission_profile_v1_permission_profiles__id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -724,7 +978,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DummyResourceResponse"];
+                    "application/json": components["schemas"]["PermissionProfileResponse"];
                 };
             };
             /** @description Unauthorized */
@@ -765,7 +1019,331 @@ export interface operations {
             };
         };
     };
-    delete_dummy_resource_v1_dummy_resources__id__delete: {
+    delete_permission_profile_v1_permission_profiles__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_permission_profile_v1_permission_profiles__id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionProfileResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staff_v1_staff_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_StaffResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_staff_v1_staff_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_staff_v1_staff__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_staff_v1_staff__id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -821,7 +1399,7 @@ export interface operations {
             };
         };
     };
-    update_dummy_resource_v1_dummy_resources__id__patch: {
+    update_staff_v1_staff__id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -832,7 +1410,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DummyResourceUpdate"];
+                "application/json": components["schemas"]["StaffUpdate"];
             };
         };
         responses: {
@@ -842,7 +1420,78 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DummyResourceResponse"];
+                    "application/json": components["schemas"]["StaffResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_staff_password_v1_staff__id__reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffPasswordReset"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffResponse"];
                 };
             };
             /** @description Unauthorized */

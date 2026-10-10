@@ -31,7 +31,7 @@ from app.persistence.db.base import Base
 from app.persistence.db.rls import APP_ROLE, AUTH_LOOKUP_FUNCTION
 from app.persistence.db.tenant_context import set_tenant_context
 from app.tests.conftest_pg import owner_url
-from app.tests.security._poblar_dominio import FIN_TURNO, INICIO_TURNO, poblar
+from app.tests.security._poblar_dominio import FIN_TURNO, INICIO_TURNO, poblar, set_que_apunta
 
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 
@@ -45,6 +45,8 @@ ESCRIBIBLES = sorted(set(TABLAS_TENANT) - APPEND_ONLY)
 UNICOS_GLOBALES_PERMITIDOS = {
     # El login es por email solo, sin elegir lavadero (ADR de F2, `models/user.py`).
     ("users", ("email",)),
+    # F4: el empleado entra con usuario, también sin elegir lavadero (FASE-4-CONTRATO §3.1).
+    ("users", ("username",)),
 }
 
 
@@ -352,7 +354,7 @@ async def test_no_se_apunta_a_un_padre_anulado_de_a(
             async with session.begin():
                 await set_tenant_context(session, tenant_b)
                 await session.execute(
-                    text(f"UPDATE {tabla} SET {columna} = :padre_a WHERE id = :fila_b"),
+                    text(f"UPDATE {tabla} SET {set_que_apunta(tabla, columna)} WHERE id = :fila_b"),
                     {"padre_a": filas_a[padre], "fila_b": filas_b[tabla]},
                 )
 
@@ -384,7 +386,7 @@ async def test_el_ciclo_turno_cotizacion_no_cruza_lavaderos(
             async with session.begin():
                 await set_tenant_context(session, tenant_b)
                 await session.execute(
-                    text(f"UPDATE {tabla} SET {columna} = :padre_a WHERE id = :fila_b"),
+                    text(f"UPDATE {tabla} SET {set_que_apunta(tabla, columna)} WHERE id = :fila_b"),
                     {"padre_a": filas_a[padre], "fila_b": filas_b[tabla]},
                 )
     assert await _foto(pg_admin_engine, tabla, filas_b[tabla]) == antes
@@ -499,7 +501,7 @@ async def test_copy_to_solo_exporta_lo_propio_y_copy_from_se_rechaza(pg_engine, 
                 crudo = (await conn.get_raw_connection()).driver_connection
                 assert crudo is not None
                 await crudo.copy_to_table(
-                    "dummy_resources",
+                    "permission_profiles",
                     source=io.BytesIO(f"{uuid.uuid4()},{tenant_a},intruso\n".encode()),
                     columns=["id", "tenant_id", "name"],
                     format="csv",

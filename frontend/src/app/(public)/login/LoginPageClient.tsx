@@ -21,7 +21,9 @@ export function LoginPageClient() {
         <CardTitle className="text-xl">
           <h1>Iniciar sesión</h1>
         </CardTitle>
-        <CardDescription>Entrá con el email de tu cuenta.</CardDescription>
+        <CardDescription>
+          Entrá con tu email o con el usuario que te dio el negocio.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <LoginForm onSubmit={login} />

@@ -5,7 +5,7 @@ import { toast as sonner } from "sonner";
 
 import { AuthHydrationBoundary } from "@/components/auth/AuthHydrationBoundary";
 import { Header, getInitials, getPageLabel } from "@/components/layout/Header";
-import { Sidebar, isActive } from "@/components/layout/Sidebar";
+import { NAV_ITEMS, Sidebar, isActive, visibleNavItems } from "@/components/layout/Sidebar";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { ToastBridge } from "@/components/ToastBridge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -44,8 +44,17 @@ beforeAll(() => {
 });
 
 const session = {
-  user: { id: "u1", email: "dueno@lavadero.com", role: "OWNER" as const, tenant_id: "t1" },
+  user: {
+    id: "u1",
+    email: "dueno@lavadero.com",
+    role: "OWNER" as const,
+    tenant_id: "t1",
+    username: null,
+    permission_profile_id: null,
+  },
   tenant: { id: "t1", name: "Sola CleanCars" },
+  permissions: [],
+  must_change_password: false,
 };
 
 beforeEach(() => {
@@ -121,6 +130,44 @@ describe("Sidebar", () => {
     expect(onChange).toHaveBeenCalledWith(false);
   });
 
+  it("Configuración → Equipo solo para el OWNER; el filtro por permiso queda listo", async () => {
+    nav.pathname = "/configuracion/equipo";
+    useAuthStore.setState({ ...session, permissions: [] });
+    const { unmount } = render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
+    const desktop = screen.getByTestId("sidebar-desktop");
+    expect(within(desktop).getByText("Configuración")).toBeInTheDocument();
+    expect(within(desktop).getByRole("link", { name: "Equipo" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    unmount();
+
+    useAuthStore.setState({
+      user: { ...session.user, role: "STAFF" },
+      permissions: ["AGENDA_VER"],
+    });
+    render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
+    expect(screen.queryByRole("link", { name: "Equipo" })).toBeNull();
+    expect(screen.queryByText("Configuración")).toBeNull();
+
+    const items = [
+      ...NAV_ITEMS,
+      { label: "Caja", href: "/caja", icon: NAV_ITEMS[0]!.icon, permission: "CAJA_VER" as const },
+    ];
+    const staff = { role: "STAFF" as const };
+    expect(visibleNavItems(items, staff, ["AGENDA_VER"]).map((i) => i.label)).toEqual(["Inicio"]);
+    expect(visibleNavItems(items, staff, ["CAJA_VER"]).map((i) => i.label)).toEqual([
+      "Inicio",
+      "Caja",
+    ]);
+    expect(visibleNavItems(items, { role: "OWNER" }, []).map((i) => i.label)).toEqual([
+      "Inicio",
+      "Equipo",
+      "Caja",
+    ]);
+    expect(visibleNavItems(items, null, []).map((i) => i.label)).toEqual(["Inicio"]);
+  });
+
   it("isActive no confunde prefijos", () => {
     expect(isActive("/dashboard/x", "/dashboard")).toBe(true);
     expect(isActive("/dashboardx", "/dashboard")).toBe(false);
@@ -131,6 +178,7 @@ describe("Header", () => {
   it("helpers", () => {
     expect(getPageLabel("/dashboard")).toBe("Inicio");
     expect(getPageLabel("/otra")).toBe("");
+    expect(getPageLabel("/configuracion/equipo")).toBe("Equipo");
     expect(getInitials("Sola CleanCars")).toBe("SC");
     expect(getInitials("a@b.com")).toBe("AB");
   });

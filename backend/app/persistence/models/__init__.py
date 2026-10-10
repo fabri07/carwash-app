@@ -11,10 +11,10 @@ from app.persistence.models.catalog import (
     VehicleSize,
 )
 from app.persistence.models.customer import Customer, CustomerVehicle, Vehicle
-from app.persistence.models.dummy_resource import DummyResource
 from app.persistence.models.idempotency_key import IdempotencyKey
 from app.persistence.models.job import Job, JobEvent, JobInspection, JobItem
 from app.persistence.models.money import CashMovement, Payment
+from app.persistence.models.permission_profile import PermissionProfile
 from app.persistence.models.quote import Quote
 from app.persistence.models.tenant import Tenant
 from app.persistence.models.user import User
@@ -27,7 +27,6 @@ __all__ = [
     "CashMovement",
     "Customer",
     "CustomerVehicle",
-    "DummyResource",
     "IdempotencyKey",
     "Job",
     "JobEvent",
@@ -35,6 +34,7 @@ __all__ = [
     "JobItem",
     "Payment",
     "PaymentMethod",
+    "PermissionProfile",
     "Quote",
     "Resource",
     "ScheduleBlock",

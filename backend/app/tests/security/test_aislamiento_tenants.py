@@ -24,12 +24,19 @@ from sqlalchemy import select, text
 
 from app.config.settings import get_settings
 from app.domain.roles import Role
-from app.persistence.models import DummyResource
+from app.persistence.models import PermissionProfile, User
 from app.tests.conftest import make_user, session_cookies
 from app.utils.cookies import ACCESS_COOKIE
 from app.utils.security import create_access_token, create_refresh_token
 
-URL = "/v1/dummy-resources"
+#: Sujeto de los tests cruzados desde F4 (Y12): los perfiles de permisos, solo OWNER.
+URL = "/v1/permission-profiles"
+STAFF_URL = "/v1/staff"
+PERMISOS = ["AGENDA_VER"]
+
+
+def _perfil(name: str, **extra: object) -> dict[str, object]:
+    return {"name": name, "permissions": PERMISOS, **extra}
 
 
 def _mismo_cuerpo(ajeno, inexistente) -> None:
@@ -51,16 +58,23 @@ async def test_get_ajeno_es_404_identico_al_inexistente(client, cookies_b, id_de
 
 
 async def test_patch_ajeno_es_404_identico_y_no_cambia_nada(client, cookies_a, cookies_b, id_de_a):
-    ajeno = await client.patch(f"{URL}/{id_de_a}", json={"name": "pisado"}, cookies=cookies_b)
+    ajeno = await client.patch(
+        f"{URL}/{id_de_a}",
+        json={"name": "pisado", "permissions": ["COBROS_ANULAR"]},
+        cookies=cookies_b,
+    )
     inexistente = await client.patch(
-        f"{URL}/{uuid.uuid4()}", json={"name": "pisado"}, cookies=cookies_b
+        f"{URL}/{uuid.uuid4()}",
+        json={"name": "pisado", "permissions": ["COBROS_ANULAR"]},
+        cookies=cookies_b,
     )
     assert ajeno.status_code == 404
     _mismo_cuerpo(ajeno, inexistente)
 
     como_a = await client.get(f"{URL}/{id_de_a}", cookies=cookies_a)
     assert como_a.status_code == 200
-    assert como_a.json()["name"] == "dummy de A"
+    assert como_a.json()["name"] == "perfil de A"
+    assert como_a.json()["permissions"] == PERMISOS
 
 
 async def test_delete_ajeno_es_404_identico_y_no_anula(
@@ -72,28 +86,154 @@ async def test_delete_ajeno_es_404_identico_y_no_anula(
     _mismo_cuerpo(ajeno, inexistente)
 
     assert (await client.get(f"{URL}/{id_de_a}", cookies=cookies_a)).status_code == 200
-    fila = await db_session.scalar(select(DummyResource).where(DummyResource.id == id_de_a))
+    fila = await db_session.scalar(select(PermissionProfile).where(PermissionProfile.id == id_de_a))
     assert fila is not None and fila.voided_at is None and fila.void_reason is None
 
 
-async def test_staff_de_b_no_distingue_ajeno_de_inexistente_en_delete(
-    client, db_session, tenant_b, id_de_a
+@pytest.mark.parametrize(
+    ("metodo", "sufijo", "body"),
+    [
+        ("GET", "", None),
+        ("PATCH", "", {"name": "pisado"}),
+        ("DELETE", "", None),
+    ],
+    ids=["GET", "PATCH", "DELETE"],
+)
+async def test_staff_de_b_no_distingue_ajeno_de_inexistente(
+    client, db_session, tenant_b, id_de_a, metodo, sufijo, body
 ):
-    # DELETE exige OWNER: el 403 de rol sale antes de mirar el id. Lo que importa es
-    # que salga igual para el id ajeno que para uno que no existe.
+    # Desde F4 todo `/permission-profiles` es OWNER-only: el 403 de rol sale antes de
+    # mirar el id. Lo que importa es que salga igual para el id ajeno que para uno que no
+    # existe, en cualquier método. El STAFF tiene un perfil con TODOS los permisos: no
+    # alcanza con permisos, hace falta ser el dueño (Y5).
     staff_b = await make_user(db_session, tenant_b, Role.STAFF, "staff-b@example.com")
     cookies = session_cookies(staff_b)
-    ajeno = await client.delete(f"{URL}/{id_de_a}", cookies=cookies)
-    inexistente = await client.delete(f"{URL}/{uuid.uuid4()}", cookies=cookies)
+    kwargs = {"json": body} if body is not None else {}
+    ajeno = await client.request(metodo, f"{URL}/{id_de_a}{sufijo}", cookies=cookies, **kwargs)
+    inexistente = await client.request(
+        metodo, f"{URL}/{uuid.uuid4()}{sufijo}", cookies=cookies, **kwargs
+    )
     assert ajeno.status_code == 403
+    assert ajeno.json()["detail"]["code"] == "FORBIDDEN"
     _mismo_cuerpo(ajeno, inexistente)
+
+
+# ── /staff: el empleado de A no existe para B ──────────────────────────────────
+
+
+async def _empleado_de_a(db_session, tenant_a, perfil_a) -> User:
+    return await make_user(
+        db_session, tenant_a, Role.STAFF, None, username="lavador.a", profile=perfil_a
+    )
+
+
+STAFF_INTENTOS = [
+    ("GET", "", None),
+    ("PATCH", "", {"username": "secuestrado"}),
+    ("DELETE", "", None),
+    ("POST", "/reset-password", {"password": "una-clave-nueva-123"}),
+]
+STAFF_IDS = ["GET", "PATCH", "DELETE", "reset-password"]
+
+
+@pytest.mark.parametrize(("metodo", "sufijo", "body"), STAFF_INTENTOS, ids=STAFF_IDS)
+async def test_staff_ajeno_es_404_identico_y_no_cambia_nada(
+    client, db_session, tenant_a, perfil_a, cookies_a, cookies_b, metodo, sufijo, body
+):
+    empleado = await _empleado_de_a(db_session, tenant_a, perfil_a)
+    antes = (empleado.username, empleado.password_hash, empleado.token_version)
+    kwargs = {"json": body} if body is not None else {}
+    ajeno = await client.request(
+        metodo, f"{STAFF_URL}/{empleado.id}{sufijo}", cookies=cookies_b, **kwargs
+    )
+    inexistente = await client.request(
+        metodo, f"{STAFF_URL}/{uuid.uuid4()}{sufijo}", cookies=cookies_b, **kwargs
+    )
+    assert ajeno.status_code == 404, ajeno.text
+    _mismo_cuerpo(ajeno, inexistente)
+
+    await db_session.refresh(empleado)
+    assert (empleado.username, empleado.password_hash, empleado.token_version) == antes
+    assert empleado.voided_at is None and empleado.must_change_password is False
+    assert (await client.get(f"{STAFF_URL}/{empleado.id}", cookies=cookies_a)).status_code == 200
+
+
+@pytest.mark.parametrize(("metodo", "sufijo", "body"), STAFF_INTENTOS, ids=STAFF_IDS)
+async def test_el_owner_no_es_staff_ni_para_su_propio_duenio(
+    client, owner, owner_b, cookies_a, cookies_b, metodo, sufijo, body
+):
+    """El OWNER no se ve ni se edita por `/staff` (§4): su id da el MISMO 404 que uno
+    inexistente — para su propio dueño y para el dueño de otro tenant."""
+    kwargs = {"json": body} if body is not None else {}
+    for cookies in (cookies_a, cookies_b):
+        propio = await client.request(
+            metodo, f"{STAFF_URL}/{owner.id}{sufijo}", cookies=cookies, **kwargs
+        )
+        inexistente = await client.request(
+            metodo, f"{STAFF_URL}/{uuid.uuid4()}{sufijo}", cookies=cookies, **kwargs
+        )
+        assert propio.status_code == 404, propio.text
+        _mismo_cuerpo(propio, inexistente)
+    assert (await client.get("/v1/auth/me", cookies=cookies_a)).status_code == 200
+
+
+async def test_listado_de_staff_de_b_no_ve_ni_cuenta_a_los_de_a(
+    client, db_session, tenant_a, perfil_a, cookies_a, cookies_b
+):
+    empleado = await _empleado_de_a(db_session, tenant_a, perfil_a)
+    de_b = await client.get(STAFF_URL, cookies=cookies_b)
+    assert de_b.status_code == 200
+    assert de_b.json()["items"] == [] and de_b.json()["total"] == 0
+    assert str(empleado.id) not in de_b.text and "lavador.a" not in de_b.text
+    de_a = (await client.get(STAFF_URL, cookies=cookies_a)).json()
+    assert [i["id"] for i in de_a["items"]] == [str(empleado.id)]
+
+
+async def test_crear_staff_en_b_con_perfil_de_a_es_404_identico_al_inexistente(
+    client, db_session, perfil_a, cookies_b
+):
+    def cuerpo(perfil: uuid.UUID, username: str) -> dict[str, object]:
+        return {
+            "username": username,
+            "password": "clave-inicial-123",
+            "permission_profile_id": str(perfil),
+        }
+
+    ajeno = await client.post(STAFF_URL, json=cuerpo(perfil_a.id, "colado.b"), cookies=cookies_b)
+    inexistente = await client.post(
+        STAFF_URL, json=cuerpo(uuid.uuid4(), "colado.b"), cookies=cookies_b
+    )
+    assert ajeno.status_code == 404, ajeno.text
+    _mismo_cuerpo(ajeno, inexistente)
+    assert await db_session.scalar(select(User).where(User.username == "colado.b")) is None
+
+
+async def test_mover_staff_de_b_al_perfil_de_a_es_404_y_no_lo_mueve(
+    client, db_session, tenant_b, perfil_a, cookies_b
+):
+    staff_b = await make_user(db_session, tenant_b, Role.STAFF, None, username="lavador.b")
+    perfil_original = staff_b.permission_profile_id
+    ajeno = await client.patch(
+        f"{STAFF_URL}/{staff_b.id}",
+        json={"permission_profile_id": str(perfil_a.id)},
+        cookies=cookies_b,
+    )
+    inexistente = await client.patch(
+        f"{STAFF_URL}/{staff_b.id}",
+        json={"permission_profile_id": str(uuid.uuid4())},
+        cookies=cookies_b,
+    )
+    assert ajeno.status_code == 404, ajeno.text
+    _mismo_cuerpo(ajeno, inexistente)
+    await db_session.refresh(staff_b)
+    assert staff_b.permission_profile_id == perfil_original
 
 
 async def test_listado_de_b_no_contiene_ni_cuenta_lo_de_a(client, cookies_a, cookies_b, id_de_a):
     for i in range(3):
-        r = await client.post(URL, json={"name": f"a{i}"}, cookies=cookies_a)
+        r = await client.post(URL, json=_perfil(f"a{i}"), cookies=cookies_a)
         assert r.status_code == 201
-    propio = await client.post(URL, json={"name": "de B"}, cookies=cookies_b)
+    propio = await client.post(URL, json=_perfil("de B"), cookies=cookies_b)
     assert propio.status_code == 201
 
     listado_b = await client.get(URL, cookies=cookies_b)
@@ -115,7 +255,7 @@ async def test_listado_de_b_no_contiene_ni_cuenta_lo_de_a(client, cookies_a, coo
 
 async def test_listado_vacio_de_b_es_identico_con_o_sin_datos_en_a(client, cookies_a, cookies_b):
     antes = await client.get(URL, cookies=cookies_b)
-    r = await client.post(URL, json={"name": "de A"}, cookies=cookies_a)
+    r = await client.post(URL, json=_perfil("de A"), cookies=cookies_a)
     assert r.status_code == 201
     despues = await client.get(URL, cookies=cookies_b)
     assert antes.content == despues.content
@@ -133,7 +273,7 @@ async def test_listado_vacio_de_b_es_identico_con_o_sin_datos_en_a(client, cooki
 async def test_crear_en_b_con_tenant_de_a_en_el_body_queda_en_b(
     client, cookies_a, cookies_b, tenant_a, tenant_b, id_de_a, extra
 ):
-    body = {"name": "inyectado"}
+    body: dict[str, object] = _perfil("inyectado")
     for k, v in extra.items():
         body[k] = str(tenant_a.id) if v == "A" else str(id_de_a)
     r = await client.post(URL, json=body, cookies=cookies_b)
@@ -144,14 +284,14 @@ async def test_crear_en_b_con_tenant_de_a_en_el_body_queda_en_b(
         assert creado["id"] != str(id_de_a)
         assert (await client.get(f"{URL}/{creado['id']}", cookies=cookies_a)).status_code == 404
     listado_a = (await client.get(URL, cookies=cookies_a)).json()
-    assert listado_a["total"] == 1  # solo el dummy original de A
-    assert (await client.get(f"{URL}/{id_de_a}", cookies=cookies_a)).json()["name"] == "dummy de A"
+    assert listado_a["total"] == 1  # solo el perfil original de A
+    assert (await client.get(f"{URL}/{id_de_a}", cookies=cookies_a)).json()["name"] == "perfil de A"
 
 
 async def test_patch_propio_no_puede_mudar_el_recurso_al_otro_tenant(
     client, cookies_a, cookies_b, tenant_a, tenant_b
 ):
-    creado = (await client.post(URL, json={"name": "de B"}, cookies=cookies_b)).json()
+    creado = (await client.post(URL, json=_perfil("de B"), cookies=cookies_b)).json()
     r = await client.patch(
         f"{URL}/{creado['id']}",
         json={"name": "mudado", "tenant_id": str(tenant_a.id)},
@@ -169,10 +309,10 @@ async def test_idempotency_key_repetida_en_mismo_tenant_409_y_en_otro_201(
     client, cookies_a, cookies_b
 ):
     headers = {"Idempotency-Key": "clave-cruzada"}
-    a1 = await client.post(URL, json={"name": "a"}, headers=headers, cookies=cookies_a)
-    a2 = await client.post(URL, json={"name": "a"}, headers=headers, cookies=cookies_a)
-    b1 = await client.post(URL, json={"name": "b"}, headers=headers, cookies=cookies_b)
-    b2 = await client.post(URL, json={"name": "b"}, headers=headers, cookies=cookies_b)
+    a1 = await client.post(URL, json=_perfil("a"), headers=headers, cookies=cookies_a)
+    a2 = await client.post(URL, json=_perfil("a"), headers=headers, cookies=cookies_a)
+    b1 = await client.post(URL, json=_perfil("b"), headers=headers, cookies=cookies_b)
+    b2 = await client.post(URL, json=_perfil("b"), headers=headers, cookies=cookies_b)
     assert a1.status_code == 201
     assert a2.status_code == 409 and a2.json()["detail"]["code"] == "DUPLICATE_IDEMPOTENT"
     assert b1.status_code == 201
@@ -187,11 +327,11 @@ async def test_key_usada_por_a_no_revela_nada_a_b(client, cookies_a, cookies_b):
     # el primer uso en B de una key que A ya usó se comporta igual que una key virgen
     headers = {"Idempotency-Key": "solo-de-a"}
     assert (
-        await client.post(URL, json={"name": "a"}, headers=headers, cookies=cookies_a)
+        await client.post(URL, json=_perfil("a"), headers=headers, cookies=cookies_a)
     ).status_code == 201
-    usada = await client.post(URL, json={"name": "b"}, headers=headers, cookies=cookies_b)
+    usada = await client.post(URL, json=_perfil("b"), headers=headers, cookies=cookies_b)
     virgen = await client.post(
-        URL, json={"name": "b"}, headers={"Idempotency-Key": "nunca-usada"}, cookies=cookies_b
+        URL, json=_perfil("b2"), headers={"Idempotency-Key": "nunca-usada"}, cookies=cookies_b
     )
     assert usada.status_code == virgen.status_code == 201
 
@@ -273,7 +413,7 @@ def _pg_cookies(user_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, str]:
 
 
 @pytest.fixture
-async def pg_escenario(pg_tenant_a, pg_tenant_b, pg_user_factory, pg_dummy_de_a):
+async def pg_escenario(pg_tenant_a, pg_tenant_b, pg_user_factory, pg_perfil_de_a):
     owner_a = await pg_user_factory(pg_tenant_a, "owner-a@pg.example.com")
     owner_b = await pg_user_factory(pg_tenant_b, "owner-b@pg.example.com")
     return {
@@ -281,7 +421,7 @@ async def pg_escenario(pg_tenant_a, pg_tenant_b, pg_user_factory, pg_dummy_de_a)
         "tenant_b": pg_tenant_b,
         "cookies_a": _pg_cookies(owner_a, pg_tenant_a),
         "cookies_b": _pg_cookies(owner_b, pg_tenant_b),
-        "id_de_a": pg_dummy_de_a,
+        "id_de_a": pg_perfil_de_a,
     }
 
 
@@ -292,7 +432,7 @@ async def test_pg_get_patch_delete_ajeno_404_byte_identico(pg_client, pg_escenar
     ajeno_id, falso_id = e["id_de_a"], uuid.uuid4()
     for metodo, kwargs in (
         ("GET", {}),
-        ("PATCH", {"json": {"name": "pisado"}}),
+        ("PATCH", {"json": {"name": "pisado", "permissions": ["COBROS_ANULAR"]}}),
         ("DELETE", {}),
     ):
         ajeno = await pg_client.request(
@@ -317,7 +457,7 @@ async def test_pg_listado_de_b_no_ve_ni_cuenta_lo_de_a(pg_client, pg_escenario):
     assert vacio.status_code == 200
     assert vacio.json()["items"] == [] and vacio.json()["total"] == 0
 
-    propio = (await pg_client.post(URL, json={"name": "de B"}, cookies=e["cookies_b"])).json()
+    propio = (await pg_client.post(URL, json=_perfil("de B"), cookies=e["cookies_b"])).json()
     body = (await pg_client.get(URL, cookies=e["cookies_b"])).json()
     assert [i["id"] for i in body["items"]] == [propio["id"]]
     assert body["total"] == 1
@@ -335,14 +475,14 @@ async def test_pg_crear_con_tenant_de_a_en_el_body_queda_en_b(
     e = pg_escenario
     r = await pg_client.post(
         URL,
-        json={"name": "inyectado", "tenant_id": str(e["tenant_a"]), "tenantId": str(e["tenant_a"])},
+        json=_perfil("inyectado", tenant_id=str(e["tenant_a"]), tenantId=str(e["tenant_a"])),
         cookies=e["cookies_b"],
     )
     assert r.status_code == 201, r.text
     assert r.json()["tenant_id"] == str(e["tenant_b"])
     async with pg_admin_engine.connect() as conn:
         fila_tenant = await conn.scalar(
-            text("SELECT tenant_id FROM dummy_resources WHERE id = :i"), {"i": r.json()["id"]}
+            text("SELECT tenant_id FROM permission_profiles WHERE id = :i"), {"i": r.json()["id"]}
         )
     assert fila_tenant == e["tenant_b"]
     assert (await pg_client.get(URL, cookies=e["cookies_a"])).json()["total"] == 1
@@ -353,9 +493,9 @@ async def test_pg_crear_con_tenant_de_a_en_el_body_queda_en_b(
 async def test_pg_idempotency_key_por_tenant(pg_client, pg_escenario):
     e = pg_escenario
     h = {"Idempotency-Key": "pg-cruzada"}
-    a1 = await pg_client.post(URL, json={"name": "a"}, headers=h, cookies=e["cookies_a"])
-    a2 = await pg_client.post(URL, json={"name": "a"}, headers=h, cookies=e["cookies_a"])
-    b1 = await pg_client.post(URL, json={"name": "b"}, headers=h, cookies=e["cookies_b"])
+    a1 = await pg_client.post(URL, json=_perfil("a"), headers=h, cookies=e["cookies_a"])
+    a2 = await pg_client.post(URL, json=_perfil("a"), headers=h, cookies=e["cookies_a"])
+    b1 = await pg_client.post(URL, json=_perfil("b"), headers=h, cookies=e["cookies_b"])
     assert a1.status_code == 201, a1.text
     assert a2.status_code == 409 and a2.json()["detail"]["code"] == "DUPLICATE_IDEMPOTENT"
     assert b1.status_code == 201, b1.text

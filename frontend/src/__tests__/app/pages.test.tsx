@@ -8,8 +8,15 @@ import PublicLayout from "@/app/(public)/layout";
 import LoginPage from "@/app/(public)/login/page";
 import RegisterPage from "@/app/(public)/register/page";
 import RootPage from "@/app/page";
+import ChangePasswordPage from "@/app/(account)/cambiar-clave/page";
+import AccountLayout from "@/app/(account)/layout";
 import { refreshSession } from "@/lib/api";
-import { getMeRequest, loginRequest, registerRequest } from "@/services/auth.service";
+import {
+  changePasswordRequest,
+  getMeRequest,
+  loginRequest,
+  registerRequest,
+} from "@/services/auth.service";
 import { useAuthStore } from "@/stores/authStore";
 import { nav, renderWithClient, resetNav } from "@/test/test-utils";
 
@@ -27,6 +34,7 @@ jest.mock("@/services/auth.service", () => ({
   registerRequest: jest.fn(),
   getMeRequest: jest.fn(),
   logoutRequest: jest.fn(),
+  changePasswordRequest: jest.fn(),
 }));
 jest.mock("@/lib/api", () => ({ refreshSession: jest.fn() }));
 
@@ -39,14 +47,23 @@ beforeAll(() => {
 });
 
 const session = {
-  user: { id: "u1", email: "a@b.com", role: "OWNER" as const, tenant_id: "t1" },
+  user: {
+    id: "u1",
+    email: "a@b.com",
+    role: "OWNER" as const,
+    tenant_id: "t1",
+    username: null,
+    permission_profile_id: null,
+  },
   tenant: { id: "t1", name: "Lavadero" },
+  permissions: [],
+  must_change_password: false,
 };
 
 beforeEach(() => {
   resetNav();
   jest.clearAllMocks();
-  useAuthStore.setState({ user: null, tenant: null });
+  useAuthStore.setState({ user: null, tenant: null, permissions: [], mustChangePassword: false });
   (refreshSession as jest.Mock).mockRejectedValue(new Error("sin sesión"));
 });
 
@@ -65,6 +82,16 @@ describe("login → dashboard", () => {
     await fillLogin();
     await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/dashboard/algo"));
     expect(useAuthStore.getState().tenant).toEqual(session.tenant);
+  });
+
+  it("un empleado con clave elegida por el dueño va a /cambiar-clave, no al next", async () => {
+    nav.search = new URLSearchParams("next=/dashboard/algo");
+    (loginRequest as jest.Mock).mockResolvedValue({ ...session, must_change_password: true });
+    render(<LoginPage />);
+    await fillLogin();
+    await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/cambiar-clave"));
+    expect(loginRequest).toHaveBeenCalledWith({ identifier: "a@b.com", password: "secreto123" });
+    expect(useAuthStore.getState().mustChangePassword).toBe(true);
   });
 
   it("un next externo se ignora (open redirect)", async () => {
@@ -141,6 +168,18 @@ describe("app shell y dashboard vacío", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
+  it("con must_change_password el shell no muestra nada y manda a /cambiar-clave", async () => {
+    (getMeRequest as jest.Mock).mockResolvedValue({ ...session, must_change_password: true });
+    renderWithClient(
+      <ProtectedLayout>
+        <p>hijo</p>
+      </ProtectedLayout>,
+    );
+    await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/cambiar-clave"));
+    expect(screen.queryByText("hijo")).toBeNull();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
   it("layout público y raíz", () => {
     render(
       <PublicLayout>
@@ -150,5 +189,73 @@ describe("app shell y dashboard vacío", () => {
     expect(screen.getByText("form")).toBeInTheDocument();
     RootPage();
     expect(redirect).toHaveBeenCalledWith("/dashboard");
+  });
+});
+
+describe("/cambiar-clave (§2.3)", () => {
+  function renderChange() {
+    return renderWithClient(
+      <AccountLayout>
+        <ChangePasswordPage />
+      </AccountLayout>,
+    );
+  }
+
+  async function fill(actual: string, nueva: string, repetir = nueva) {
+    await userEvent.type(screen.getByLabelText("Contraseña actual"), actual);
+    await userEvent.type(screen.getByLabelText("Contraseña nueva"), nueva);
+    await userEvent.type(screen.getByLabelText("Repetí la contraseña nueva"), repetir);
+    await userEvent.click(screen.getByRole("button", { name: "Cambiar contraseña" }));
+  }
+
+  it("obligatorio: explica por qué, cambia y va al inicio con el flag apagado", async () => {
+    (getMeRequest as jest.Mock).mockResolvedValue({ ...session, must_change_password: true });
+    (changePasswordRequest as jest.Mock).mockResolvedValue(session);
+    renderChange();
+    expect(await screen.findByText(/la eligió el dueño/)).toBeInTheDocument();
+    await fill("clave-del-dueno", "mi-clave-nueva");
+    await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/dashboard"));
+    expect(changePasswordRequest).toHaveBeenCalledWith({
+      current_password: "clave-del-dueno",
+      new_password: "mi-clave-nueva",
+    });
+    expect(useAuthStore.getState().mustChangePassword).toBe(false);
+  });
+
+  it("valida en el cliente: confirmación distinta y nueva igual a la actual", async () => {
+    (getMeRequest as jest.Mock).mockResolvedValue(session);
+    renderChange();
+    expect(await screen.findByText(/otras sesiones abiertas/)).toBeInTheDocument();
+    await fill("clave-actual", "clave-actual", "otra-cosa");
+    expect(await screen.findByText("Las contraseñas no coinciden")).toBeInTheDocument();
+    expect(screen.getByText("La nueva tiene que ser distinta de la actual")).toBeInTheDocument();
+    expect(changePasswordRequest).not.toHaveBeenCalled();
+  });
+
+  it("clave actual incorrecta (400) aparece en su campo; otro error arriba del botón", async () => {
+    const { AxiosError } = jest.requireActual<typeof import("axios")>("axios");
+    (getMeRequest as jest.Mock).mockResolvedValue(session);
+    (changePasswordRequest as jest.Mock)
+      .mockRejectedValueOnce(
+        new AxiosError("x", "ERR", undefined, null, {
+          status: 400,
+          data: { detail: { code: "INVALID_CREDENTIALS", message: "x" } },
+        } as never),
+      )
+      .mockRejectedValueOnce(new Error("raro"));
+    renderChange();
+    await fill("mal", "mi-clave-nueva");
+    expect(await screen.findByText("La contraseña actual no es correcta.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Contraseña actual")).toHaveAttribute("aria-invalid", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Cambiar contraseña" }));
+    expect(await screen.findByText(/inesperado/)).toBeInTheDocument();
+    expect(nav.router.replace).not.toHaveBeenCalled();
+  });
+
+  it("se puede cerrar sesión desde ahí", async () => {
+    (getMeRequest as jest.Mock).mockResolvedValue(session);
+    renderChange();
+    await userEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+    await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/login"));
   });
 });

@@ -25,7 +25,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 import app.persistence.models  # noqa: F401
 from app.persistence.db.base import Base
 from app.persistence.db.tenant_context import set_tenant_context
-from app.tests.security._poblar_dominio import poblar
+from app.tests.security._poblar_dominio import poblar, set_que_apunta
 
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 
@@ -183,7 +183,10 @@ async def test_una_fila_de_b_no_apunta_a_un_padre_de_a(
                     )
                 else:
                     await session.execute(
-                        text(f"UPDATE {tabla} SET {columna} = :padre_a WHERE id = :fila_b"),
+                        text(
+                            f"UPDATE {tabla} SET {set_que_apunta(tabla, columna)} "
+                            "WHERE id = :fila_b"
+                        ),
                         {"padre_a": filas_a[padre], "fila_b": filas_b[tabla]},
                     )
 

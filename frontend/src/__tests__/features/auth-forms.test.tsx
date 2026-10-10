@@ -65,7 +65,7 @@ describe("LoginForm", () => {
     const onSubmit = jest.fn();
     render(<LoginForm onSubmit={onSubmit} />);
     await userEvent.click(screen.getByRole("button", { name: /ingresar/i }));
-    expect(await screen.findByText("Ingresá tu email")).toHaveAttribute("role", "alert");
+    expect(await screen.findByText("Ingresá tu email o usuario")).toHaveAttribute("role", "alert");
     expect(screen.getByText("Ingresá tu contraseña")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -76,13 +76,22 @@ describe("LoginForm", () => {
       .mockRejectedValueOnce(new Error("Email o contraseña incorrectos."))
       .mockRejectedValueOnce("raro");
     render(<LoginForm onSubmit={onSubmit} />);
-    await userEvent.type(screen.getByLabelText(/email/i), "a@b.com");
+    await userEvent.type(screen.getByLabelText(/email o usuario/i), "  lavador.juan ");
     await userEvent.type(screen.getByLabelText(/contraseña/i), "x");
     await userEvent.click(screen.getByRole("button", { name: /ingresar/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("incorrectos");
     await userEvent.click(screen.getByRole("button", { name: /ingresar/i }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/inesperado/));
-    expect(onSubmit).toHaveBeenCalledWith({ email: "a@b.com", password: "x" });
+    // Un usuario de empleado no es un email: no se valida formato, solo se recorta.
+    expect(onSubmit).toHaveBeenCalledWith({ identifier: "lavador.juan", password: "x" });
+  });
+
+  it("un solo campo para email o usuario, de texto y sin autocorrector", () => {
+    render(<LoginForm onSubmit={jest.fn()} />);
+    const input = screen.getByLabelText(/email o usuario/i);
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveAttribute("autocomplete", "username");
+    expect(input).toHaveAttribute("autocapitalize", "none");
   });
 
   it("el botón mide al menos 44px", () => {

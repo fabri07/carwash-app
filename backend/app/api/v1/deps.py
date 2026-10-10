@@ -16,8 +16,11 @@ import sentry_sdk
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.errors import forbidden, unauthenticated
+from app.api.v1.errors import ApiError, forbidden, unauthenticated
+from app.application.services.team_service import effective_permissions
 from app.config.settings import get_settings
+from app.domain.errors import ErrorCode
+from app.domain.permissions import Permission
 from app.domain.roles import Role
 from app.observability.logger import bind_request_context, get_logger
 from app.persistence.db.session import get_db_session
@@ -65,7 +68,29 @@ async def get_current_user(request: Request, session: DbSession) -> User:
     return user
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+#: La sesión válida, aunque el usuario todavía deba cambiar la clave. Solo la usan las rutas
+#: que el contrato deja abiertas en ese estado (§2.3): `/auth/me` y `/auth/change-password`
+#: (`refresh` y `logout` leen su propia cookie).
+SessionUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_active_user(current_user: SessionUser) -> User:
+    """`get_current_user` + la compuerta del cambio de clave obligatorio (§2.3).
+
+    Se corta acá, en el servidor, y no en el frontend: un empleado con la clave inicial
+    (que eligió el dueño) no puede operar hasta elegir la suya.
+    """
+    if current_user.must_change_password:
+        raise ApiError(
+            403,
+            ErrorCode.PASSWORD_CHANGE_REQUIRED,
+            "You must change your password before continuing.",
+        )
+    return current_user
+
+
+#: El usuario de toda ruta de negocio.
+CurrentUser = Annotated[User, Depends(get_active_user)]
 
 
 def get_current_tenant_id(current_user: CurrentUser) -> uuid.UUID:
@@ -76,7 +101,7 @@ def get_current_tenant_id(current_user: CurrentUser) -> uuid.UUID:
 CurrentTenantId = Annotated[uuid.UUID, Depends(get_current_tenant_id)]
 
 
-def require_role(*roles: Role) -> Callable[[User], Awaitable[User]]:
+def require_role(*roles: Role) -> Callable[..., Awaitable[User]]:
     """Factory de dependencia por rol. Con un string literal en vez de `Role`, mypy falla."""
     allowed = frozenset(roles)
 
@@ -85,7 +110,34 @@ def require_role(*roles: Role) -> Callable[[User], Awaitable[User]]:
             raise forbidden("Your role is not allowed to perform this action.")
         return current_user
 
+    _check.authorization = ("role", allowed)  # type: ignore[attr-defined]  # lo lee el meta-test A3
     return _check
+
+
+def require_permission(*permissions: Permission) -> Callable[..., Awaitable[User]]:
+    """Factory de dependencia por permiso (FASE-4-CONTRATO §2).
+
+    El `OWNER` pasa siempre (Y5). Un `STAFF` necesita **todos** los permisos pedidos en su
+    perfil, leído de la base en este request (no del token): cambiar un perfil rige desde
+    el request siguiente. El 403 sale solo sobre el propio tenant: el recurso todavía no se
+    buscó, así que no distingue uno ajeno de uno inexistente (Y11).
+    """
+    required = frozenset(permissions)
+    if not required:
+        raise ValueError("require_permission needs at least one permission")
+
+    async def _check(current_user: CurrentUser, session: DbSession) -> User:
+        granted = await effective_permissions(session, current_user)
+        if not required <= granted:
+            raise forbidden("Your permission profile does not allow this action.")
+        return current_user
+
+    _check.authorization = ("permission", required)  # type: ignore[attr-defined]  # meta-test A3
+    return _check
+
+
+#: El dueño: configuración del negocio y equipo (Y5).
+OwnerUser = Annotated[User, Depends(require_role(Role.OWNER))]
 
 
 #: Header que setea el edge de Railway: UN solo valor, sin la cadena ambigua de

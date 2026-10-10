@@ -3,6 +3,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, EmailStr, Field
 
+from app.domain.permissions import Permission
 from app.domain.roles import Role
 from app.schemas.common import CamelModel
 from app.utils.security import BCRYPT_MAX_BYTES
@@ -44,16 +45,28 @@ class RegisterRequest(BaseModel):
     tenant: Annotated[str, BeforeValidator(_sin_nul), Field(min_length=1, max_length=200)]
 
 
+#: Email del dueño o usuario del empleado (D4-3): un solo campo. 254 = largo máximo de un
+#: email; un usuario tiene como mucho 40.
+Identifier = Annotated[str, BeforeValidator(_sin_nul), Field(min_length=1, max_length=254)]
+
+
 class LoginRequest(BaseModel):
-    email: Email
+    identifier: Identifier
     password: Password
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: Password
+    new_password: NewPassword
 
 
 class UserResponse(CamelModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
-    email: str
+    email: str | None
+    username: str | None
     role: Role
+    permission_profile_id: uuid.UUID | None
 
 
 class TenantResponse(CamelModel):
@@ -62,7 +75,15 @@ class TenantResponse(CamelModel):
 
 
 class MeResponse(BaseModel):
-    """Lo que devuelven registro, login, refresh y `/me`. **Nunca** los tokens (ADR-0009)."""
+    """Lo que devuelven registro, login, refresh y `/me`. **Nunca** los tokens (ADR-0009).
+
+    `permissions`: lo que el usuario puede hacer ahora (el `OWNER`, todo). El frontend lo
+    usa para ocultar menús y botones; la decisión real la toma el servidor en cada request.
+    `must_change_password`: mientras sea `true`, solo responden `me`, `change-password`,
+    `refresh` y `logout` (FASE-4-CONTRATO §2.3).
+    """
 
     user: UserResponse
     tenant: TenantResponse
+    permissions: list[Permission]
+    must_change_password: bool

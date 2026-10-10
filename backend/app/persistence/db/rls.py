@@ -77,6 +77,9 @@ def create_auth_lookup() -> list[str]:
         f"DROP POLICY IF EXISTS {owner_lookup_policy_name('users')} ON users",
         f"CREATE POLICY {owner_lookup_policy_name('users')} ON users "
         "FOR SELECT TO CURRENT_USER USING (true)",
+        # Re-aplicar 0001 sobre un esquema ya en 0004 (stamp atrasado) encuentra la versión
+        # con `p_identifier`, y `CREATE OR REPLACE` no puede renombrar el parámetro.
+        f"DROP FUNCTION IF EXISTS {fn}(text)",
         f"""
         CREATE OR REPLACE FUNCTION {fn}(p_email text)
         RETURNS TABLE (
@@ -88,6 +91,43 @@ def create_auth_lookup() -> list[str]:
             SELECT u.id, u.tenant_id, u.password_hash, u.token_version, u.role
             FROM public.users AS u
             WHERE u.email = lower(p_email) AND u.voided_at IS NULL
+            LIMIT 1
+        $fn$
+        """,
+        f"REVOKE ALL ON FUNCTION {fn}(text) FROM PUBLIC",
+        _if_app_role(f"GRANT EXECUTE ON FUNCTION {fn}(text) TO {APP_ROLE}"),
+    ]
+
+
+def create_auth_lookup_by_identifier() -> list[str]:
+    """F4 (FASE-4-CONTRATO §3.1): la misma función, ahora por email **o** usuario.
+
+    Un solo campo `identifier` en el login: el dueño entra con email y el empleado con
+    usuario (D4-3). No chocan: `username` nunca contiene `@`. Mismas columnas devueltas,
+    mismos permisos. Es una función nueva y no un cambio a `create_auth_lookup`, que la
+    migración 0001 sigue usando tal cual (la tabla de 0001 no tiene `username`).
+
+    `DROP` antes de `CREATE`: Postgres no deja renombrar el parámetro con
+    `CREATE OR REPLACE`.
+    """
+    fn = AUTH_LOOKUP_FUNCTION
+    return [
+        f"DROP POLICY IF EXISTS {owner_lookup_policy_name('users')} ON users",
+        f"CREATE POLICY {owner_lookup_policy_name('users')} ON users "
+        "FOR SELECT TO CURRENT_USER USING (true)",
+        f"DROP FUNCTION IF EXISTS {fn}(text)",
+        f"""
+        CREATE FUNCTION {fn}(p_identifier text)
+        RETURNS TABLE (
+            id uuid, tenant_id uuid, password_hash text, token_version integer, role public.role
+        )
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = pg_catalog, public
+        AS $fn$
+            SELECT u.id, u.tenant_id, u.password_hash, u.token_version, u.role
+            FROM public.users AS u
+            WHERE (u.email = lower(p_identifier) OR u.username = lower(p_identifier))
+              AND u.voided_at IS NULL
             LIMIT 1
         $fn$
         """,

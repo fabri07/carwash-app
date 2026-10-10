@@ -1,5 +1,10 @@
 import { api } from "@/lib/api";
-import type { AuthResponse, LoginPayload, RegisterPayload } from "@/types/api";
+import type {
+  AuthResponse,
+  ChangePasswordPayload,
+  LoginPayload,
+  RegisterPayload,
+} from "@/types/api";
 
 /**
  * Servicio HTTP de auth. Con cookies HttpOnly (ADR-0009) ninguna función
@@ -18,6 +23,16 @@ export async function registerRequest(data: RegisterPayload): Promise<AuthRespon
 
 export async function getMeRequest(): Promise<AuthResponse> {
   const res = await api.get<AuthResponse>("/auth/me");
+  return res.data;
+}
+
+/**
+ * Cambia la clave propia. Devuelve la sesión nueva (con `must_change_password`
+ * en `false`) y el backend rota las cookies: las otras sesiones del usuario
+ * quedan cerradas. 400 si la actual no coincide (no 401: no es sesión vencida).
+ */
+export async function changePasswordRequest(data: ChangePasswordPayload): Promise<AuthResponse> {
+  const res = await api.post<AuthResponse>("/auth/change-password", data);
   return res.data;
 }
 

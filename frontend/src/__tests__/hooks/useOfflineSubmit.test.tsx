@@ -23,8 +23,22 @@ import {
 import { useAuthStore } from "@/stores/authStore";
 import { useOfflineQueueStore, type QueuedItem } from "@/stores/offlineQueueStore";
 
-const userA = { id: "u1", email: "a@x.com", role: "OWNER" as const, tenant_id: "t1" };
-const userB = { id: "u2", email: "b@x.com", role: "STAFF" as const, tenant_id: "t1" };
+const userA = {
+  id: "u1",
+  email: "a@x.com",
+  role: "OWNER" as const,
+  tenant_id: "t1",
+  username: null,
+  permission_profile_id: null,
+};
+const userB = {
+  id: "u2",
+  email: "b@x.com",
+  role: "STAFF" as const,
+  tenant_id: "t1",
+  username: null,
+  permission_profile_id: null,
+};
 
 const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
 
@@ -89,6 +103,13 @@ describe("clasificación de errores", () => {
     expect(classifyFlushError(httpError(429))).toBe("transient");
     expect(classifyFlushError(httpError(401))).toBe("unauthenticated");
     expect(classifyFlushError(httpError(422))).toBe("permanent");
+    // Clave reseteada mientras la carga esperaba: no gasta intentos.
+    expect(
+      classifyFlushError(
+        httpError(403, { detail: { code: "PASSWORD_CHANGE_REQUIRED", message: "x" } }),
+      ),
+    ).toBe("unauthenticated");
+    expect(classifyFlushError(httpError(403))).toBe("permanent");
     expect(classifyFlushError(httpError(302))).toBe("transient");
     expect(classifyFlushError(new Error("x"))).toBe("transient");
   });

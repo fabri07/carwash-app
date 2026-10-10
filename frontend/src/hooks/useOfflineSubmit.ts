@@ -61,7 +61,10 @@ export type FlushErrorClass = "duplicate" | "transient" | "unauthenticated" | "p
  * - `transient`: red/timeout (sin respuesta), 5xx, 408/425/429 → corta el
  *   flush, el ítem queda y no gasta intento.
  * - `unauthenticated`: 401 (su refresh ya falló en el interceptor) → corta,
- *   queda hasta que haya sesión válida del mismo usuario y tenant.
+ *   queda hasta que haya sesión válida del mismo usuario y tenant. También el
+ *   403 `PASSWORD_CHANGE_REQUIRED`: la carga es válida, solo falta que el
+ *   empleado cambie la clave (p. ej. el dueño se la reseteó mientras estaba sin
+ *   señal); gastar intentos la mandaría a `failed` sin motivo.
  * - `permanent`: el resto de los 4xx (400, 403, 404, 409 no idempotente, 422…)
  *   → gasta un intento; al tope pasa a `failed`.
  * Un error que no es HTTP (bug del handler) se trata como transitorio: ante
@@ -71,7 +74,7 @@ export function classifyFlushError(e: unknown): FlushErrorClass {
   if (isDuplicate(e)) return "duplicate";
   if (!axios.isAxiosError(e) || !e.response) return "transient";
   const { status } = e.response;
-  if (status === 401) return "unauthenticated";
+  if (status === 401 || isPasswordChangeRequired(e)) return "unauthenticated";
   if (status >= 500 || TRANSIENT_4XX.has(status)) return "transient";
   if (status >= 400) return "permanent";
   return "transient";
@@ -95,6 +98,12 @@ export function isClientError(e: unknown): boolean {
  * (`{detail: {code}}`) y el literal está tipado contra `ErrorCode`.
  */
 const DUPLICATE: ApiErrorCode = "DUPLICATE_IDEMPOTENT";
+
+function isPasswordChangeRequired(e: unknown): boolean {
+  if (!axios.isAxiosError(e) || e.response?.status !== 403) return false;
+  const data = e.response.data as Partial<ApiError> | undefined;
+  return data?.detail?.code === "PASSWORD_CHANGE_REQUIRED";
+}
 
 export function isDuplicate(e: unknown): boolean {
   if (!axios.isAxiosError(e) || e.response?.status !== 409) return false;
