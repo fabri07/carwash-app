@@ -8,7 +8,7 @@ precios; ningún término de acá se crea solo.
 **Alcance:** español rioplatense primero, con el término en inglés que el rubro usa tal cual. Las
 variantes de otros países se suman en una columna nueva, sin cambiar las existentes.
 
-**Estado:** v2, 2026-10-07. Borrador para validar con el dueño. No lleva precios ni duraciones: dependen
+**Estado:** v2.1, 2026-10-07. Borrador para validar con el dueño. No lleva precios ni duraciones: dependen
 de cada negocio y del tamaño del vehículo.
 
 Columnas: **Término** (como lo escribe un dueño argentino) · **Tipo** · **Inglés** (como aparece en el
@@ -110,7 +110,7 @@ Dos reglas que se desprenden:
 | Restauración de ópticas | servicio | Headlight restoration | faros, ópticas, pulido de faros, faros amarillos | Saca lo amarillo y opaco del policarbonato y lo protege. |
 | Restauración de plásticos exteriores | servicio | Trim restoration | plásticos, molduras, renovador de plásticos, burletes | Devuelve el negro a plásticos y burletes. |
 | Abrillantado de cromos y escapes | adicional | Metal polishing | cromos, escape, acero, aluminio pulido | Pulido de partes metálicas y colas de escape. |
-| Tratamiento de vidrios | adicional | Glass coating | repelente de lluvia, hidrofóbico de vidrios, antilluvia | Producto que hace correr el agua en el parabrisas. |
+| Tratamiento de vidrios | adicional | Rain repellent | repelente de lluvia, hidrofóbico de vidrios, antilluvia | Producto que hace correr el agua en el parabrisas. |
 | Remoción de calcáreo | adicional | Water spot removal | manchas de agua, sarro, calcáreo, agua dura | Saca las marcas de minerales del agua secada al sol. |
 | Remoción de overspray | adicional | Overspray removal | pintura salpicada, overspray, salpicaduras de obra | Partículas de pintura ajena adheridas a la carrocería. |
 | Retoque de pintura | adicional | Touch up | retoque, pincel, tapar rayón | Relleno puntual de rayones que llegan a la base. |
@@ -202,12 +202,12 @@ servicio en vez de en la combinación servicio × segmento.
 | Término | Tipo | Inglés | También lo buscan como | Qué es |
 |---|---|---|---|---|
 | Segmento de vehículo | entidad | Vehicle size tier | tamaño, categoría, porte | Agrupación que define precio y duración. |
-| Auto | modificador | Sedan, hatchback | sedán, chico, compacto, auto común | Segmento base de la mayoría de las listas. |
-| SUV | modificador | SUV, crossover | camioneta chica, crossover, suv | Mayor superficie y altura. |
-| Utilitario | modificador | Van, cargo van | furgón, furgoneta, utilitario | Volumen de carga; interior distinto. |
-| Pick-up | modificador | Pickup truck | camioneta, pick up, pickup, doble cabina | Caja abierta, mayor superficie. |
-| 4x4 grande | modificador | Full-size SUV | camionetón, 4x4, todoterreno | Escalón superior de SUV. |
-| Moto | modificador | Motorcycle | moto, motos | Proceso y tiempos propios. |
+| Auto | entidad | Sedan, hatchback | sedán, chico, compacto, auto común | Segmento base de la mayoría de las listas. |
+| SUV | entidad | SUV, crossover | camioneta chica, crossover, suv | Mayor superficie y altura. |
+| Utilitario | entidad | Van, cargo van | furgón, furgoneta, utilitario | Volumen de carga; interior distinto. |
+| Pick-up | entidad | Pickup truck | camioneta, pick up, pickup, doble cabina | Caja abierta, mayor superficie. |
+| 4x4 grande | entidad | Full-size SUV | camionetón, 4x4, todoterreno | Escalón superior de SUV. |
+| Moto | entidad | Motorcycle | moto, motos | Proceso y tiempos propios. |
 | Vehículo de flota | entidad | Fleet vehicle | flota, empresa, cuenta corriente | Pertenece a una cuenta, no a una persona. |
 | Patente | entidad | License plate | patente, dominio, chapa | Identidad natural del vehículo. PII fuerte: va al scrubbing de Sentry. |
 | Ficha del vehículo | entidad | Vehicle profile | historial del auto, ficha | Historial de trabajos, estado de protección, notas. |

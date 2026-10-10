@@ -7,26 +7,26 @@ Guía para Claude Code al trabajar en este repositorio.
 SaaS multi-tenant para lavaderos y talleres de detailing: rubros híbridos que prestan servicios y venden
 productos (F9). Ningún servicio queda fijo en el código: cada negocio define los suyos; la app aporta el
 vocabulario del rubro (`docs/GLOSARIO-RUBRO.md`). Nace del sistema real que opera
-**Sola CleanCars** (Google Sheet + Apps Script), que pasa a ser el tenant #1 y es la fuente de las
-reglas de negocio.
+**Sola CleanCars** (Google Sheet + Apps Script), que es la fuente de las reglas de negocio; la app no
+depende de que Sola la use.
 
-**Criterio de éxito de la primera entrega:** Sola CleanCars opera **una semana completa** sin volver
-a Google Sheets. El MVP **no** se declara terminado porque "la app funciona". Ante cualquier duda de
-alcance, la pregunta es: *si esto falta, ¿lo obliga a abrir la planilla?* Si sí, entra. Si no, va a v2.
+**Criterio de éxito de la primera entrega:** uno o dos negocios reales en beta (lavadero o detailing)
+operan **una semana completa solo con la app**. El MVP **no** se declara terminado porque "la app
+funciona". Ante cualquier duda de alcance, la pregunta es: *si esto falta, ¿un negocio beta tiene que
+salir de la app para hacerlo?* Si sí, entra. Si no, va a v2.
 
 ## Estado actual
 
-**Fases 1 (spec) y 2 (infraestructura) completas en código.** Hay backend (FastAPI, auth con cookies
-httpOnly, RLS en todas las tablas) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA),
-sin nada del dominio del lavadero todavía. Contrato de la fase: `docs/adr/` (13 ADRs),
-`docs/adr/PORT-MANIFEST.md` y `docs/adr/FASE-2-ACEPTACION.md`. El checkpoint humano de F2 (registrarse
-en la URL desplegada) depende de configurar GitHub, Railway y Vercel.
+**Fases 1 (spec), 2 (infraestructura) y 3 (dominio) completas.** Hay backend (FastAPI, auth con cookies
+httpOnly, RLS en todas las tablas, el dominio de turnos, jobs, cobros y cotizaciones con su aislamiento
+probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA). Todavía no hay endpoints
+ni pantallas del negocio: llegan desde la Fase 4 (contrato: `docs/adr/FASE-4-CONTRATO.md`).
 
 Roadmap completo: `docs/ROADMAP.md`.
 
 ```
 F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero
-       → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Migración/go-live → F9 Productos y ventas
+       → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Go-live beta → F9 Productos y ventas
 ```
 
 > ⚠️ **`docs/spec/` y `docs/legacy/` no están en este repositorio.** Son local-only (ver `.gitignore`):
