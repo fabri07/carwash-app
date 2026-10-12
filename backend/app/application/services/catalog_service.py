@@ -22,7 +22,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.application.services._base import ServiceBase, alive_unique
 from app.application.services.errors import AlreadyExistsError, CatalogIncoherentError
 from app.domain.booking_state import BLOCKING_BOOKING_STATUSES
-from app.domain.enums import PricingMode
+from app.domain.enums import BookingStatus, PricingMode
 from app.domain.exceptions import GuardFailedError, InvalidAmountError
 from app.domain.money import BPS_DENOMINATOR
 from app.domain.void import VoidReason
@@ -50,6 +50,9 @@ from app.persistence.repositories.catalog import (
     VehicleSizeRepository,
 )
 from app.utils.datetime_utils import utcnow
+
+#: Turnos que ocupan un puesto, o lo van a ocupar al aceptar la cotización.
+_UPCOMING_STATUSES = BLOCKING_BOOKING_STATUSES | {BookingStatus.PENDIENTE_COTIZACION}
 
 
 class ResourceInUseError(GuardFailedError):
@@ -260,23 +263,28 @@ class CatalogService(ServiceBase):
         )
 
     async def void_resource(self, id: uuid.UUID, *, now: datetime) -> Resource:
-        """`ResourceInUseError` si algún turno vivo lo ocupa y todavía no terminó."""
+        """`ResourceInUseError` si algún turno vivo lo ocupa, o lo va a ocupar al aceptar su
+        cotización (D4-13), y todavía no terminó. Una vez anulado, ni el alta de un turno ni
+        aceptar una cotización lo usan (`_require` excluye anulados)."""
         await self._enter()
-        await self._require(ResourceRepository(self._session), id)
-        ocupado = await self._session.scalar(
+        resource = await self._lock(ResourceRepository(self._session), id)
+        busy = await self._session.scalar(
             select(func.count())
             .select_from(Booking)
             .where(
                 Booking.tenant_id == self._tenant_id,
                 Booking.resource_id == id,
-                Booking.status.in_(BLOCKING_BOOKING_STATUSES),
+                Booking.status.in_(_UPCOMING_STATUSES),
                 Booking.voided_at.is_(None),
                 Booking.end_at > now,
             )
         )
-        if ocupado:
+        if busy:
             raise ResourceInUseError("the resource has upcoming bookings")
-        return await self._void(ResourceRepository(self._session), id)
+        resource.voided_at = utcnow()
+        resource.void_reason = VoidReason.PEDIDO_DEL_USUARIO
+        await self._session.flush()
+        return resource
 
     async def create_resource(self, name: str, sort_order: int = 0) -> Resource:
         await self._enter()
@@ -348,17 +356,14 @@ class CatalogService(ServiceBase):
     ) -> BusinessHours:
         """Valida la franja resultante (lo nuevo combinado con lo que ya estaba)."""
         await self._enter()
-        current = await self._lock(BusinessHoursRepository(self._session), id)
-        _check_hours(
-            weekday if weekday is not None else current.weekday,
-            opens_at if opens_at is not None else current.opens_at,
-            closes_at if closes_at is not None else current.closes_at,
-        )
-        return await self._update(
-            BusinessHoursRepository(self._session),
-            id,
-            {"weekday": weekday, "opens_at": opens_at, "closes_at": closes_at},
-        )
+        hours = await self._lock(BusinessHoursRepository(self._session), id)
+        new_weekday = weekday if weekday is not None else hours.weekday
+        new_opens = opens_at if opens_at is not None else hours.opens_at
+        new_closes = closes_at if closes_at is not None else hours.closes_at
+        _check_hours(new_weekday, new_opens, new_closes)
+        hours.weekday, hours.opens_at, hours.closes_at = new_weekday, new_opens, new_closes
+        await self._session.flush()
+        return hours
 
     async def void_business_hours(self, id: uuid.UUID) -> BusinessHours:
         return await self._void(BusinessHoursRepository(self._session), id)

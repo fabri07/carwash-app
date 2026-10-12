@@ -29,7 +29,7 @@ from app.persistence.models.catalog import CODE_PATTERN
 from app.persistence.models.tenant import WELCOME_TEXT_MAX
 from app.schemas.auth import _sin_nul
 from app.schemas.common import CamelModel
-from app.schemas.team import _nombre
+from app.schemas.team import _lower, _nombre
 
 
 def _texto_opcional(value: object) -> object:
@@ -52,10 +52,6 @@ def _whatsapp(value: str | None) -> str | None:
 
 def _upper(value: object) -> object:
     return value.strip().upper() if isinstance(value, str) else value
-
-
-def _slug(value: object) -> object:
-    return value.strip().lower() if isinstance(value, str) else value
 
 
 Address = Annotated[
@@ -85,7 +81,7 @@ Whatsapp = Annotated[
     AfterValidator(_whatsapp),
 ]
 Slug = Annotated[
-    str, BeforeValidator(_sin_nul), BeforeValidator(_slug), Field(pattern=SLUG_PATTERN)
+    str, BeforeValidator(_sin_nul), BeforeValidator(_lower), Field(pattern=SLUG_PATTERN)
 ]
 Code = Annotated[
     str, BeforeValidator(_sin_nul), BeforeValidator(_upper), Field(pattern=CODE_PATTERN)
@@ -141,9 +137,9 @@ class SettingsUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _sin_null_en_obligatorios(self) -> Self:
-        nulos = sorted(f for f in self.model_fields_set & _NO_NULLABLE if getattr(self, f) is None)
-        if nulos:
-            raise ValueError(f"must not be null: {', '.join(nulos)}")
+        nulls = sorted(f for f in self.model_fields_set & _NO_NULLABLE if getattr(self, f) is None)
+        if nulls:
+            raise ValueError(f"must not be null: {', '.join(nulls)}")
         return self
 
     def changes(self) -> dict[str, object]:

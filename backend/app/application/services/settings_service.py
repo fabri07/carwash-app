@@ -17,6 +17,7 @@ from app.application.services.errors import AlreadyExistsError, NotFoundError
 from app.application.services.tenant_provisioning import SLUG_TAKEN
 from app.persistence.db._savepoint import SavepointConflictError, guarded_savepoint
 from app.persistence.models.tenant import Tenant, TenantSettings
+from app.utils.datetime_utils import utcnow
 
 #: Los campos de `tenant_settings` que se editan por `PATCH /settings`. `palette`, `font`,
 #: `logo_key` y `onboarding_completed_at` tienen su propio camino (PR 4.5 y 4.6).
@@ -93,5 +94,7 @@ class SettingsService(ServiceBase):
                     tenant.slug = slug
             except SavepointConflictError as exc:
                 raise AlreadyExistsError("slug") from exc
+            # La respuesta muestra `tenant_settings.updated_at`: el slug también cuenta.
+            settings.updated_at = utcnow()
         await self._session.flush()
         return BusinessSettings(tenant=tenant, settings=settings)

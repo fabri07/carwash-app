@@ -122,6 +122,11 @@ export function CatalogTab<T extends { id: string }, Payload extends Patch, Patc
       // 409 RESOURCE_IN_USE: el mensaje queda en el diálogo.
       throw new Error(configError(e).message);
     }
+    // Si era la única fila de una página que no es la primera, volver a la anterior: si no,
+    // la tabla queda en una página vacía y parece que no hay nada cargado.
+    if (data && data.items.length === 1 && page.offset > 0) {
+      setPage((p) => ({ ...p, offset: Math.max(0, p.offset - p.limit) }));
+    }
     await refresh();
     toast.success(copy.deleted(row));
   }

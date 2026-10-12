@@ -269,6 +269,17 @@ describe("/configuracion/mi-negocio", () => {
     );
   });
 
+  it("Seña: un % con decimales se muestra tal cual y guardar sin tocarlo no lo redondea", async () => {
+    (getSettings as jest.Mock).mockResolvedValue({ ...settings, deposit_bps: 2550 });
+    await renderPage();
+    const sena = section("Seña");
+    expect(within(sena).getByLabelText("Porcentaje de la seña")).toHaveValue("25,5");
+    await userEvent.click(within(sena).getByRole("button", { name: "Guardar" }));
+    await waitFor(() =>
+      expect(updateSettings).toHaveBeenCalledWith({ deposit_enabled: false, deposit_bps: 2550 }),
+    );
+  });
+
   it("Seña: con el interruptor apagado el % se edita y se conserva; fuera de rango no se manda", async () => {
     await renderPage();
     const sena = section("Seña");
@@ -277,7 +288,7 @@ describe("/configuracion/mi-negocio", () => {
     await userEvent.clear(pct);
     await userEvent.type(pct, "0");
     await userEvent.click(within(sena).getByRole("button", { name: "Guardar" }));
-    expect(await within(sena).findByText("Entre 1 y 100")).toBeInTheDocument();
+    expect(await within(sena).findByText("Entre 0,01 y 100")).toBeInTheDocument();
     await userEvent.clear(pct);
     await userEvent.type(pct, "10");
     await userEvent.click(within(sena).getByRole("button", { name: "Guardar" }));
@@ -609,5 +620,33 @@ describe("Tamaños", () => {
     await userEvent.click(within(confirm).getByRole("button", { name: "Borrar" }));
     await waitFor(() => expect(deleteVehicleSize).toHaveBeenCalledWith("v1"));
     await waitFor(() => expect(lastToast()?.message).toBe('Tamaño "Chico" borrado.'));
+  });
+
+  it("borrar la única fila de la última página vuelve a la página anterior", async () => {
+    const muchos = Array.from({ length: 25 }, (_, i) => ({
+      ...chico,
+      id: `v${i + 10}`,
+      code: `T${i}`,
+      label: `Tamaño ${i}`,
+    }));
+    (listVehicleSizes as jest.Mock).mockImplementation(({ offset }: { offset: number }) =>
+      Promise.resolve({
+        items: offset === 0 ? muchos : [chico],
+        total: 26,
+        limit: 25,
+        offset,
+        has_more: offset === 0,
+      }),
+    );
+    (deleteVehicleSize as jest.Mock).mockResolvedValue(undefined);
+    await openTab("Tamaños", "Tamaños de vehículo");
+    await userEvent.click(await screen.findByRole("button", { name: "Página siguiente" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Borrar el tamaño Chico" }));
+    const confirm = await screen.findByRole("dialog", { name: "¿Borrar el tamaño Chico?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "Borrar" }));
+    await waitFor(() => expect(deleteVehicleSize).toHaveBeenCalledWith("v1"));
+    await waitFor(() =>
+      expect(listVehicleSizes).toHaveBeenLastCalledWith({ limit: 25, offset: 0 }),
+    );
   });
 });

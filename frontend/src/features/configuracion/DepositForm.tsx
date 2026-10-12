@@ -17,7 +17,12 @@ import { Switch } from "@/components/ui/switch";
 import { FormActions } from "@/features/configuracion/FormActions";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import type { SettingsPatch, TenantSettings } from "@/types/api";
-import { depositSchema, type DepositInput } from "@/validation/configuracion";
+import {
+  depositSchema,
+  formatDecimal,
+  parseDecimal,
+  type DepositInput,
+} from "@/validation/configuracion";
 
 /** Seña sugerida al activarla por primera vez (D4-11). */
 export const SUGGESTED_DEPOSIT_BPS = 2000;
@@ -30,9 +35,12 @@ interface DepositFormProps {
   submitLabel?: string;
 }
 
-/** % entero → puntos básicos (20 % → 2000). */
+/** % → puntos básicos (20 % → 2000; 25,5 % → 2550). */
 export function toDepositPatch(v: DepositInput): SettingsPatch {
-  return { deposit_enabled: v.deposit_enabled, deposit_bps: Number(v.deposit_percent) * 100 };
+  return {
+    deposit_enabled: v.deposit_enabled,
+    deposit_bps: Math.round(parseDecimal(v.deposit_percent) * 100),
+  };
 }
 
 /**
@@ -50,7 +58,8 @@ export function DepositForm({
     resolver: zodResolver(depositSchema),
     defaultValues: {
       deposit_enabled: settings?.deposit_enabled ?? false,
-      deposit_percent: String(Math.round((settings?.deposit_bps ?? SUGGESTED_DEPOSIT_BPS) / 100)),
+      // Sin redondear a entero: guardar sin tocar el % no puede cambiar el valor guardado.
+      deposit_percent: formatDecimal((settings?.deposit_bps ?? SUGGESTED_DEPOSIT_BPS) / 100),
     },
   });
   const { onSubmit: submit, formError } = useFormSubmit(form, (v) => onSubmit(toDepositPatch(v)));
@@ -84,7 +93,7 @@ export function DepositForm({
               <FormLabel>Porcentaje de la seña</FormLabel>
               <div className="flex items-center gap-2">
                 <FormControl>
-                  <Input inputMode="numeric" autoComplete="off" className="w-28" {...field} />
+                  <Input inputMode="decimal" autoComplete="off" className="w-28" {...field} />
                 </FormControl>
                 <span aria-hidden="true" className="text-muted-foreground">
                   %

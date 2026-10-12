@@ -355,3 +355,14 @@ async def test_f9_reenviar_el_mismo_cierre_devuelve_el_caso_sin_efectos(lav):
     assert as_aware(otra.resolved_at) == T
     with pytest.raises(InvalidTransition):  # un cierre distinto sigue fallando
         await lav.senas.resolve(c.id, status=DepositStatus.REPROGRAMADA, reason="x", resolved_at=T)
+
+
+async def test_no_se_acepta_una_cotizacion_de_un_turno_cuyo_horario_ya_paso(lav):
+    """El turno a cotizar no vence (D4-13): aceptar después del inicio confirmaría un turno
+    imposible. Se rechaza y el turno queda como estaba."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    assert booking.quote_id is not None
+    await _cotizada(lav, booking.quote_id, precio=1_000_000)
+    with pytest.raises(GuardFailedError, match="already passed"):
+        await lav.cotizaciones.accept(booking.quote_id, decided_at=T, now=T)
+    assert booking.status == BookingStatus.PENDIENTE_COTIZACION

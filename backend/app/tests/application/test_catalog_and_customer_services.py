@@ -2,12 +2,13 @@
 normalizada). Datos sintéticos: ningún teléfono ni patente sale del spec."""
 
 import uuid
-from datetime import time
+from datetime import time, timedelta
 
 import pytest
 import pytest_asyncio
 
 from app.application.services import CatalogService, check_price_coherence
+from app.application.services.catalog_service import ResourceInUseError
 from app.application.services.errors import (
     AlreadyExistsError,
     CatalogIncoherentError,
@@ -18,7 +19,7 @@ from app.domain.exceptions import GuardFailedError, InvalidAmountError, InvalidP
 from app.domain.phone import PhoneReason
 from app.persistence.repositories.catalog import BusinessHoursRepository
 from app.persistence.repositories.jobs import JobEventRepository
-from app.tests.application._armado import PRECIO_FIJO, Lavadero, armar
+from app.tests.application._armado import AHORA, PRECIO_FIJO, Lavadero, armar
 
 
 @pytest_asyncio.fixture
@@ -230,3 +231,16 @@ async def test_repositorio_de_eventos_lista_y_busca(lav):
     assert (await repo.get_by_key("rec-1", lav.tenant_id)) is evento
     assert evento.job_id == job.id
     assert job.base_price_cents == PRECIO_FIJO
+
+
+async def test_un_puesto_con_un_turno_a_cotizar_por_delante_no_se_anula(lav):
+    """El turno a cotizar no ocupa el puesto (D4-13), pero lo va a ocupar al aceptar: anular
+    el puesto lo dejaría sin lugar."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    with pytest.raises(ResourceInUseError):
+        await lav.catalogo.void_resource(lav.puesto, now=AHORA)
+    # Terminado el horario, ya no lo frena.
+    anulado = await lav.catalogo.void_resource(
+        lav.puesto, now=booking.end_at + timedelta(minutes=1)
+    )
+    assert anulado.voided_at is not None

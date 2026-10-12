@@ -7,9 +7,10 @@ R-C-029, entraba como "Adicional").
 
 Orden de locks: cotización → turno (como `JobService`, que toma job → turno).
 
-Rechazar o cancelar **no** toca el turno `PENDIENTE_COTIZACION`: su hold vence solo
-(vencimiento perezoso) o lo cancela alguien con `BookingService`. Decidirlo acá sería una regla
-nueva sobre el turno que el contrato no fija.
+Rechazar o cancelar **no** toca el turno `PENDIENTE_COTIZACION`: lo cancela alguien con
+`BookingService`. Decidirlo acá sería una regla nueva sobre el turno que el contrato no fija.
+Desde D4-13 ese turno no ocupa el puesto ni vence por hold: no bloquea a nadie, y cerrarlo
+cuando su cotización termina es de la agenda (F5).
 """
 
 import uuid
@@ -32,7 +33,11 @@ from app.persistence.db._savepoint import (
 from app.persistence.models.agenda import BOOKING_OVERLAP_CONSTRAINT
 from app.persistence.models.quote import Quote
 from app.persistence.repositories.agenda import BookingItemRepository, BookingRepository
-from app.persistence.repositories.catalog import ServiceRepository, VehicleSizeRepository
+from app.persistence.repositories.catalog import (
+    ResourceRepository,
+    ServiceRepository,
+    VehicleSizeRepository,
+)
 from app.persistence.repositories.customers import CustomerRepository, VehicleRepository
 from app.persistence.repositories.quotes import QuoteRepository
 
@@ -147,6 +152,11 @@ class QuoteService(ServiceBase):
         assert quote.agreed_price_cents is not None and quote.agreed_duration_min is not None
         self._actor()
         booking = await self._lock(BookingRepository(self._session), quote.booking_id)
+        # D4-13: el turno a cotizar no vence, así que el tiempo lo mira acá. Aceptar un horario
+        # que ya pasó, o sobre un puesto anulado, confirmaría un turno imposible.
+        if as_aware(booking.start_at) <= now:
+            raise GuardFailedError("the booking's time already passed: book a new one")
+        await self._require(ResourceRepository(self._session), booking.resource_id)
         await BookingService(self._session, self._tenant_id, self._actor_user_id).expire_holds(
             booking.resource_id, now
         )
