@@ -24,8 +24,10 @@ probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA).
 **Fase 4 en curso** (contrato: `docs/adr/FASE-4-CONTRATO.md`, 6 PRs). PR 4.1: cuentas de empleados
 (login usuario o email, cambio de clave obligatorio), perfiles de permisos editables
 (`require_permission`), `/configuracion/equipo` y la base de componentes del front (`SmartTable`,
-`MoneyInput`, etc.). Siguen 4.2 configuración y seña global → 4.3 servicios ‖ 4.4 vehículos ‖ 4.5
-personalización → 4.6 wizard.
+`MoneyInput`, etc.). PR 4.2: `tenant_settings` + `slug`, seña global con un único % (D4-4), precio
+base obligatorio (el ítem cotizado se reconoce por `pricing_mode`), turno a cotizar sin ocupar el
+puesto (D4-13), `/configuracion/mi-negocio` y `/configuracion/operacion` (horarios, puestos, medios de
+pago, tamaños). Siguen 4.3 servicios ‖ 4.4 vehículos ‖ 4.5 personalización → 4.6 wizard.
 
 Roadmap completo: `docs/ROADMAP.md`.
 

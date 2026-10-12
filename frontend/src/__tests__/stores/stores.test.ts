@@ -16,6 +16,7 @@ const session = {
   tenant: { id: "t1", name: "Lavadero" },
   permissions: [],
   must_change_password: false,
+  onboarding_completed: false,
 };
 
 describe("authStore", () => {
@@ -32,6 +33,7 @@ describe("authStore", () => {
       tenant: session.tenant,
       permissions: [],
       mustChangePassword: false,
+      onboardingCompleted: false,
     });
     expect(Sentry.setUser).toHaveBeenCalledWith({ id: "u1" });
     expect(Sentry.setTag).toHaveBeenCalledWith("tenant_id", "t1");
@@ -46,20 +48,23 @@ describe("authStore", () => {
     expect(raw).not.toMatch(/token/i);
   });
 
-  it("permisos y cambio de clave viven en memoria: no se persisten (§2.3)", () => {
+  it("permisos, cambio de clave y onboarding viven en memoria: no se persisten (§2.3)", () => {
     useAuthStore.getState().setSession({
       ...session,
       permissions: ["AGENDA_VER"],
       must_change_password: true,
+      onboarding_completed: true,
     });
     expect(useAuthStore.getState().permissions).toEqual(["AGENDA_VER"]);
     expect(useAuthStore.getState().mustChangePassword).toBe(true);
+    expect(useAuthStore.getState().onboardingCompleted).toBe(true);
     const raw = window.localStorage.getItem("carwash_auth")!;
-    expect(raw).not.toMatch(/AGENDA_VER|mustChange|must_change/);
+    expect(raw).not.toMatch(/AGENDA_VER|mustChange|must_change|onboarding/);
     useAuthStore.getState().setMustChangePassword(false);
     expect(useAuthStore.getState().mustChangePassword).toBe(false);
     useAuthStore.getState().clear();
     expect(useAuthStore.getState().permissions).toEqual([]);
+    expect(useAuthStore.getState().onboardingCompleted).toBe(false);
   });
 
   it("clear limpia el estado y el contexto de Sentry", () => {

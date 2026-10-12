@@ -83,7 +83,7 @@ export function ProfilesTab() {
     await refresh();
     close();
     if (replay) toast.info("Ese perfil ya se había creado. Revisá en la lista cómo quedó.");
-    else toast.success(current ? "Perfil actualizado." : "Perfil creado.");
+    else toast.success(current ? "Cambios guardados." : "Perfil creado.");
   }
 
   async function remove(profile: PermissionProfile) {
