@@ -225,7 +225,7 @@ async def test_un_turno_que_no_bloquea_libera_el_puesto(pg_admin_engine, lavader
 
 @pytest.mark.parametrize(
     "estado",
-    [BookingStatus.PENDIENTE_SENA, BookingStatus.PENDIENTE_COTIZACION, BookingStatus.RECIBIDO],
+    [BookingStatus.PENDIENTE_SENA, BookingStatus.RECIBIDO],
     ids=lambda s: s.value,
 )
 async def test_los_estados_que_bloquean_bloquean(pg_admin_engine, lavaderos, estado):
@@ -236,6 +236,17 @@ async def test_los_estados_que_bloquean_bloquean(pg_admin_engine, lavaderos, est
         _turno(a, status=estado.value, hold_expires_at=DIEZ - timedelta(hours=1)),
     )
     await _rechaza(pg_admin_engine, "bookings", _turno(a), XC)
+
+
+async def test_un_turno_a_cotizar_no_bloquea_ni_exige_hold(pg_admin_engine, lavaderos):
+    """FASE-4-CONTRATO D4-13: ocupa el puesto recién al aceptar la cotización."""
+    a, _ = lavaderos
+    await _alta(
+        pg_admin_engine,
+        "bookings",
+        _turno(a, status=BookingStatus.PENDIENTE_COTIZACION.value, hold_expires_at=None),
+    )
+    await _alta(pg_admin_engine, "bookings", _turno(a))
 
 
 async def test_un_turno_anulado_no_bloquea(pg_admin_engine, lavaderos):
@@ -426,7 +437,8 @@ def _precio(lav: Lavadero, **over: Any) -> dict[str, Any]:
     } | over
 
 
-async def test_precio_mayor_a_cero_o_nulo(pg_admin_engine, lavaderos):
+async def test_precio_mayor_a_cero_y_obligatorio(pg_admin_engine, lavaderos):
+    """D4-6: precio base obligatorio también en `A_COTIZAR`."""
     a, _ = lavaderos
     await _rechaza(
         pg_admin_engine,
@@ -434,21 +446,11 @@ async def test_precio_mayor_a_cero_o_nulo(pg_admin_engine, lavaderos):
         _precio(a, price_cents=0),
         "ck_service_prices_precio_positivo",
     )
-    await _alta(pg_admin_engine, "service_prices", _precio(a, price_cents=None))  # A_COTIZAR
+    with pytest.raises(IntegrityError):
+        await _alta(pg_admin_engine, "service_prices", _precio(a, price_cents=None))
 
 
-@pytest.mark.parametrize("bps", [-1, 10_001])
-async def test_sena_en_puntos_basicos_entre_0_y_10000(pg_admin_engine, lavaderos, bps):
-    a, _ = lavaderos
-    await _rechaza(
-        pg_admin_engine,
-        "service_prices",
-        _precio(a, deposit_bps=bps),
-        "ck_service_prices_sena_bps_rango",
-    )
-
-
-@pytest.mark.parametrize("estado", ["PENDIENTE_SEÑA", "PENDIENTE_COTIZACION"])
+@pytest.mark.parametrize("estado", ["PENDIENTE_SEÑA"])
 async def test_un_turno_retenido_exige_vencimiento(pg_admin_engine, lavaderos, estado):
     a, _ = lavaderos
     await _rechaza(
