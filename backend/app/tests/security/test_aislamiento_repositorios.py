@@ -38,7 +38,12 @@ from app.domain.void import VoidReason
 from app.persistence.db.base import Base
 from app.persistence.repositories.base import BaseRepository, Page
 from app.tests.conftest import make_tenant
-from app.tests.security._poblar_dominio import RECETAS, _Contexto, tablas_tenant
+from app.tests.security._poblar_dominio import (
+    RECETAS,
+    _Contexto,
+    borrar_uno_a_uno,
+    tablas_tenant,
+)
 
 #: Un "ahora" posterior a todo hold sembrado: con el tenant correcto, vence el de A.
 MUY_TARDE = datetime(2030, 1, 1, tzinfo=UTC)
@@ -102,6 +107,8 @@ async def _poblar_en_sesion(session: AsyncSession, tenant_id: uuid.UUID) -> Lava
     for tabla in tablas_tenant():
         fila_id = uuid.uuid4()
         valores = {"id": fila_id, "tenant_id": tenant_id, **RECETAS[tabla.name](ctx)}
+        if (borrar := borrar_uno_a_uno(tabla, tenant_id)) is not None:
+            await session.execute(borrar)
         await session.execute(insert(tabla).values(**valores))
         ctx.ids[tabla.name] = fila_id
     bookings = Base.metadata.tables["bookings"]

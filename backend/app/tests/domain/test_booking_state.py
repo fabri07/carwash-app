@@ -20,6 +20,7 @@ from app.domain.booking_state import (
 )
 from app.domain.enums import BookingStatus, CancellationClassification
 from app.domain.exceptions import InvalidDatetimeError, InvalidParameterError, InvalidTransition
+from app.persistence.models.tenant import DEFAULT_LATE_CANCEL_THRESHOLD_MIN
 
 S = BookingStatus
 A = BookingAction
@@ -84,10 +85,10 @@ def test_vencido_no_es_terminal():
 
 
 def test_estados_que_bloquean_el_intervalo_coinciden_con_el_exclude():
-    # El WHERE del EXCLUDE de §1.3, textual.
+    # El WHERE del EXCLUDE de §1.3, textual. FASE-4-CONTRATO D4-13: un turno a cotizar no
+    # ocupa el puesto.
     assert {s.value for s in BLOCKING_BOOKING_STATUSES} == {
         "PENDIENTE_SEÑA",
-        "PENDIENTE_COTIZACION",
         "CONFIRMADO",
         "RECIBIDO",
     }
@@ -115,8 +116,9 @@ def test_can_client_cancel_solo_desde_activos(estado):
         (-600, CancellationClassification.POSTERIOR_AL_TURNO),
     ],
 )
-def test_classify_cancellation_con_umbral_default(anticipacion, clasificacion):
-    assert classify_cancellation(anticipacion) is clasificacion
+def test_classify_cancellation_con_el_umbral_por_defecto_del_negocio(anticipacion, clasificacion):
+    # 720 min: el default de `tenant_settings.late_cancel_threshold_min` (FASE-4-CONTRATO §3.2).
+    assert classify_cancellation(anticipacion, DEFAULT_LATE_CANCEL_THRESHOLD_MIN) is clasificacion
 
 
 def test_classify_cancellation_con_umbral_parametrizado():

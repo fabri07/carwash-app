@@ -18,9 +18,10 @@ from datetime import datetime, timedelta
 from app.application.services._base import ServiceBase, as_aware, require_instant
 from app.application.services.booking_service import BookingService
 from app.application.services.errors import SlotTakenError
+from app.application.services.settings_service import load_settings
 from app.domain.booking_state import BookingAction, hold_expired, next_booking_status
 from app.domain.deposit import deposit_required
-from app.domain.enums import BookingStatus, SuppliesPurchaser
+from app.domain.enums import BookingStatus, PricingMode, SuppliesPurchaser
 from app.domain.exceptions import GuardFailedError, InvalidAmountError
 from app.domain.quote_state import QuoteAction, check_quote_terms, next_quote_status
 from app.persistence.db._savepoint import (
@@ -110,17 +111,18 @@ class QuoteService(ServiceBase):
         *,
         decided_at: datetime,
         now: datetime,
-        hold_expires_at: datetime | None = None,
     ) -> Quote:
         """`COTIZADO → ACEPTADO`. Con turno: los totales del turno suman precio y duración
-        acordados a los de los demás ítems (adenda C1; el ítem cotizado queda sin precio y el
-        job toma el acuerdo al recibir); la seña es la de los
-        demás ítems (uno a cotizar no lleva seña, §1.1). El turno queda `CONFIRMADO` (sin seña)
-        o `PENDIENTE_SEÑA` (con seña, exige hold).
+        acordados a los de los demás ítems (adenda C1; el ítem cotizado conserva su precio
+        base y el job toma el acuerdo al recibir). La seña del ítem cotizado es **su
+        `deposit_bps` guardado al reservar** × el acordado, no el % vigente (FASE-4-CONTRATO
+        §5, D4-7); la de los demás, la de cada uno. Redondeo por ítem. El turno queda
+        `CONFIRMADO` (sin seña) o `PENDIENTE_SEÑA` (con hold de `hold_min`).
 
-        Si la duración acordada alarga el turno sobre otro, el `EXCLUDE` lo rechaza
-        (`SlotTakenError`). Antes vence los holds del puesto (§1.3): si el del propio turno
-        ya venció, el turno está `VENCIDO` y aceptar falla (`InvalidTransition`).
+        Recién acá el turno ocupa el puesto (D4-13): si el horario ya se tomó, o la duración
+        acordada lo alarga sobre otro turno, el `EXCLUDE` lo rechaza (`SlotTakenError`) y la
+        cotización sigue `COTIZADO` (el llamador revierte la transacción) para aceptarse con
+        otro horario.
 
         Una cotización con `expires_at <= now` (el comparador de los holds, C-16) no se
         acepta (F6): `GuardFailedError`, aunque todavía nadie la haya pasado a `VENCIDO`.
@@ -133,16 +135,14 @@ class QuoteService(ServiceBase):
         if quote.expires_at is not None and hold_expired(as_aware(quote.expires_at), now):
             raise GuardFailedError("the quote has expired: it cannot be accepted")
         if quote.booking_id is not None:
-            await self._pass_to_booking(quote, now, hold_expires_at)
+            await self._pass_to_booking(quote, now)
         quote.status = target
         quote.decided_at = decided_at
         quote.decided_by_user_id = self._actor()
         await self._session.flush()
         return quote
 
-    async def _pass_to_booking(
-        self, quote: Quote, now: datetime, hold_expires_at: datetime | None
-    ) -> None:
+    async def _pass_to_booking(self, quote: Quote, now: datetime) -> None:
         assert quote.booking_id is not None
         assert quote.agreed_price_cents is not None and quote.agreed_duration_min is not None
         self._actor()
@@ -153,26 +153,27 @@ class QuoteService(ServiceBase):
         items = await BookingItemRepository(self._session).list_for_booking(
             booking.id, self._tenant_id
         )
-        quoted = [item for item in items if item.price_cents is None]
+        quoted = [item for item in items if item.pricing_mode == PricingMode.A_COTIZAR]
         if [item.service_id for item in quoted] != [
             quote.service_id
         ]:  # pragma: no cover  # `BookingService.create` lo garantiza
             raise GuardFailedError("the quote is not for the booking's item to be quoted")
-        others = [item for item in items if item.price_cents is not None]
-        # Adenda C1: el ítem sigue "a cotizar" (precio NULL: así se reconoce al recibir); el
-        # acuerdo vive en la cotización y el turno guarda los totales.
+        others = [item for item in items if item.pricing_mode != PricingMode.A_COTIZAR]
+        # Adenda C1: el ítem conserva su `pricing_mode` (así se reconoce al recibir) y su precio
+        # base; el acuerdo vive en la cotización y el turno guarda los totales.
         duration = quote.agreed_duration_min + sum(item.duration_min for item in others)
-        price = quote.agreed_price_cents + sum(item.price_cents or 0 for item in others)
-        deposit = sum(deposit_required(item.price_cents, item.deposit_bps) for item in others)
+        price = quote.agreed_price_cents + sum(item.price_cents for item in others)
+        deposit = deposit_required(quote.agreed_price_cents, quoted[0].deposit_bps) + sum(
+            deposit_required(item.price_cents, item.deposit_bps) for item in others
+        )
         action = (
             BookingAction.ACCEPT_QUOTE_WITH_DEPOSIT
             if deposit > 0
             else BookingAction.ACCEPT_QUOTE_CONFIRMED
         )
         booking_target = next_booking_status(booking.status, action)
-        # Un `PENDIENTE_COTIZACION` siempre tiene hold (CHECK): si no se pasa uno nuevo, sigue
-        # corriendo el mismo.
-        hold = hold_expires_at if hold_expires_at is not None else booking.hold_expires_at
+        settings = await load_settings(self._session, self._tenant_id)
+        hold = now + timedelta(minutes=settings.hold_min)
         try:
             async with guarded_savepoint(self._session, _OVERLAP):
                 booking.price_cents = price

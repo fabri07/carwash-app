@@ -29,6 +29,7 @@ from app.api.rate_limit import limiter
 from app.api.v1.deps import DbSession, SessionUser
 from app.api.v1.errors import ERROR_RESPONSES, ApiError, unauthenticated
 from app.application.services.errors import AlreadyExistsError
+from app.application.services.settings_service import load_settings
 from app.application.services.team_service import effective_permissions
 from app.application.services.tenant_provisioning import provision_tenant
 from app.config.settings import get_settings
@@ -108,6 +109,8 @@ async def _me(session: AsyncSession, user: User) -> MeResponse:
         tenant=TenantResponse.model_validate(tenant),
         permissions=sorted_permissions(await effective_permissions(session, user)),
         must_change_password=user.must_change_password,
+        onboarding_completed=(await load_settings(session, user.tenant_id)).onboarding_completed_at
+        is not None,
     )
 
 

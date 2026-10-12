@@ -16,7 +16,7 @@ from app.persistence.models.job import Job, JobEvent, JobInspection, JobItem
 from app.persistence.models.money import CashMovement, Payment
 from app.persistence.models.permission_profile import PermissionProfile
 from app.persistence.models.quote import Quote
-from app.persistence.models.tenant import Tenant
+from app.persistence.models.tenant import Tenant, TenantSettings
 from app.persistence.models.user import User
 
 __all__ = [
@@ -41,6 +41,7 @@ __all__ = [
     "Service",
     "ServicePrice",
     "Tenant",
+    "TenantSettings",
     "User",
     "Vehicle",
     "VehicleSize",

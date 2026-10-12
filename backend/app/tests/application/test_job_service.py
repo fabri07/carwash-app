@@ -261,12 +261,11 @@ async def test_recibir_un_turno_con_varios_servicios_copia_los_items(lav):
     await lav.cotizaciones.quote(
         booking.quote_id, agreed_price_cents=1_000_000, agreed_duration_min=45, quoted_at=AHORA
     )
-    await lav.cotizaciones.accept(
-        booking.quote_id, decided_at=AHORA, now=AHORA, hold_expires_at=AHORA + timedelta(hours=1)
-    )
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
     job = await lav.recibido(booking)
     assert job.base_price_cents == PRECIO_CON_SENA + 1_000_000 == booking.price_cents
-    assert job.deposit_required_cents == SENA
+    # Seña global al 30 % (D4-4): la del premium más la del cotizado sobre el acordado (D4-7).
+    assert job.deposit_required_cents == SENA + 300_000
     items = await lav.jobs.items(job.id)
     assert [(i.service_id, i.price_cents, i.duration_min) for i in items] == [
         (lav.lavado_con_sena, PRECIO_CON_SENA, 90),
@@ -661,7 +660,7 @@ async def test_b13_walk_in_no_se_cancela_por_demora(lav):
     job = await lav.walk_in()
     with pytest.raises(GuardFailedError):
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1)
         )
 
 
@@ -669,7 +668,7 @@ async def test_b13_cancelar_por_demora_un_finalizado_falla(lav):
     job = await lav.finalizado(await lav.recibido())
     with pytest.raises(InvalidTransition):
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1)
         )
 
 
@@ -677,7 +676,7 @@ async def test_la_demora_se_recalcula_con_el_momento_del_evento(lav):
     job = await lav.recibido(llegada=T + timedelta(minutes=25))  # llegó 25 tarde
     with pytest.raises(GuardFailedError):  # pero el toque dice 20: igual no alcanza
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=20), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=20)
         )
 
 
@@ -688,7 +687,6 @@ async def test_cancelar_por_demora_retiene_la_sena_y_cancela_el_turno(lav):
         job.id,
         idempotency_key="c",
         occurred_at=T + timedelta(minutes=31),
-        tolerance_min=20,
         reason="Llegó tarde",
     )
     assert job.status == JobStatus.CANCELADO_DEMORA
@@ -709,7 +707,7 @@ async def test_cancelar_por_demora_retiene_la_sena_y_cancela_el_turno(lav):
         await lav.jobs.record_payment(job.id, lav.pago(1_000))
     # reenvío sin efectos
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=31), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=31)
     )
     assert len(await lav.jobs.history(job.id)) == len(eventos)
 
@@ -719,7 +717,7 @@ async def test_revertir_la_retencion_exige_motivo_y_una_retencion_vigente(lav):
     with pytest.raises(InvalidTransition):  # todavía no está cancelado
         await lav.jobs.reverse_retention(job.id, idempotency_key="r", occurred_at=T, reason="x")
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=40), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=40)
     )
     with pytest.raises(GuardFailedError):
         await lav.jobs.reverse_retention(job.id, idempotency_key="r", occurred_at=T, reason=" ")
@@ -896,14 +894,14 @@ async def test_f2_no_se_cancela_por_demora_con_cobros_vivos(lav):
     pago = await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
     with pytest.raises(GuardFailedError, match="payment"):
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41)
         )
     assert job.status == JobStatus.PRESENTE
     assert booking.status == BookingStatus.RECIBIDO
     # anulado el cobro, se cancela
     await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Error")
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41)
     )
     assert job.status == JobStatus.CANCELADO_DEMORA
 
@@ -914,7 +912,7 @@ async def test_f2_un_cobro_devuelto_no_impide_cancelar_por_demora(lav):
     await lav.jobs.record_payment(job.id, lav.pago(1_000_000))
     await lav.jobs.record_payment(job.id, lav.pago(1_000_000), kind=PaymentKind.DEVOLUCION)
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41)
     )
     assert job.status == JobStatus.CANCELADO_DEMORA
     retenido = (await lav.jobs.history(job.id))[-1]

@@ -17,10 +17,13 @@ segunda). Es gratis y no se saca.
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.domain.void import VoidReason
 from app.persistence.db.base import TenantScopedModel
@@ -84,18 +87,22 @@ class BaseRepository[ModelT: TenantScopedModel]:
         limit: int = 50,
         offset: int = 0,
         include_voided: bool = False,
+        order_by: Sequence[ColumnElement[Any] | InstrumentedAttribute[Any]] | None = None,
     ) -> Page[ModelT]:
+        """`order_by`: orden propio (los catálogos van por `sort_order`); por defecto, lo más
+        nuevo primero. El `id` siempre desempata."""
         scope = self._scope(tenant_id, include_voided)
         total = await self._session.scalar(
             select(func.count()).select_from(self.model).where(*scope)
         )
-        result = await self._session.execute(
-            select(self.model)
-            .where(*scope)
+        order = (
+            [*order_by, self.model.id]
+            if order_by is not None
             # Orden determinista: uuid4 no es ordenable en el tiempo (ADR-0004).
-            .order_by(self.model.created_at.desc(), self.model.id.desc())
-            .limit(limit)
-            .offset(offset)
+            else [self.model.created_at.desc(), self.model.id.desc()]
+        )
+        result = await self._session.execute(
+            select(self.model).where(*scope).order_by(*order).limit(limit).offset(offset)
         )
         return Page(items=list(result.scalars().all()), total=int(total or 0))
 

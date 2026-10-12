@@ -38,7 +38,7 @@ async def test_conflicto_vigilado_deja_la_transaccion_usable(db_session, tenant_
 async def test_lo_pendiente_se_drena_fuera_del_savepoint(db_session, tenant_a):
     # Un objeto agregado ANTES del bloque se flushea antes del SAVEPOINT: un rollback
     # del savepoint no se lo lleva.
-    ajeno = Tenant(id=uuid.uuid4(), name="pendiente")
+    ajeno = Tenant(id=uuid.uuid4(), name="pendiente", slug="pendiente")
     db_session.add(ajeno)
     db_session.add(IdempotencyKey(tenant_id=tenant_a.id, key="dup", action="a"))
     await db_session.flush()

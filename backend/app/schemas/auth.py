@@ -81,9 +81,11 @@ class MeResponse(BaseModel):
     usa para ocultar menús y botones; la decisión real la toma el servidor en cada request.
     `must_change_password`: mientras sea `true`, solo responden `me`, `change-password`,
     `refresh` y `logout` (FASE-4-CONTRATO §2.3).
+    `onboarding_completed`: el `OWNER` sin onboarding completo va al wizard (§6, PR 4.6).
     """
 
     user: UserResponse
     tenant: TenantResponse
     permissions: list[Permission]
     must_change_password: bool
+    onboarding_completed: bool

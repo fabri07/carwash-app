@@ -69,7 +69,7 @@ async def _llamar_asgi(app, method: str, path: str, body: dict, cookies: dict[st
 async def app_con_commits_reales(isolated_db_engine):
     factory = async_sessionmaker(isolated_db_engine, expire_on_commit=False, autoflush=False)
     async with factory() as s, s.begin():
-        tenant = Tenant(id=uuid.uuid4(), name="orden")
+        tenant = Tenant(id=uuid.uuid4(), name="orden", slug="orden")
         s.add(tenant)
         await s.flush()
         user = User(

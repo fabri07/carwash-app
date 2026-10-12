@@ -22,6 +22,7 @@ from app.application.services import (
     QuoteService,
     VehicleService,
 )
+from app.application.services.settings_service import SettingsService
 from app.domain.enums import BookingSource, Channel, PricingMode
 from app.domain.roles import Role
 from app.persistence.models import Booking, Job
@@ -34,6 +35,8 @@ AHORA = T - timedelta(days=1)
 
 PRECIO_FIJO = 2_000_000  # $ 20.000
 PRECIO_CON_SENA = 3_000_000  # $ 30.000, seña 30 % = $ 9.000
+#: "Desde $25.000": precio base del servicio a cotizar (FASE-4-CONTRATO D4-6).
+PRECIO_BASE_TAPIZADO = 2_500_000
 SENA_BPS = 3000
 SENA = 900_000
 COMISION_CREDITO_BPS = 500  # 5 %
@@ -46,9 +49,11 @@ class Lavadero:
     owner_id: uuid.UUID
     auto: uuid.UUID
     suv: uuid.UUID
-    lavado: uuid.UUID  # PRECIO_FIJO sin seña, 60 min
-    lavado_con_sena: uuid.UUID  # PRECIO_FIJO con seña 30 %, 90 min
-    tapizado: uuid.UUID  # A_COTIZAR, 120 min
+    lavado: uuid.UUID  # PRECIO_FIJO, 60 min
+    #: PRECIO_FIJO, 90 min. La seña ya es global (D4-4): `turno` la prende al 30 % cuando se
+    #: pide este servicio y la apaga si no, para que los tests de F3 sigan leyendo igual.
+    lavado_con_sena: uuid.UUID
+    tapizado: uuid.UUID  # A_COTIZAR, base PRECIO_BASE_TAPIZADO, 120 min
     puesto: uuid.UUID
     puesto_2: uuid.UUID
     efectivo: uuid.UUID
@@ -111,10 +116,23 @@ class Lavadero:
         servicios: Sequence[uuid.UUID] | None = None,
         puesto: uuid.UUID | None = None,
         hold: datetime | None = None,
+        sena: bool | None = None,
         vehiculo: uuid.UUID | None | object = ...,
         ahora: datetime = AHORA,
         codigo: str | None = None,
     ) -> Booking:
+        """Ajusta la configuración del negocio antes de reservar (PR 4.2):
+
+        - `sena`: prende la seña global al 30 % o la apaga. Por defecto, prendida si se pide
+          `lavado_con_sena`.
+        - `hold`: el vencimiento que esperaba el test de F3; se traduce a `hold_min`
+          (`hold - ahora`), que es de donde lo calcula ahora `BookingService.create`.
+        """
+        pedidos = list(servicios) if servicios is not None else [servicio or self.lavado]
+        await self.senar(
+            self.lavado_con_sena in pedidos if sena is None else sena,
+            hold_min=None if hold is None else int((hold - ahora).total_seconds() // 60),
+        )
         return await self.turnos.create(
             code=codigo or f"TUR-{uuid.uuid4().hex[:8]}",
             source=BookingSource.PANEL,
@@ -122,12 +140,20 @@ class Lavadero:
             resource_id=puesto or self.puesto,
             start_at=inicio,
             customer_id=self.cliente,
-            service_ids=servicios if servicios is not None else [servicio or self.lavado],
+            service_ids=pedidos,
             vehicle_size_id=self.auto,
             vehicle_id=self.vehiculo if vehiculo is ... else vehiculo,  # type: ignore[arg-type]
-            hold_expires_at=hold,
             now=ahora,
         )
+
+    async def senar(
+        self, activa: bool, bps: int = SENA_BPS, *, hold_min: int | None = None
+    ) -> None:
+        """Prende o apaga la seña global del negocio (D4-4); opcionalmente cambia la retención."""
+        cambios: dict[str, object] = {"deposit_enabled": activa, "deposit_bps": bps}
+        if hold_min is not None:
+            cambios["hold_min"] = hold_min
+        await SettingsService(self.session, self.tenant_id, self.owner_id).update(cambios)
 
     async def recibido(
         self, booking: Booking | None = None, *, llegada: datetime = T, clave: str | None = None
@@ -183,14 +209,10 @@ async def armar_catalogo(
     tapizado = await catalogo.create_service("Tapizado", PricingMode.A_COTIZAR)
     for size in (auto, suv):
         await catalogo.set_price(lavado.id, size.id, price_cents=PRECIO_FIJO, duration_min=60)
+        await catalogo.set_price(con_sena.id, size.id, price_cents=PRECIO_CON_SENA, duration_min=90)
         await catalogo.set_price(
-            con_sena.id,
-            size.id,
-            price_cents=PRECIO_CON_SENA,
-            duration_min=90,
-            deposit_bps=SENA_BPS,
+            tapizado.id, size.id, price_cents=PRECIO_BASE_TAPIZADO, duration_min=120
         )
-        await catalogo.set_price(tapizado.id, size.id, price_cents=None, duration_min=120)
     puesto = await catalogo.create_resource("Puesto 1")
     puesto_2 = await catalogo.create_resource("Puesto 2", sort_order=1)
     efectivo = await catalogo.create_payment_method("EFECTIVO", "Efectivo")

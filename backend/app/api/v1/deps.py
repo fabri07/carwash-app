@@ -138,6 +138,12 @@ def require_permission(*permissions: Permission) -> Callable[..., Awaitable[User
 
 #: El dueño: configuración del negocio y equipo (Y5).
 OwnerUser = Annotated[User, Depends(require_role(Role.OWNER))]
+#: Cualquier usuario del tenant: lecturas de configuración y catálogos (FASE-4-CONTRATO §4,
+#: "lectura: autenticado"). Se declara el rol igual: toda ruta de dominio lleva rol o
+#: permiso (A3).
+TenantMember = Annotated[User, Depends(require_role(Role.OWNER, Role.STAFF))]
+#: Escritura de catálogos de operación (tamaños, puestos, franjas, medios de pago).
+CatalogEditor = Annotated[User, Depends(require_permission(Permission.CATALOGO_EDITAR))]
 
 
 #: Header que setea el edge de Railway: UN solo valor, sin la cadena ambigua de

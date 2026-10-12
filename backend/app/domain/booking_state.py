@@ -16,8 +16,10 @@ from app.domain.exceptions import InvalidParameterError
 _S = BookingStatus
 
 #: Estados que ocupan el intervalo del puesto: el `WHERE` del `EXCLUDE` de §1.3.
+#: FASE-4-CONTRATO D4-13: `PENDIENTE_COTIZACION` no reserva horario; ocupa el puesto recién
+#: al aceptar la cotización.
 BLOCKING_BOOKING_STATUSES: frozenset[BookingStatus] = frozenset(
-    {_S.PENDIENTE_SENA, _S.PENDIENTE_COTIZACION, _S.CONFIRMADO, _S.RECIBIDO}
+    {_S.PENDIENTE_SENA, _S.CONFIRMADO, _S.RECIBIDO}
 )
 
 #: Desde donde el cliente o el negocio pueden cancelar. **[corregir] R-T-036**: ni desde
@@ -25,10 +27,6 @@ BLOCKING_BOOKING_STATUSES: frozenset[BookingStatus] = frozenset(
 _ACTIVE: frozenset[BookingStatus | None] = frozenset(
     {_S.PENDIENTE_SENA, _S.PENDIENTE_COTIZACION, _S.CONFIRMADO}
 )
-
-#: Umbral default de cancelación tardía (720 min = 12 h). Es configuración de F4: acá
-#: solo es el valor por defecto del parámetro.
-DEFAULT_LATE_THRESHOLD_MIN = 720
 
 
 class BookingAction(StrEnum):
@@ -103,7 +101,7 @@ def anticipation_min(start_at: datetime, requested_at: datetime) -> int:
 
 
 def classify_cancellation(
-    anticipation_min: int, late_threshold_min: int = DEFAULT_LATE_THRESHOLD_MIN
+    anticipation_min: int, late_threshold_min: int
 ) -> CancellationClassification:
     """Clasifica una cancelación **del cliente** (R-T-037, C-06).
 

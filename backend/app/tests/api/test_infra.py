@@ -348,3 +348,21 @@ def test_el_commit_sale_de_la_variable_que_fija_el_workflow(monkeypatch, variabl
     monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
     monkeypatch.setenv(variable, "abc123")
     assert Settings(_env_file=None).GIT_COMMIT == "abc123"
+
+
+@pytest.mark.parametrize("metodo", ["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def test_el_preflight_de_cors_permite_los_metodos_de_la_api(metodo):
+    """FASE-4-CONTRATO §4: `PUT /services/{id}/prices` (PR 4.3) lo necesita. Sin `PUT` en
+    `allow_methods`, el navegador corta en el preflight y el front ve un error de red."""
+
+    async def ok():
+        return {"ok": True}
+
+    app = await _app_con_ruta("/x", ok)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://t") as ac:
+        r = await ac.options(
+            "/x",
+            headers={"Origin": ORIGEN_PERMITIDO, "Access-Control-Request-Method": metodo},
+        )
+    assert r.status_code == 200
+    assert metodo in r.headers["access-control-allow-methods"]

@@ -157,8 +157,13 @@ async def pg_tenant_factory(pg_admin_engine: AsyncEngine, pg_clean: None) -> PgF
         tenant_id = uuid.uuid4()
         async with pg_admin_engine.begin() as conn:
             await conn.execute(
-                text("INSERT INTO tenants (id, name) VALUES (:id, :name)"),
-                {"id": tenant_id, "name": name},
+                text("INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"),
+                {"id": tenant_id, "name": name, "slug": f"t-{tenant_id.hex[:12]}"},
+            )
+            # Lo que crea `provision_tenant` (Y3): la configuración nace con el tenant.
+            await conn.execute(
+                text("INSERT INTO tenant_settings (id, tenant_id) VALUES (:id, :t)"),
+                {"id": uuid.uuid4(), "t": tenant_id},
             )
         return tenant_id
 
