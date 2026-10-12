@@ -103,6 +103,11 @@ const CONFIG_ERRORS: Partial<Record<ApiErrorCode, FieldError>> = {
   CODE_TAKEN: { field: "code", message: "Ya hay uno con ese código. Probá con otro." },
   // Solo los puestos tienen nombre único; tamaños y medios de pago van por código.
   NAME_TAKEN: { field: "name", message: "Ya hay un puesto con ese nombre." },
+  VEHICLE_SIZE_IN_USE: {
+    field: null,
+    message:
+      "Hay vehículos cargados con este tamaño. Cambiales el tamaño y después lo podés borrar.",
+  },
   RESOURCE_IN_USE: {
     field: null,
     message:

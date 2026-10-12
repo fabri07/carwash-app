@@ -467,3 +467,13 @@ async def test_f7_cancel_by_client_toma_la_hora_del_server(lav):
     c = await lav.turnos.cancel_by_client(booking.id, now=T + timedelta(hours=2))
     assert c.requested_at == T + timedelta(hours=2)
     assert c.classification == CancellationClassification.POSTERIOR_AL_TURNO
+
+
+async def test_un_turno_vencido_no_se_confirma_tarde_sobre_un_puesto_anulado(lav):
+    """Un VENCIDO no frena la anulación del puesto; confirmarlo después exige que siga vivo."""
+    booking = await _con_sena(lav)
+    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    await lav.catalogo.void_resource(lav.puesto, now=HOLD)
+    with pytest.raises(NotFoundError):
+        await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
+    assert booking.status == S.VENCIDO

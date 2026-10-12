@@ -8,7 +8,7 @@ Tamaños de vehículo, puestos, franjas horarias y medios de pago. Mismo patrón
 - Colecciones con `PaginatedResponse` (ADR-0006); `POST` con `Idempotency-Key` opcional.
 - `tenant_id` siempre del token; recurso ajeno o inexistente → el MISMO 404 (Y11).
 - `DELETE` anula (ADR-0003). Un puesto con turnos que lo ocupan a futuro → 409
-  `RESOURCE_IN_USE`.
+  `RESOURCE_IN_USE`; un tamaño que tienen vehículos cargados → 409 `VEHICLE_SIZE_IN_USE`.
 """
 
 import uuid
@@ -27,7 +27,11 @@ from app.api.v1.errors import (
 )
 from app.api.v1.pagination import Paginacion
 from app.application.idempotency import claim_idempotency_key
-from app.application.services.catalog_service import CatalogService, ResourceInUseError
+from app.application.services.catalog_service import (
+    CatalogService,
+    ResourceInUseError,
+    VehicleSizeInUseError,
+)
 from app.application.services.errors import AlreadyExistsError, NotFoundError
 from app.domain.errors import ErrorCode
 from app.domain.exceptions import InvalidAmountError
@@ -139,12 +143,18 @@ async def update_vehicle_size(
         raise _code_taken() from exc
 
 
-@vehicle_sizes.delete("/{id}", status_code=_NO_CONTENT, responses=ERROR_RESPONSES)
+@vehicle_sizes.delete("/{id}", status_code=_NO_CONTENT, responses=IDEMPOTENT_RESPONSES)
 async def delete_vehicle_size(id: uuid.UUID, user: CatalogEditor, session: DbSession) -> Response:
     try:
         await _service(session, user).void_vehicle_size(id)
     except NotFoundError as exc:
         raise not_found() from exc
+    except VehicleSizeInUseError as exc:
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            ErrorCode.VEHICLE_SIZE_IN_USE,
+            "There are vehicles with this size.",
+        ) from exc
     return Response(status_code=_NO_CONTENT)
 
 

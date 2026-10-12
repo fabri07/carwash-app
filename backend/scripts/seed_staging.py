@@ -80,6 +80,7 @@ from app.domain.roles import Role  # noqa: E402
 from app.persistence.models.agenda import Booking  # noqa: E402
 from app.persistence.models.catalog import VehicleSize  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
+from app.persistence.models.tenant import DEFAULT_HOLD_MIN  # noqa: E402
 from app.persistence.models.user import User  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
@@ -252,10 +253,12 @@ async def _seed_domain(
     walk_in_auto = await vehiculos.resolve_by_plate("ZZ000ZZ", vehicle_size_id=suv.id)
 
     turnos = BookingService(session, tenant_id, staff_id)
-    # 30 % de seña y un día de retención: el turno pendiente de seña sigue vigente al sembrar.
+    # 30 % de seña y 30 días de retención mientras se siembra: el turno "pendiente de seña"
+    # tiene que seguir vigente cuando alguien abra staging (los turnos son de una fecha fija).
+    # Al final la retención vuelve al valor por defecto.
     ajustes = SettingsService(session, tenant_id, owner_id)
     await ajustes.update(
-        {"deposit_bps": 3000, "hold_min": 24 * 60, "address": "Calle Demo 123"},
+        {"deposit_bps": 3000, "hold_min": 30 * 24 * 60, "address": "Calle Demo 123"},
     )
     jobs = JobService(session, tenant_id, staff_id)
     await turnos.add_block(
@@ -372,7 +375,7 @@ async def _seed_domain(
     # 5. Pendiente de seña (hold vigente), vencido y no asistió.
     await turno(4, 2 * 24 * 60, premium.id, puesto_1.id)
     vencible = await turno(4, 2 * 24 * 60, premium.id, puesto_2.id)
-    await turnos.expire_holds(vencible.resource_id, RESERVA + timedelta(days=2))
+    await turnos.expire_holds(vencible.resource_id, RESERVA + timedelta(days=31))
     ausente = await turno(0, 3 * 24 * 60, lavado.id, puesto_1.id)
     await turnos.mark_no_show(ausente.id)
 
@@ -386,6 +389,7 @@ async def _seed_domain(
         service_ids=[lavado.id, motor.id],
         channel=Channel.CALLE,
     )
+    await ajustes.update({"deposit_enabled": False, "hold_min": DEFAULT_HOLD_MIN})
     return True
 
 

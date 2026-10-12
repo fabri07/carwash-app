@@ -8,7 +8,7 @@ import pytest
 import pytest_asyncio
 
 from app.application.services import CatalogService, check_price_coherence
-from app.application.services.catalog_service import ResourceInUseError
+from app.application.services.catalog_service import ResourceInUseError, VehicleSizeInUseError
 from app.application.services.errors import (
     AlreadyExistsError,
     CatalogIncoherentError,
@@ -243,4 +243,12 @@ async def test_un_puesto_con_un_turno_a_cotizar_por_delante_no_se_anula(lav):
     anulado = await lav.catalogo.void_resource(
         lav.puesto, now=booking.end_at + timedelta(minutes=1)
     )
+    assert anulado.voided_at is not None
+
+
+async def test_un_tamano_con_vehiculos_cargados_no_se_anula(lav):
+    """El vehículo del armado es AUTO: anular el tamaño lo dejaría sin poder atenderse."""
+    with pytest.raises(VehicleSizeInUseError):
+        await lav.catalogo.void_vehicle_size(lav.auto)
+    anulado = await lav.catalogo.void_vehicle_size(lav.suv)
     assert anulado.voided_at is not None

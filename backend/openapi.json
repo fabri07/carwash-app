@@ -159,6 +159,7 @@
           "CODE_TAKEN",
           "SLUG_TAKEN",
           "RESOURCE_IN_USE",
+          "VEHICLE_SIZE_IN_USE",
           "PASSWORD_CHANGE_REQUIRED",
           "CONFLICT",
           "VALIDATION_ERROR",
@@ -4570,6 +4571,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {

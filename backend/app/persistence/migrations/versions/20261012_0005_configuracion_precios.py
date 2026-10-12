@@ -68,7 +68,9 @@ HOLD_0005 = "'PENDIENTE_SEÑA'"
 HOLD_0004 = "'PENDIENTE_SEÑA', 'PENDIENTE_COTIZACION'"
 
 #: Tablas que el relleno lee o escribe (todas con `FORCE`).
-BACKFILL_TABLES = ("tenants", SETTINGS, "services", "booking_items", "job_items")
+BACKFILL_TABLES = ("tenants", SETTINGS, "bookings", "jobs", "quotes", "booking_items", "job_items")
+#: Las que la bajada vuelve a dejar como las espera el código de 0004.
+DOWNGRADE_TABLES = ("services", "service_prices", "bookings", "booking_items")
 
 #: Slug desde el nombre: sin acentos, minúsculas, todo lo que no sea `[a-z0-9]` → `-`, hasta
 #: 33 caracteres, más `-` y 6 del md5 del id (único sin consultar a los demás).
@@ -81,6 +83,10 @@ SLUG_FROM_NAME = (
 
 def _has_table(name: str) -> bool:
     return sa.inspect(op.get_bind()).has_table(name)
+
+
+def _has_column(table: str, column: str) -> bool:
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
 
 
 def _add_constraint(table: str, name: str, definition: str) -> None:
@@ -222,10 +228,20 @@ def _backfill() -> None:
         "SELECT gen_random_uuid(), t.id FROM tenants AS t "
         f"WHERE NOT EXISTS (SELECT 1 FROM {SETTINGS} AS s WHERE s.tenant_id = t.id)"
     )
-    for table in ("booking_items", "job_items"):
+    # La modalidad AL RESERVAR, no la de hoy del servicio (pudo cambiar con
+    # `change_pricing_mode`): en F3 un ítem es a cotizar si y solo si su turno o su job tiene
+    # cotización y es de ese servicio.
+    for table, parent, fk in (
+        ("booking_items", "bookings", "booking_id"),
+        ("job_items", "jobs", "job_id"),
+    ):
         op.execute(
-            f"UPDATE {table} AS i SET pricing_mode = s.pricing_mode FROM services AS s "
-            "WHERE i.pricing_mode IS NULL AND s.tenant_id = i.tenant_id AND s.id = i.service_id"
+            f"UPDATE {table} AS i SET pricing_mode = CASE WHEN EXISTS ("
+            f"SELECT 1 FROM {parent} AS p JOIN quotes AS q "
+            "ON q.tenant_id = p.tenant_id AND q.id = p.quote_id "
+            f"WHERE p.tenant_id = i.tenant_id AND p.id = i.{fk} AND q.service_id = i.service_id"
+            ") THEN 'A_COTIZAR'::pricing_mode ELSE 'PRECIO_FIJO'::pricing_mode END "
+            "WHERE i.pricing_mode IS NULL"
         )
     for table in BACKFILL_TABLES:
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
@@ -277,8 +293,10 @@ def downgrade() -> None:
     """Vuelve al esquema de 0004. Corta, con un mensaje que dice por qué, si hay turnos
     `PENDIENTE_COTIZACION` vivos sin hold: 0004 se lo exige y bajar no puede inventarlo.
 
-    Los precios base de los servicios a cotizar quedan cargados (0004 los admite); la seña
-    por precio vuelve en 0, como un servicio sin seña.
+    El código de 0004 reconoce lo "a cotizar" por el precio NULL: antes de borrar
+    `pricing_mode`, los precios base de los servicios a cotizar, de sus ítems de turno y de los
+    turnos todavía sin cotizar vuelven a NULL (con seña 0). La seña por precio vuelve en 0,
+    como un servicio sin seña.
     """
     op.execute(LOCK_TIMEOUT)
     op.execute(
@@ -327,6 +345,24 @@ def downgrade() -> None:
         "CHECK (deposit_bps BETWEEN 0 AND 10000)",
     )
 
+    if _has_column("booking_items", "pricing_mode"):
+        for table in DOWNGRADE_TABLES:
+            op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
+        op.execute(
+            "UPDATE service_prices AS sp SET price_cents = NULL FROM services AS s "
+            "WHERE s.tenant_id = sp.tenant_id AND s.id = sp.service_id "
+            "AND s.pricing_mode = 'A_COTIZAR'"
+        )
+        op.execute(
+            "UPDATE booking_items SET price_cents = NULL, deposit_bps = 0 "
+            "WHERE pricing_mode = 'A_COTIZAR'"
+        )
+        op.execute(
+            "UPDATE bookings SET price_cents = NULL, deposit_required_cents = 0 "
+            "WHERE status = 'PENDIENTE_COTIZACION'"
+        )
+        for table in DOWNGRADE_TABLES:
+            op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
     for table in ("booking_items", "job_items"):
         op.drop_column(table, "pricing_mode", if_exists=True)
     op.drop_index("ux_tenants_slug", table_name="tenants", if_exists=True)

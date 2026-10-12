@@ -40,6 +40,7 @@ from app.persistence.models.catalog import (
     ServicePrice,
     VehicleSize,
 )
+from app.persistence.models.customer import Vehicle
 from app.persistence.repositories.base import BaseRepository, Page
 from app.persistence.repositories.catalog import (
     BusinessHoursRepository,
@@ -49,7 +50,6 @@ from app.persistence.repositories.catalog import (
     ServiceRepository,
     VehicleSizeRepository,
 )
-from app.utils.datetime_utils import utcnow
 
 #: Turnos que ocupan un puesto, o lo van a ocupar al aceptar la cotización.
 _UPCOMING_STATUSES = BLOCKING_BOOKING_STATUSES | {BookingStatus.PENDIENTE_COTIZACION}
@@ -57,6 +57,10 @@ _UPCOMING_STATUSES = BLOCKING_BOOKING_STATUSES | {BookingStatus.PENDIENTE_COTIZA
 
 class ResourceInUseError(GuardFailedError):
     """El puesto tiene turnos que lo ocupan a futuro: anularlo los dejaría sin lugar."""
+
+
+class VehicleSizeInUseError(GuardFailedError):
+    """Hay vehículos cargados con ese tamaño: anularlo los dejaría sin poder atenderse."""
 
 
 def check_price_coherence(price_cents: int | None) -> None:
@@ -132,11 +136,10 @@ class CatalogService(ServiceBase):
 
     async def _void[M: TenantScopedModel](self, repo: BaseRepository[M], id: uuid.UUID) -> M:
         await self._enter()
-        entity = await self._lock(repo, id)
-        entity.voided_at = utcnow()
-        entity.void_reason = VoidReason.PEDIDO_DEL_USUARIO
-        await self._session.flush()
-        return entity
+        await self._lock(repo, id)
+        voided = await repo.void(id, self._tenant_id, VoidReason.PEDIDO_DEL_USUARIO)
+        assert voided is not None  # recién bloqueado y vivo
+        return voided
 
     # ── Tamaños ───────────────────────────────────────────────────────────────
 
@@ -167,7 +170,21 @@ class CatalogService(ServiceBase):
         )
 
     async def void_vehicle_size(self, id: uuid.UUID) -> VehicleSize:
-        """Los precios de ese tamaño quedan, sin uso: no se reserva con un tamaño anulado."""
+        """`VehicleSizeInUseError` si algún vehículo vivo lo tiene: no se podría volver a
+        atender sin editarlo antes. Los precios de ese tamaño quedan, sin uso."""
+        await self._enter()
+        await self._lock(VehicleSizeRepository(self._session), id)
+        used = await self._session.scalar(
+            select(func.count())
+            .select_from(Vehicle)
+            .where(
+                Vehicle.tenant_id == self._tenant_id,
+                Vehicle.vehicle_size_id == id,
+                Vehicle.voided_at.is_(None),
+            )
+        )
+        if used:
+            raise VehicleSizeInUseError("vehicles still use this size")
         return await self._void(VehicleSizeRepository(self._session), id)
 
     async def create_vehicle_size(self, code: str, label: str, sort_order: int = 0) -> VehicleSize:
@@ -267,7 +284,7 @@ class CatalogService(ServiceBase):
         cotización (D4-13), y todavía no terminó. Una vez anulado, ni el alta de un turno ni
         aceptar una cotización lo usan (`_require` excluye anulados)."""
         await self._enter()
-        resource = await self._lock(ResourceRepository(self._session), id)
+        await self._lock(ResourceRepository(self._session), id)
         busy = await self._session.scalar(
             select(func.count())
             .select_from(Booking)
@@ -281,10 +298,7 @@ class CatalogService(ServiceBase):
         )
         if busy:
             raise ResourceInUseError("the resource has upcoming bookings")
-        resource.voided_at = utcnow()
-        resource.void_reason = VoidReason.PEDIDO_DEL_USUARIO
-        await self._session.flush()
-        return resource
+        return await self._void(ResourceRepository(self._session), id)
 
     async def create_resource(self, name: str, sort_order: int = 0) -> Resource:
         await self._enter()

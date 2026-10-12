@@ -61,7 +61,6 @@ from app.domain.enums import (
     CancellationInitiator,
     Channel,
     PaymentKind,
-    PricingMode,
     QuoteStatus,
 )
 from app.domain.exceptions import GuardFailedError, InvalidTransition
@@ -87,7 +86,6 @@ from app.persistence.models.money import Payment
 from app.persistence.models.quote import Quote
 from app.persistence.repositories.agenda import (
     HOLD_STATUSES,
-    BookingItemRepository,
     BookingRepository,
 )
 from app.persistence.repositories.cancellations import CancellationRepository
@@ -195,7 +193,7 @@ class BookingService(ServiceBase):
             raise GuardFailedError(
                 f"bookings need at least {settings.min_advance_min} min of advance"
             )
-        await self._require(ResourceRepository(self._session), resource_id)
+        await self._share_resource(resource_id)
         await self._require(CustomerRepository(self._session), customer_id)
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
         if vehicle_id is not None:
@@ -317,17 +315,11 @@ class BookingService(ServiceBase):
 
     async def _require_accepted_quote(self, booking: Booking) -> None:
         """Un turno con ítem `A_COTIZAR` no se confirma ni toma seña sin su cotización
-        `ACEPTADO` (FASE-4-CONTRATO §5): el precio base no alcanza."""
-        items = await BookingItemRepository(self._session).list_for_booking(
-            booking.id, self._tenant_id
-        )
-        if not any(item.pricing_mode == PricingMode.A_COTIZAR for item in items):
+        `ACEPTADO` (FASE-4-CONTRATO §5): el precio base no alcanza. `create` pone `quote_id`
+        solo cuando hay un ítem `A_COTIZAR`, así que alcanza con mirar la cotización."""
+        if booking.quote_id is None:
             return
-        quote = (
-            await QuoteRepository(self._session).get_by_id(booking.quote_id, self._tenant_id)
-            if booking.quote_id is not None
-            else None
-        )
+        quote = await QuoteRepository(self._session).get_by_id(booking.quote_id, self._tenant_id)
         if quote is None or quote.status != QuoteStatus.ACEPTADO:
             raise GuardFailedError("a booking to be quoted needs its accepted quote first")
 
@@ -405,6 +397,8 @@ class BookingService(ServiceBase):
                 return booking
         target = next_booking_status(booking.status, BookingAction.LATE_CONFIRM)
         await self._require_accepted_quote(booking)
+        # Un turno VENCIDO no frena la anulación del puesto: confirmarlo exige que siga vivo.
+        await self._share_resource(booking.resource_id)
         if booking.deposit_required_cents > 0 and payment is None:
             raise GuardFailedError("the booking requires a deposit: confirm late with its payment")
         if booking.deposit_required_cents == 0 and payment is not None:

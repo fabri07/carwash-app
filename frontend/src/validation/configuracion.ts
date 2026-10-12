@@ -86,7 +86,6 @@ export type BusinessInput = z.infer<typeof businessSchema>;
 
 export const depositSchema = z.object({
   deposit_enabled: z.boolean(),
-  /** Porcentaje entero; la API lo guarda en puntos básicos (×100). */
   /** En % con hasta 2 decimales (la API guarda puntos básicos, 1..10000): 25,5 % es válido. */
   deposit_percent: z
     .string()

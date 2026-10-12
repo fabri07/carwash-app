@@ -36,6 +36,12 @@ async def test_la_migracion_0005_completa_los_tenants_existentes(
 ):
     tenants = [await pg_tenant_factory("Lavadero Ñandú"), await pg_tenant_factory("Otro")]
     ids = {t: await poblar(pg_admin_engine, t) for t in tenants}
+    # El segundo lavadero, sin cotización en su turno ni en su job: sus ítems son de precio fijo.
+    async with pg_admin_engine.begin() as conn:
+        for tabla in ("bookings", "jobs"):
+            await conn.execute(
+                text(f"UPDATE {tabla} SET quote_id = NULL WHERE tenant_id = :t"), {"t": tenants[1]}
+            )
     with _en_0004():
         async with pg_admin_engine.connect() as conn:
             assert not await conn.scalar(text("SELECT to_regclass('public.tenant_settings')"))
@@ -50,8 +56,8 @@ async def test_la_migracion_0005_completa_los_tenants_existentes(
             modos = (
                 await conn.execute(
                     text(
-                        "SELECT 'booking' AS t, pricing_mode::text FROM booking_items "
-                        "UNION ALL SELECT 'job', pricing_mode::text FROM job_items"
+                        "SELECT tenant_id, 'booking' AS t, pricing_mode::text FROM booking_items "
+                        "UNION ALL SELECT tenant_id, 'job', pricing_mode::text FROM job_items"
                     )
                 )
             ).all()
@@ -71,7 +77,12 @@ async def test_la_migracion_0005_completa_los_tenants_existentes(
     assert sorted((a.tenant_id, a.deposit_enabled, a.deposit_bps) for a in ajustes) == sorted(
         (t, False, 2000) for t in tenants
     )
-    assert sorted(modos) == sorted([("booking", "PRECIO_FIJO"), ("job", "PRECIO_FIJO")] * 2)
+    # La modalidad sale de la cotización del turno o del job (la de F3 al reservar), no de la
+    # modalidad actual del servicio, que pudo cambiar.
+    assert sorted(modos) == sorted(
+        [(tenants[0], t, "A_COTIZAR") for t in ("booking", "job")]
+        + [(tenants[1], t, "PRECIO_FIJO") for t in ("booking", "job")]
+    )
     assert set(forzadas) == {"tenants", "tenant_settings", "services", "booking_items", "job_items"}
     assert all(ids.values())
     await pg_engine.dispose()
@@ -103,3 +114,39 @@ async def test_la_guarda_corta_antes_de_alterar_nada_y_lista_los_precios_null(
             )
     await pg_engine.dispose()
     assert uuid.UUID(str(tenant))
+
+
+async def test_la_bajada_vuelve_a_dejar_sin_precio_lo_a_cotizar(
+    pg_admin_engine, pg_engine, pg_tenant_factory
+):
+    """El código de 0004 reconoce lo "a cotizar" por el precio NULL: bajar con precios base
+    cargados en servicios e ítems a cotizar los dejaría incoherentes para ese código."""
+    tenant = await pg_tenant_factory("A cotizar")
+    ids = await poblar(pg_admin_engine, tenant)
+    async with pg_admin_engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE services SET pricing_mode = 'A_COTIZAR' WHERE id = :i"),
+            {"i": ids["services"]},
+        )
+        await conn.execute(
+            text("UPDATE booking_items SET pricing_mode = 'A_COTIZAR' WHERE id = :i"),
+            {"i": ids["booking_items"]},
+        )
+    with _en_0004():
+        async with pg_admin_engine.begin() as conn:
+            precio = await conn.scalar(
+                text("SELECT price_cents FROM service_prices WHERE id = :i"),
+                {"i": ids["service_prices"]},
+            )
+            item = (
+                await conn.execute(
+                    text("SELECT price_cents, deposit_bps FROM booking_items WHERE id = :i"),
+                    {"i": ids["booking_items"]},
+                )
+            ).one()
+            # Para volver a subir hace falta el precio (lo que hace el script de preparación).
+            await conn.execute(text("UPDATE service_prices SET price_cents = 100"))
+            await conn.execute(text("UPDATE booking_items SET price_cents = 100"))
+    assert precio is None
+    assert (item.price_cents, item.deposit_bps) == (None, 0)
+    await pg_engine.dispose()

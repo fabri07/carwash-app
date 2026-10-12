@@ -34,7 +34,6 @@ from app.persistence.models.agenda import BOOKING_OVERLAP_CONSTRAINT
 from app.persistence.models.quote import Quote
 from app.persistence.repositories.agenda import BookingItemRepository, BookingRepository
 from app.persistence.repositories.catalog import (
-    ResourceRepository,
     ServiceRepository,
     VehicleSizeRepository,
 )
@@ -156,7 +155,7 @@ class QuoteService(ServiceBase):
         # que ya pasó, o sobre un puesto anulado, confirmaría un turno imposible.
         if as_aware(booking.start_at) <= now:
             raise GuardFailedError("the booking's time already passed: book a new one")
-        await self._require(ResourceRepository(self._session), booking.resource_id)
+        await self._share_resource(booking.resource_id)
         await BookingService(self._session, self._tenant_id, self._actor_user_id).expire_holds(
             booking.resource_id, now
         )

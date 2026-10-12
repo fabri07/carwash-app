@@ -649,4 +649,15 @@ describe("Tamaños", () => {
       expect(listVehicleSizes).toHaveBeenLastCalledWith({ limit: 25, offset: 0 }),
     );
   });
+
+  it("borrar un tamaño que tienen vehículos muestra el 409 en el diálogo", async () => {
+    (deleteVehicleSize as jest.Mock).mockRejectedValueOnce(apiError(409, "VEHICLE_SIZE_IN_USE"));
+    await openTab("Tamaños", "Tamaños de vehículo");
+    await userEvent.click(await screen.findByRole("button", { name: "Borrar el tamaño Chico" }));
+    const dialog = await screen.findByRole("dialog", { name: "¿Borrar el tamaño Chico?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Borrar" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Hay vehículos cargados con este tamaño.",
+    );
+  });
 });

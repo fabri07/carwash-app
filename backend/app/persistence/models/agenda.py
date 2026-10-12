@@ -114,7 +114,7 @@ class Booking(TenantScopedModel):
     resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    #: Vence la retención de un `PENDIENTE_SEÑA` o `PENDIENTE_COTIZACION`.
+    #: Vence la retención de un `PENDIENTE_SEÑA` (un turno a cotizar no retiene, D4-13).
     hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Toda captura crea o resuelve cliente (R-C-012).
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
