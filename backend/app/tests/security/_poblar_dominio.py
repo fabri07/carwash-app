@@ -27,7 +27,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import Table, insert, update
+from sqlalchemy import Table, delete, insert, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 import app.persistence.models  # noqa: F401  (registra todas las tablas en la metadata)
@@ -41,6 +41,18 @@ LLEGADA = INICIO_TURNO + timedelta(minutes=5)
 PRECIO_CENTS = 2_000_000  # $ 20.000,00: el caso de `parseMoney_`
 SENA_BPS = 3000
 SENA_CENTS = 600_000
+
+
+#: Tablas 1:1 con el tenant (`UNIQUE (tenant_id)`): las fábricas de tenant ya crean su fila
+#: (como `provision_tenant`), así que el poblador la reemplaza por la de la receta.
+UNO_A_UNO = frozenset({"tenant_settings"})
+
+
+def borrar_uno_a_uno(tabla: Table, tenant_id: uuid.UUID) -> Any:
+    """`DELETE` de la fila 1:1 que ya creó la fábrica, o `None` si la tabla no es 1:1."""
+    if tabla.name not in UNO_A_UNO:
+        return None
+    return delete(tabla).where(tabla.c.tenant_id == tenant_id)
 
 
 class TablaSinPoblarError(RuntimeError):
@@ -72,6 +84,14 @@ Receta = Callable[[_Contexto], dict[str, Any]]
 
 RECETAS: dict[str, Receta] = {
     # ── F2 ──
+    # ── F4 · configuración (PR 4.2) ──
+    "tenant_settings": lambda c: {
+        "address": f"Calle Falsa 123 {c.tag}",
+        "whatsapp_e164": "+5491144445555",
+        "welcome_text": "sintético",
+        "deposit_enabled": True,
+        "deposit_bps": SENA_BPS,
+    },
     # ── F4 · cuentas ──
     # `users` es el OWNER: sin perfil (CHECK `perfil_segun_rol`). La FK `users` →
     # `permission_profiles` la recorren los tests de `test_cuentas_pg.py` con un STAFF.
@@ -94,7 +114,6 @@ RECETAS: dict[str, Receta] = {
         "vehicle_size_id": c["vehicle_sizes"],
         "price_cents": PRECIO_CENTS,
         "duration_min": 60,
-        "deposit_bps": SENA_BPS,
     },
     "resources": lambda c: {"name": f"Puesto 1 {c.tag}", "sort_order": 1},
     "business_hours": lambda c: {
@@ -164,6 +183,7 @@ RECETAS: dict[str, Receta] = {
         "position": 0,
         "service_name_snapshot": "Lavado completo",
         "duration_min": 60,
+        "pricing_mode": "PRECIO_FIJO",
         "price_cents": PRECIO_CENTS,
         "deposit_bps": SENA_BPS,
     },
@@ -221,6 +241,7 @@ RECETAS: dict[str, Receta] = {
         "position": 0,
         "service_name_snapshot": "Lavado completo",
         "duration_min": 60,
+        "pricing_mode": "PRECIO_FIJO",
         "price_cents": PRECIO_CENTS,
     },
     "job_events": lambda c: {
@@ -350,6 +371,8 @@ async def poblar(
                 raise TablaSinPoblarError(
                     f"la receta de {tabla.name} usa columnas que no existen: {sorted(desconocidas)}"
                 )
+            if (borrar := borrar_uno_a_uno(tabla, tenant_id)) is not None:
+                await conn.execute(borrar)
             ctx.ids[tabla.name] = await _insertar(conn, tabla, valores)
         # Ciclo `bookings.quote_id` ↔ `quotes.booking_id` (FK con `use_alter`).
         bookings = Base.metadata.tables["bookings"]

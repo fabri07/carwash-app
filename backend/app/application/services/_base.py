@@ -26,6 +26,7 @@ from app.persistence.db._savepoint import unique_violation_classifier
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.db.tenant_context import set_tenant_context
 from app.persistence.repositories.base import BaseRepository
+from app.persistence.repositories.catalog import ResourceRepository
 
 Classifier = Callable[[IntegrityError], str | None]
 
@@ -115,6 +116,15 @@ class ServiceBase:
         if entity is None:
             raise NotFoundError(repo.model.__tablename__, id)
         return entity
+
+    async def _share_resource(self, resource_id: uuid.UUID) -> None:
+        """El puesto tiene que estar vivo, y no se puede anular mientras esta transacción lo
+        usa (FASE-4-CONTRATO §4: un puesto con turnos por delante no se anula)."""
+        if (
+            await ResourceRepository(self._session).get_for_share(resource_id, self._tenant_id)
+            is None
+        ):
+            raise NotFoundError("resources", resource_id)
 
     async def _lock[M: TenantScopedModel](self, repo: BaseRepository[M], id: uuid.UUID) -> M:
         entity = await repo.get_for_update(id, self._tenant_id)

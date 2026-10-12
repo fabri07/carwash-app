@@ -12,7 +12,8 @@ import type { AuthResponse, PermissionCode, Tenant, User } from "@/types/api";
  * La autoridad sobre "¿hay sesión?" es el backend (y, para evitar el HTML
  * filtrado, el `middleware.ts`), no este store.
  *
- * `permissions` y `mustChangePassword` (FASE-4-CONTRATO §2.3) se guardan en
+ * `permissions`, `mustChangePassword` (FASE-4-CONTRATO §2.3) y
+ * `onboardingCompleted` (§6, llega en PR 4.2) se guardan en
  * memoria y NO se persisten: el backend los lee de la base en cada request y
  * pueden cambiar entre una visita y otra (el dueño edita el perfil). Llegan
  * frescos con cada `/auth/me`, que el shell pide al montar.
@@ -24,6 +25,11 @@ interface AuthState {
   permissions: PermissionCode[];
   /** Mientras sea `true`, la única pantalla útil es `/cambiar-clave`. */
   mustChangePassword: boolean;
+  /**
+   * Si el negocio terminó el alta guiada (§6). Por ahora solo se guarda: la
+   * redirección al wizard llega con el PR 4.6.
+   */
+  onboardingCompleted: boolean;
   _hasHydrated: boolean;
   /** Guarda lo que devuelven login, registro, refresh y `/auth/me`. */
   setSession: (session: AuthResponse) => void;
@@ -53,16 +59,29 @@ export const useAuthStore = create<AuthState>()(
       tenant: null,
       permissions: [],
       mustChangePassword: false,
+      onboardingCompleted: false,
       _hasHydrated: false,
-      setSession: ({ user, tenant, permissions, must_change_password }) => {
+      setSession: ({ user, tenant, permissions, must_change_password, onboarding_completed }) => {
         syncSentryContext(user);
-        set({ user, tenant, permissions, mustChangePassword: must_change_password });
+        set({
+          user,
+          tenant,
+          permissions,
+          mustChangePassword: must_change_password,
+          onboardingCompleted: onboarding_completed,
+        });
       },
       setHasHydrated: (state) => set({ _hasHydrated: state }),
       setMustChangePassword: (value) => set({ mustChangePassword: value }),
       clear: () => {
         syncSentryContext(null);
-        set({ user: null, tenant: null, permissions: [], mustChangePassword: false });
+        set({
+          user: null,
+          tenant: null,
+          permissions: [],
+          mustChangePassword: false,
+          onboardingCompleted: false,
+        });
       },
     }),
     {

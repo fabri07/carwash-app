@@ -57,6 +57,16 @@ class ServicePriceRepository(BaseRepository[ServicePrice]):
 class ResourceRepository(BaseRepository[Resource]):
     model = Resource
 
+    async def get_for_share(self, id: uuid.UUID, tenant_id: uuid.UUID) -> Resource | None:
+        """El puesto vivo con `FOR SHARE`: los turnos lo leen así para que anularlo (que toma
+        `FOR UPDATE`) espere a que terminen, y viceversa. Varios turnos no se esperan entre sí."""
+        return await one_or_none(
+            self._session,
+            select(Resource)
+            .where(Resource.id == id, *self._scope(tenant_id, False))
+            .with_for_update(read=True),
+        )
+
 
 class BusinessHoursRepository(BaseRepository[BusinessHours]):
     model = BusinessHours

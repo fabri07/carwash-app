@@ -20,7 +20,15 @@ from app.domain.enums import (
 )
 from app.domain.exceptions import GuardFailedError, InvalidAmountError, InvalidTransition
 from app.persistence.models import CashMovement, Payment
-from app.tests.application._armado import AHORA, PRECIO_CON_SENA, SENA, Lavadero, T, armar
+from app.tests.application._armado import (
+    AHORA,
+    PRECIO_BASE_TAPIZADO,
+    PRECIO_CON_SENA,
+    SENA,
+    Lavadero,
+    T,
+    armar,
+)
 
 Q = QuoteStatus
 HOLD = AHORA + timedelta(hours=2)
@@ -106,28 +114,30 @@ async def test_aceptar_con_turno_pasa_precio_y_duracion_y_confirma(lav):
 
 
 async def test_aceptar_con_seña_deja_el_turno_esperando_la_sena(lav):
-    """Adenda C1: el tapizado se cotiza y el premium lleva seña. Mientras se cotiza el turno
-    no tiene precio ni seña; al aceptar, la seña es la del premium (el ítem cotizado no
-    lleva, §1.1) y los totales suman los dos servicios."""
+    """Adenda C1: el tapizado se cotiza y el premium lleva seña. Mientras se cotiza, el turno
+    tiene el precio base (D4-6) y no pide seña; al aceptar, la seña es la del premium más la
+    del cotizado sobre el acordado (D4-7, seña global al 30 %), los totales suman los dos
+    servicios y el hold sale de `hold_min`."""
     booking = await lav.turno(servicios=[lav.tapizado, lav.lavado_con_sena], hold=HOLD)
-    assert (booking.price_cents, booking.deposit_required_cents) == (None, 0)
+    assert (booking.price_cents, booking.deposit_required_cents) == (
+        PRECIO_BASE_TAPIZADO + PRECIO_CON_SENA,
+        0,
+    )
     assert booking.duration_min == 120 + 90
     assert booking.quote_id is not None
     await _cotizada(lav, booking.quote_id, precio=1_000_000)
-    nuevo_hold = AHORA + timedelta(minutes=30)
-    await lav.cotizaciones.accept(
-        booking.quote_id, decided_at=AHORA, now=AHORA, hold_expires_at=nuevo_hold
-    )
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
     assert booking.status == BookingStatus.PENDIENTE_SENA
-    assert booking.deposit_required_cents == SENA
+    assert booking.deposit_required_cents == SENA + 300_000
     assert booking.price_cents == 1_000_000 + PRECIO_CON_SENA
-    assert booking.hold_expires_at == nuevo_hold
+    assert as_aware(booking.hold_expires_at) == HOLD  # `hold_min` = HOLD − AHORA
 
 
-async def test_aceptar_con_el_hold_del_turno_vencido_falla(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
+async def test_aceptar_mucho_despues_funciona_porque_el_turno_a_cotizar_no_vence(lav):
+    """D4-13: el turno a cotizar no retiene horario, así que no vence; manda la vigencia de
+    la cotización."""
+    booking = await lav.turno(servicio=lav.tapizado)
     assert booking.quote_id is not None
-    # La cotización sigue vigente (F6 la rechazaría antes): lo que venció es el turno.
     await lav.cotizaciones.quote(
         booking.quote_id,
         agreed_price_cents=4_000_000,
@@ -135,8 +145,9 @@ async def test_aceptar_con_el_hold_del_turno_vencido_falla(lav):
         quoted_at=AHORA,
         expires_at=HOLD + timedelta(days=1),
     )
-    with pytest.raises(InvalidTransition):
-        await lav.cotizaciones.accept(booking.quote_id, decided_at=HOLD, now=HOLD)
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=HOLD, now=HOLD)
+    assert booking.status == BookingStatus.CONFIRMADO  # seña apagada
+    assert booking.price_cents == 4_000_000
 
 
 async def test_rechazar_cancelar_y_vencer(lav):
@@ -344,3 +355,14 @@ async def test_f9_reenviar_el_mismo_cierre_devuelve_el_caso_sin_efectos(lav):
     assert as_aware(otra.resolved_at) == T
     with pytest.raises(InvalidTransition):  # un cierre distinto sigue fallando
         await lav.senas.resolve(c.id, status=DepositStatus.REPROGRAMADA, reason="x", resolved_at=T)
+
+
+async def test_no_se_acepta_una_cotizacion_de_un_turno_cuyo_horario_ya_paso(lav):
+    """El turno a cotizar no vence (D4-13): aceptar después del inicio confirmaría un turno
+    imposible. Se rechaza y el turno queda como estaba."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    assert booking.quote_id is not None
+    await _cotizada(lav, booking.quote_id, precio=1_000_000)
+    with pytest.raises(GuardFailedError, match="already passed"):
+        await lav.cotizaciones.accept(booking.quote_id, decided_at=T, now=T)
+    assert booking.status == BookingStatus.PENDIENTE_COTIZACION

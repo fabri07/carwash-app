@@ -5,7 +5,7 @@ los tests y `scripts/seed_staging.py`. Crece por etapas, una por PR, y la migrac
 etapa completa los tenants que ya existen:
 
 - 4.1: tenant, `OWNER` y los perfiles de permisos por defecto;
-- 4.2: `tenant_settings`;
+- 4.2: `slug` y `tenant_settings`;
 - 4.4: la copia de la base de vehículos.
 
 Como los servicios de F3: `flush`, nunca `commit`; la transacción es del llamador.
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.services.errors import AlreadyExistsError
 from app.domain.permissions import DEFAULT_PROFILES, sorted_permissions
 from app.domain.roles import Role
+from app.domain.slug import slugify, with_suffix
 from app.persistence.db._savepoint import (
     SavepointConflictError,
     guarded_savepoint,
@@ -26,12 +27,18 @@ from app.persistence.db._savepoint import (
 )
 from app.persistence.db.tenant_context import set_tenant_context
 from app.persistence.models.permission_profile import PermissionProfile
-from app.persistence.models.tenant import Tenant
+from app.persistence.models.tenant import Tenant, TenantSettings
 from app.persistence.models.user import User
 
 EMAIL_TAKEN = unique_violation_classifier(
     "email", constraint="uq_users_email", columns=("users.email",)
 )
+SLUG_TAKEN = unique_violation_classifier(
+    "slug", constraint="ux_tenants_slug", columns=("tenants.slug",)
+)
+#: Intentos con sufijo al azar si el slug del nombre ya está tomado. Con 16⁶ sufijos, que
+#: fallen todos es un bug, no mala suerte.
+SLUG_ATTEMPTS = 5
 
 
 @dataclass(frozen=True)
@@ -57,9 +64,9 @@ async def provision_tenant(
     """
     tenant_id = tenant_id or uuid.uuid4()
     await set_tenant_context(session, tenant_id)
-    tenant = Tenant(id=tenant_id, name=name.strip())
-    session.add(tenant)
-    await session.flush()
+    tenant = await _insert_tenant(session, tenant_id, name.strip())
+    # Etapa 4.2: la configuración nace con el negocio, con los defaults del contrato (§3.2).
+    session.add(TenantSettings(tenant_id=tenant_id))
 
     owner = User(
         id=uuid.uuid4(),
@@ -85,3 +92,21 @@ async def provision_tenant(
     session.add_all(profiles.values())
     await session.flush()
     return ProvisionedTenant(tenant=tenant, owner=owner, profiles=profiles)
+
+
+async def _insert_tenant(session: AsyncSession, tenant_id: uuid.UUID, name: str) -> Tenant:
+    """Inserta el tenant con el slug de su nombre (Y10); si ya está tomado, con un sufijo."""
+    base = slugify(name)
+    candidates = [base, *(with_suffix(base, uuid.uuid4().hex[:6]) for _ in range(SLUG_ATTEMPTS))]
+    for slug in candidates:
+        tenant = Tenant(id=tenant_id, name=name, slug=slug)
+        try:
+            async with guarded_savepoint(session, SLUG_TAKEN):
+                session.add(tenant)
+        except SavepointConflictError:
+            # El rollback del savepoint ya lo sacó de la sesión; por las dudas.
+            if tenant in session:
+                session.expunge(tenant)
+            continue
+        return tenant
+    raise RuntimeError(f"no free slug for {base!r} after {len(candidates)} attempts")

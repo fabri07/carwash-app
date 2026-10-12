@@ -58,12 +58,24 @@ const session = {
   tenant: { id: "t1", name: "Lavadero" },
   permissions: [],
   must_change_password: false,
+  onboarding_completed: false,
 };
+
+// Flujos de formulario (tipear el login entero): con la suite completa en
+// paralelo pasan los 5 s por defecto sin estar colgados, igual que en
+// `equipo.test.tsx`.
+jest.setTimeout(20_000);
 
 beforeEach(() => {
   resetNav();
   jest.clearAllMocks();
-  useAuthStore.setState({ user: null, tenant: null, permissions: [], mustChangePassword: false });
+  useAuthStore.setState({
+    user: null,
+    tenant: null,
+    permissions: [],
+    mustChangePassword: false,
+    onboardingCompleted: false,
+  });
   (refreshSession as jest.Mock).mockRejectedValue(new Error("sin sesión"));
 });
 
@@ -156,7 +168,7 @@ describe("app shell y dashboard vacío", () => {
   });
 
   it("el layout protegido pide /auth/me y actualiza la sesión", async () => {
-    (getMeRequest as jest.Mock).mockResolvedValue(session);
+    (getMeRequest as jest.Mock).mockResolvedValue({ ...session, onboarding_completed: true });
     renderWithClient(
       <ProtectedLayout>
         <p>hijo</p>
@@ -164,6 +176,9 @@ describe("app shell y dashboard vacío", () => {
     );
     expect(screen.getByText("hijo")).toBeInTheDocument();
     await waitFor(() => expect(useAuthStore.getState().user).toEqual(session.user));
+    // Se guarda sin redirigir: el wizard (y su redirección) llega con el PR 4.6.
+    expect(useAuthStore.getState().onboardingCompleted).toBe(true);
+    expect(screen.getByText("hijo")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Abrir menú" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });

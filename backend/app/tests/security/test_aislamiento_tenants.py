@@ -16,7 +16,10 @@ La red de abajo (SQL crudo contra las políticas, pool, ventana de login) vive e
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, time, timedelta
+from typing import Any
 
 import pytest
 from jose import jwt
@@ -24,7 +27,15 @@ from sqlalchemy import select, text
 
 from app.config.settings import get_settings
 from app.domain.roles import Role
-from app.persistence.models import PermissionProfile, User
+from app.persistence.models import (
+    BusinessHours,
+    PaymentMethod,
+    PermissionProfile,
+    Resource,
+    User,
+    VehicleSize,
+)
+from app.persistence.models.tenant import TenantSettings
 from app.tests.conftest import make_user, session_cookies
 from app.utils.cookies import ACCESS_COOKIE
 from app.utils.security import create_access_token, create_refresh_token
@@ -512,3 +523,343 @@ async def test_pg_token_con_tenant_inconsistente_es_401(pg_client, pg_escenario,
     for ruta in (f"{URL}/{e['id_de_a']}", URL):
         r = await pg_client.get(ruta, cookies=cookies)
         assert r.status_code == 401, (ruta, r.text)
+
+
+# ══ PR 4.2: /settings y los cuatro catálogos (A2) ═══════════════════════════════
+#
+# Escrito por el tester de aceptación del PR 4.2, en paralelo con el implementador y a
+# partir del contrato (FASE-4-CONTRATO §3.2, §4, A2, Y11). Las filas de A se crean por el
+# ORM (SQLite) o por SQL de admin (Postgres): el ataque solo depende de GET/PATCH/DELETE.
+
+SETTINGS_URL = "/v1/settings"
+
+
+@dataclass(frozen=True)
+class Catalogo:
+    """Un catálogo de 4.2: ruta, modelo, cómo nace una fila y qué se intenta pisar."""
+
+    nombre: str
+    url: str
+    modelo: type[Any]
+    #: kwargs del ORM para la fila `i` (sin `tenant_id`).
+    fila: Callable[[int], dict[str, Any]]
+    #: body del POST para la fila `i`.
+    alta: Callable[[int], dict[str, Any]]
+    #: body del PATCH (campo, valor pisado).
+    cambio: dict[str, Any]
+    #: SQL de admin para Postgres: `INSERT … (id, tenant_id, …) VALUES (:id, :t, …)`.
+    sql_alta: str
+
+
+CATALOGOS = [
+    Catalogo(
+        nombre="vehicle-sizes",
+        url="/v1/vehicle-sizes",
+        modelo=VehicleSize,
+        fila=lambda i: {"code": f"TAM_{i}", "label": f"Tamaño {i}", "sort_order": i},
+        alta=lambda i: {"code": f"NUEVO_{i}", "label": f"Nuevo {i}", "sort_order": i},
+        cambio={"label": "pisado"},
+        sql_alta=(
+            "INSERT INTO vehicle_sizes (id, tenant_id, code, label) "
+            "VALUES (:id, :t, 'TAM_A', 'Tamaño de A')"
+        ),
+    ),
+    Catalogo(
+        nombre="resources",
+        url="/v1/resources",
+        modelo=Resource,
+        fila=lambda i: {"name": f"Puesto {i}", "sort_order": i},
+        alta=lambda i: {"name": f"Puesto nuevo {i}", "sort_order": i},
+        cambio={"name": "pisado"},
+        sql_alta="INSERT INTO resources (id, tenant_id, name) VALUES (:id, :t, 'Puesto de A')",
+    ),
+    Catalogo(
+        nombre="business-hours",
+        url="/v1/business-hours",
+        modelo=BusinessHours,
+        fila=lambda i: {"weekday": 1 + i % 7, "opens_at": time(9), "closes_at": time(18)},
+        alta=lambda i: {"weekday": 1 + i % 7, "opens_at": "08:00:00", "closes_at": "12:00:00"},
+        cambio={"closes_at": "23:00:00"},
+        sql_alta=(
+            "INSERT INTO business_hours (id, tenant_id, weekday, opens_at, closes_at) "
+            "VALUES (:id, :t, 1, '09:00', '18:00')"
+        ),
+    ),
+    Catalogo(
+        nombre="payment-methods",
+        url="/v1/payment-methods",
+        modelo=PaymentMethod,
+        fila=lambda i: {"code": f"MEDIO_{i}", "label": f"Medio {i}"},
+        alta=lambda i: {"code": f"NUEVO_{i}", "label": f"Medio nuevo {i}"},
+        cambio={"label": "pisado"},
+        sql_alta=(
+            "INSERT INTO payment_methods (id, tenant_id, code, label) "
+            "VALUES (:id, :t, 'MEDIO_A', 'Medio de A')"
+        ),
+    ),
+]
+CATALOGO_IDS = [c.nombre for c in CATALOGOS]
+
+
+async def _fila_de(db_session, cat: Catalogo, tenant, i: int = 0) -> Any:
+    fila = cat.modelo(id=uuid.uuid4(), tenant_id=tenant.id, **cat.fila(i))
+    db_session.add(fila)
+    await db_session.flush()
+    return fila
+
+
+def _snapshot(fila: Any, cat: Catalogo) -> dict[str, Any]:
+    campos = [*cat.fila(0), "voided_at", "tenant_id"]
+    return {c: getattr(fila, c) for c in campos}
+
+
+async def _asegurar_settings(db_session, tenant) -> TenantSettings:
+    """La fila 1:1 de settings del tenant: la crea si la fábrica de tenants no lo hizo."""
+    fila = await db_session.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant.id)
+    )
+    if fila is None:
+        fila = TenantSettings(id=uuid.uuid4(), tenant_id=tenant.id)
+        db_session.add(fila)
+        await db_session.flush()
+    return fila
+
+
+# ── /settings ─────────────────────────────────────────────────────────────────
+
+
+async def test_settings_de_b_nunca_muestra_los_de_a(
+    client, db_session, tenant_a, tenant_b, cookies_a, cookies_b
+):
+    de_a = await _asegurar_settings(db_session, tenant_a)
+    de_a.address = "Calle Sintética de A 123"
+    de_a.welcome_text = "Bienvenida exclusiva de A"
+    de_a.deposit_enabled = True
+    de_a.deposit_bps = 3300
+    await _asegurar_settings(db_session, tenant_b)
+    await db_session.flush()
+
+    r = await client.get(SETTINGS_URL, cookies=cookies_b)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "Sintética de A" not in r.text and "exclusiva de A" not in r.text
+    assert str(tenant_a.id) not in r.text
+    assert body["deposit_bps"] != 3300 and body["deposit_enabled"] is False
+    if "tenant_id" in body:
+        assert body["tenant_id"] == str(tenant_b.id)
+    # y A ve lo suyo
+    propio = (await client.get(SETTINGS_URL, cookies=cookies_a)).json()
+    assert propio["address"] == "Calle Sintética de A 123" and propio["deposit_bps"] == 3300
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"tenant_id": "A"}, {"tenantId": "A"}, {"id": "SETTINGS_A"}],
+    ids=["tenant_id", "tenantId-camel", "id-de-los-settings-de-A"],
+)
+async def test_patch_settings_de_b_con_tenant_de_a_en_el_body_no_toca_a_a(
+    client, db_session, tenant_a, tenant_b, cookies_a, cookies_b, extra
+):
+    de_a = await _asegurar_settings(db_session, tenant_a)
+    de_a.address = "Dirección original de A"
+    await _asegurar_settings(db_session, tenant_b)
+    await db_session.flush()
+
+    body: dict[str, object] = {"address": "Inyectada por B"}
+    for k, v in extra.items():
+        body[k] = str(tenant_a.id) if v == "A" else str(de_a.id)
+    r = await client.patch(SETTINGS_URL, json=body, cookies=cookies_b)
+    assert r.status_code in (200, 422), r.text
+
+    como_a = (await client.get(SETTINGS_URL, cookies=cookies_a)).json()
+    assert como_a["address"] == "Dirección original de A"
+    await db_session.refresh(de_a)
+    assert de_a.address == "Dirección original de A" and de_a.tenant_id == tenant_a.id
+    if r.status_code == 200:
+        assert (await client.get(SETTINGS_URL, cookies=cookies_b)).json()[
+            "address"
+        ] == "Inyectada por B"
+
+
+# ── Catálogos: 404 ajeno = inexistente, listados y tenant_id del body ──────────
+
+
+@pytest.mark.parametrize("cat", CATALOGOS, ids=CATALOGO_IDS)
+@pytest.mark.parametrize("metodo", ["GET", "PATCH", "DELETE"])
+async def test_catalogo_ajeno_es_404_identico_al_inexistente_y_no_cambia(
+    client, db_session, tenant_a, cookies_a, cookies_b, cat, metodo
+):
+    fila = await _fila_de(db_session, cat, tenant_a)
+    antes = _snapshot(fila, cat)
+    kwargs = {"json": cat.cambio} if metodo == "PATCH" else {}
+    ajeno = await client.request(metodo, f"{cat.url}/{fila.id}", cookies=cookies_b, **kwargs)
+    inexistente = await client.request(
+        metodo, f"{cat.url}/{uuid.uuid4()}", cookies=cookies_b, **kwargs
+    )
+    assert ajeno.status_code == 404, ajeno.text
+    assert ajeno.json()["detail"]["code"] == "NOT_FOUND"
+    _mismo_cuerpo(ajeno, inexistente)
+
+    await db_session.refresh(fila)
+    assert _snapshot(fila, cat) == antes
+    assert (await client.get(f"{cat.url}/{fila.id}", cookies=cookies_a)).status_code == 200
+
+
+@pytest.mark.parametrize("cat", CATALOGOS, ids=CATALOGO_IDS)
+async def test_listado_de_catalogo_de_b_no_ve_ni_cuenta_lo_de_a(
+    client, db_session, tenant_a, tenant_b, cookies_a, cookies_b, cat
+):
+    vacio_antes = await client.get(cat.url, cookies=cookies_b)
+    assert vacio_antes.status_code == 200, vacio_antes.text
+    de_a = [await _fila_de(db_session, cat, tenant_a, i) for i in range(3)]
+    vacio_despues = await client.get(cat.url, cookies=cookies_b)
+    assert vacio_antes.content == vacio_despues.content
+    assert vacio_despues.json()["items"] == [] and vacio_despues.json()["total"] == 0
+
+    propia = await _fila_de(db_session, cat, tenant_b, 5)
+    body = (await client.get(cat.url, cookies=cookies_b)).json()
+    assert [i["id"] for i in body["items"]] == [str(propia.id)]
+    assert body["total"] == 1 and body["has_more"] is False
+    lejos = (await client.get(f"{cat.url}?limit=50&offset=1", cookies=cookies_b)).json()
+    assert lejos["items"] == [] and lejos["total"] == 1
+
+    body_a = (await client.get(cat.url, cookies=cookies_a)).json()
+    assert {i["id"] for i in body_a["items"]} == {str(f.id) for f in de_a}
+    assert body_a["total"] == 3
+
+
+@pytest.mark.parametrize("cat", CATALOGOS, ids=CATALOGO_IDS)
+@pytest.mark.parametrize(
+    "extra",
+    [{"tenant_id": "A"}, {"tenantId": "A"}, {"tenant_id": "A", "id": "FILA_A"}],
+    ids=["tenant_id", "tenantId-camel", "tenant_id-e-id-ajeno"],
+)
+async def test_crear_catalogo_en_b_con_tenant_de_a_en_el_body_queda_en_b(
+    client, db_session, tenant_a, tenant_b, cookies_a, cookies_b, cat, extra
+):
+    fila_a = await _fila_de(db_session, cat, tenant_a)
+    body = cat.alta(1)
+    for k, v in extra.items():
+        body[k] = str(tenant_a.id) if v == "A" else str(fila_a.id)
+    r = await client.post(cat.url, json=body, cookies=cookies_b)
+    assert r.status_code in (201, 422), r.text
+    if r.status_code == 201:
+        creado = r.json()
+        assert creado["id"] != str(fila_a.id)
+        if "tenant_id" in creado:
+            assert creado["tenant_id"] == str(tenant_b.id)
+        assert (await client.get(f"{cat.url}/{creado['id']}", cookies=cookies_a)).status_code == 404
+        en_base = await db_session.scalar(
+            select(cat.modelo).where(cat.modelo.id == uuid.UUID(creado["id"]))
+        )
+        assert en_base is not None and en_base.tenant_id == tenant_b.id
+    listado_a = (await client.get(cat.url, cookies=cookies_a)).json()
+    assert listado_a["total"] == 1 and listado_a["items"][0]["id"] == str(fila_a.id)
+
+
+@pytest.mark.parametrize("cat", CATALOGOS, ids=CATALOGO_IDS)
+async def test_patch_de_catalogo_propio_no_lo_muda_al_otro_tenant(
+    client, db_session, tenant_a, tenant_b, cookies_a, cookies_b, cat
+):
+    propia = await _fila_de(db_session, cat, tenant_b)
+    r = await client.patch(
+        f"{cat.url}/{propia.id}",
+        json={**cat.cambio, "tenant_id": str(tenant_a.id)},
+        cookies=cookies_b,
+    )
+    assert r.status_code in (200, 422), r.text
+    await db_session.refresh(propia)
+    assert propia.tenant_id == tenant_b.id
+    assert (await client.get(f"{cat.url}/{propia.id}", cookies=cookies_a)).status_code == 404
+    assert (await client.get(cat.url, cookies=cookies_a)).json()["total"] == 0
+
+
+# ── PR 4.2 sobre Postgres real ─────────────────────────────────────────────────
+
+
+async def _pg_settings(pg_admin_engine, tenant_id: uuid.UUID, address: str) -> None:
+    """La fila de settings con una dirección reconocible (la crea si la fábrica no lo hizo)."""
+    async with pg_admin_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO tenant_settings (id, tenant_id, address) VALUES (:id, :t, :a) "
+                "ON CONFLICT (tenant_id) DO UPDATE SET address = EXCLUDED.address"
+            ),
+            {"id": uuid.uuid4(), "t": tenant_id, "a": address},
+        )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio(loop_scope="session")
+async def test_pg_settings_aislados_y_tenant_id_del_body_ignorado(
+    pg_client, pg_escenario, pg_admin_engine
+):
+    e = pg_escenario
+    await _pg_settings(pg_admin_engine, e["tenant_a"], "Dirección sintética de A")
+    await _pg_settings(pg_admin_engine, e["tenant_b"], "Dirección sintética de B")
+
+    r = await pg_client.get(SETTINGS_URL, cookies=e["cookies_b"])
+    assert r.status_code == 200, r.text
+    assert r.json()["address"] == "Dirección sintética de B"
+    assert "de A" not in r.text and str(e["tenant_a"]) not in r.text
+
+    p = await pg_client.patch(
+        SETTINGS_URL,
+        json={"address": "Inyectada", "tenant_id": str(e["tenant_a"])},
+        cookies=e["cookies_b"],
+    )
+    assert p.status_code in (200, 422), p.text
+    async with pg_admin_engine.connect() as conn:
+        dir_a = await conn.scalar(
+            text("SELECT address FROM tenant_settings WHERE tenant_id = :t"), {"t": e["tenant_a"]}
+        )
+        filas = await conn.scalar(text("SELECT count(*) FROM tenant_settings"))
+    assert dir_a == "Dirección sintética de A"
+    assert filas == 2
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("cat", CATALOGOS, ids=CATALOGO_IDS)
+async def test_pg_catalogo_ajeno_404_byte_identico_listado_y_body(
+    pg_client, pg_escenario, pg_admin_engine, cat
+):
+    e = pg_escenario
+    id_a = uuid.uuid4()
+    async with pg_admin_engine.begin() as conn:
+        await conn.execute(text(cat.sql_alta), {"id": id_a, "t": e["tenant_a"]})
+
+    for metodo in ("GET", "PATCH", "DELETE"):
+        kwargs = {"json": cat.cambio} if metodo == "PATCH" else {}
+        ajeno = await pg_client.request(
+            metodo, f"{cat.url}/{id_a}", cookies=e["cookies_b"], **kwargs
+        )
+        inexistente = await pg_client.request(
+            metodo, f"{cat.url}/{uuid.uuid4()}", cookies=e["cookies_b"], **kwargs
+        )
+        assert ajeno.status_code == 404, (metodo, ajeno.text)
+        _mismo_cuerpo(ajeno, inexistente)
+    async with pg_admin_engine.connect() as conn:
+        anulada = await conn.scalar(
+            text(f"SELECT voided_at FROM {cat.modelo.__tablename__} WHERE id = :i"), {"i": id_a}
+        )
+    assert anulada is None, "el DELETE de B anuló la fila de A"
+
+    vacio = (await pg_client.get(cat.url, cookies=e["cookies_b"])).json()
+    assert vacio["items"] == [] and vacio["total"] == 0
+
+    r = await pg_client.post(
+        cat.url,
+        json={**cat.alta(1), "tenant_id": str(e["tenant_a"]), "tenantId": str(e["tenant_a"])},
+        cookies=e["cookies_b"],
+    )
+    assert r.status_code in (201, 422), r.text
+    if r.status_code == 201:
+        async with pg_admin_engine.connect() as conn:
+            duenio = await conn.scalar(
+                text(f"SELECT tenant_id FROM {cat.modelo.__tablename__} WHERE id = :i"),
+                {"i": r.json()["id"]},
+            )
+        assert duenio == e["tenant_b"]
+    de_a = (await pg_client.get(cat.url, cookies=e["cookies_a"])).json()
+    assert de_a["total"] == 1 and de_a["items"][0]["id"] == str(id_a)

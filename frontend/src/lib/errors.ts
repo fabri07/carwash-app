@@ -94,6 +94,80 @@ export function teamError(e: unknown): FieldError {
   return known ?? { field: null, message: genericMessage(e) };
 }
 
+/**
+ * Errores de configuración y catálogos (PR 4.2), con el mismo criterio que el
+ * equipo: los 409 van al campo que los causó.
+ */
+const CONFIG_ERRORS: Partial<Record<ApiErrorCode, FieldError>> = {
+  SLUG_TAKEN: { field: "slug", message: "Esa dirección ya la usa otro negocio." },
+  CODE_TAKEN: { field: "code", message: "Ya hay uno con ese código. Probá con otro." },
+  // Solo los puestos tienen nombre único; tamaños y medios de pago van por código.
+  NAME_TAKEN: { field: "name", message: "Ya hay un puesto con ese nombre." },
+  VEHICLE_SIZE_IN_USE: {
+    field: null,
+    message:
+      "Hay vehículos cargados con este tamaño. Cambiales el tamaño y después lo podés borrar.",
+  },
+  RESOURCE_IN_USE: {
+    field: null,
+    message:
+      "El puesto tiene turnos por delante. Reprogramalos o cancelalos y después lo podés borrar.",
+  },
+};
+
+/** El único `VALIDATION_ERROR` de los catálogos es la franja que cierra antes de abrir. */
+const HOURS_RANGE_ERROR: FieldError = {
+  field: "closes_at",
+  message: "Tiene que cerrar después de abrir.",
+};
+
+/** Campos de la API que en el formulario se llaman distinto. */
+const FORM_FIELD: Record<string, string> = { whatsapp_e164: "whatsapp" };
+
+const FIELD_MESSAGES: Record<string, string> = {
+  whatsapp:
+    "No parece un celular argentino. Escribilo con el código de área, por ejemplo 11 2345-6789.",
+};
+
+/**
+ * Un 422 de validación de FastAPI no trae el envelope único: trae
+ * `{detail: [{loc: ["body", campo], msg}]}`. Se toma el primer campo y se lo
+ * lleva al del formulario (p. ej. el WhatsApp mal escrito).
+ */
+function requestValidationField(e: unknown): FieldError | null {
+  if (!axios.isAxiosError(e) || e.response?.status !== 422) return null;
+  const detail = (e.response.data as { detail?: unknown } | undefined)?.detail;
+  if (!Array.isArray(detail)) return null;
+  const loc = (detail[0] as { loc?: unknown } | undefined)?.loc;
+  const last = Array.isArray(loc) && loc.length > 1 ? loc[loc.length - 1] : undefined;
+  if (typeof last !== "string") return null;
+  const field = FORM_FIELD[last] ?? last;
+  return { field, message: FIELD_MESSAGES[field] ?? "Revisá este dato." };
+}
+
+/**
+ * Errores de "Mi negocio" y de los catálogos de operación. `scope: "hours"`
+ * para las franjas horarias: ahí un `VALIDATION_ERROR` (o un 422 sin campo) es
+ * la franja que cierra antes de abrir.
+ */
+export function configError(e: unknown, scope?: "hours"): FieldError {
+  const code = apiErrorCode(e);
+  if (scope === "hours" && (code === "VALIDATION_ERROR" || isBodyLevel422(e))) {
+    return HOURS_RANGE_ERROR;
+  }
+  const known = code ? CONFIG_ERRORS[code] : undefined;
+  return known ?? requestValidationField(e) ?? { field: null, message: genericMessage(e) };
+}
+
+/** 422 de FastAPI cuyo error es del cuerpo entero (un `model_validator`), sin campo. */
+function isBodyLevel422(e: unknown): boolean {
+  if (!axios.isAxiosError(e) || e.response?.status !== 422) return false;
+  const detail = (e.response.data as { detail?: unknown } | undefined)?.detail;
+  if (!Array.isArray(detail)) return false;
+  const loc = (detail[0] as { loc?: unknown } | undefined)?.loc;
+  return Array.isArray(loc) && loc.length === 1;
+}
+
 /** Errores del cambio de clave propio (`POST /auth/change-password`). */
 export function changePasswordError(e: unknown): FieldError {
   const code = apiErrorCode(e);

@@ -162,10 +162,29 @@ describe("Sidebar", () => {
     ]);
     expect(visibleNavItems(items, { role: "OWNER" }, []).map((i) => i.label)).toEqual([
       "Inicio",
+      "Mi negocio",
+      "Operación",
       "Equipo",
       "Caja",
     ]);
     expect(visibleNavItems(items, null, []).map((i) => i.label)).toEqual(["Inicio"]);
+  });
+
+  it("Configuración → Operación con CATALOGO_EDITAR; Mi negocio solo el dueño", () => {
+    nav.pathname = "/configuracion/operacion";
+    useAuthStore.setState({
+      user: { ...session.user, role: "STAFF" },
+      permissions: ["CATALOGO_EDITAR"],
+    });
+    render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
+    const desktop = screen.getByTestId("sidebar-desktop");
+    expect(within(desktop).getByText("Configuración")).toBeInTheDocument();
+    expect(within(desktop).getByRole("link", { name: "Operación" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(desktop).queryByRole("link", { name: "Mi negocio" })).toBeNull();
+    expect(within(desktop).queryByRole("link", { name: "Equipo" })).toBeNull();
   });
 
   it("isActive no confunde prefijos", () => {

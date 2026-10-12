@@ -6,8 +6,10 @@ import { usePathname } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
+  Clock,
   Droplets,
   LayoutDashboard,
+  Store,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -41,6 +43,20 @@ export interface NavItem {
 // Cada fase agrega acá sus pantallas, con el permiso que las habilita.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Inicio", href: "/dashboard", icon: LayoutDashboard },
+  {
+    label: "Mi negocio",
+    href: "/configuracion/mi-negocio",
+    icon: Store,
+    section: "Configuración",
+    ownerOnly: true,
+  },
+  {
+    label: "Operación",
+    href: "/configuracion/operacion",
+    icon: Clock,
+    section: "Configuración",
+    permission: "CATALOGO_EDITAR",
+  },
   {
     label: "Equipo",
     href: "/configuracion/equipo",

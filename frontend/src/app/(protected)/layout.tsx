@@ -23,6 +23,10 @@ import { useAuthStore } from "@/stores/authStore";
  * Con `must_change_password` (FASE-4-CONTRATO §2.3) no se muestra ninguna
  * pantalla del shell: se manda a `/cambiar-clave`. El servidor ya responde 403
  * a todo lo demás; esto evita pintar una pantalla que solo mostraría errores.
+ *
+ * `onboarding_completed` (§6) también llega con `/auth/me` y `setSession` lo
+ * guarda como `onboardingCompleted`, pero todavía no redirige: el wizard y su
+ * desvío a `/onboarding` son del PR 4.6.
  */
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);

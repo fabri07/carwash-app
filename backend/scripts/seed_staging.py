@@ -67,6 +67,7 @@ from app.application.services import (  # noqa: E402
     QuoteService,
     VehicleService,
 )
+from app.application.services.settings_service import SettingsService  # noqa: E402
 from app.application.services.tenant_provisioning import provision_tenant  # noqa: E402
 from app.domain.enums import (  # noqa: E402
     BookingSource,
@@ -79,6 +80,7 @@ from app.domain.roles import Role  # noqa: E402
 from app.persistence.models.agenda import Booking  # noqa: E402
 from app.persistence.models.catalog import VehicleSize  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
+from app.persistence.models.tenant import DEFAULT_HOLD_MIN  # noqa: E402
 from app.persistence.models.user import User  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
@@ -215,9 +217,12 @@ async def _seed_domain(
         await catalogo.set_price(lavado.id, size.id, price_cents=2_000_000 + extra, duration_min=60)
         await catalogo.set_price(motor.id, size.id, price_cents=800_000 + extra, duration_min=30)
         await catalogo.set_price(
-            premium.id, size.id, price_cents=3_000_000 + extra, duration_min=90, deposit_bps=3000
+            premium.id, size.id, price_cents=3_000_000 + extra, duration_min=90
         )
-        await catalogo.set_price(tapizado.id, size.id, price_cents=None, duration_min=120)
+        # D4-6: el servicio a cotizar también tiene precio base ("desde $X").
+        await catalogo.set_price(
+            tapizado.id, size.id, price_cents=3_000_000 + extra, duration_min=120
+        )
     puesto_1 = await catalogo.create_resource("Puesto 1")
     puesto_2 = await catalogo.create_resource("Puesto 2", sort_order=1)
     for weekday in range(1, 7):
@@ -248,6 +253,13 @@ async def _seed_domain(
     walk_in_auto = await vehiculos.resolve_by_plate("ZZ000ZZ", vehicle_size_id=suv.id)
 
     turnos = BookingService(session, tenant_id, staff_id)
+    # 30 % de seña y 30 días de retención mientras se siembra: el turno "pendiente de seña"
+    # tiene que seguir vigente cuando alguien abra staging (los turnos son de una fecha fija).
+    # Al final la retención vuelve al valor por defecto.
+    ajustes = SettingsService(session, tenant_id, owner_id)
+    await ajustes.update(
+        {"deposit_bps": 3000, "hold_min": 30 * 24 * 60, "address": "Calle Demo 123"},
+    )
     jobs = JobService(session, tenant_id, staff_id)
     await turnos.add_block(
         starts_at=_en(24 * 60),
@@ -258,9 +270,10 @@ async def _seed_domain(
 
     codigos = iter(range(1, 100))
 
-    async def turno(
-        n: int, minutos: int, servicio: uuid.UUID, puesto: uuid.UUID, hold: datetime | None = None
-    ) -> Booking:
+    async def turno(n: int, minutos: int, servicio: uuid.UUID, puesto: uuid.UUID) -> Booking:
+        """La seña es global (D4-4): se prende para el premium y se apaga para el resto, así el
+        seed sigue sembrando turnos con y sin seña. El hold sale de `hold_min`."""
+        await ajustes.update({"deposit_enabled": servicio == premium.id})
         cliente_id, vehiculo_id = gente[n]
         return await turnos.create(
             code=f"DEMO-{next(codigos):03d}",
@@ -272,7 +285,6 @@ async def _seed_domain(
             vehicle_id=vehiculo_id,
             service_ids=[servicio],
             vehicle_size_id=auto.id,
-            hold_expires_at=hold,
             now=RESERVA,
         )
 
@@ -283,7 +295,7 @@ async def _seed_domain(
         return f"seed-{tenant_id}-{nombre}"
 
     # 1. Turno con seña que recorre toda la máquina del job hasta RETIRADO.
-    completo = await turno(0, 0, premium.id, puesto_1.id, hold=RESERVA + timedelta(hours=1))
+    completo = await turno(0, 0, premium.id, puesto_1.id)
     await turnos.confirm_deposit(
         completo.id, pago(900_000, "sena-1", RESERVA, efectivo.id), now=RESERVA
     )
@@ -321,14 +333,14 @@ async def _seed_domain(
         idempotency_key=clave("rec-2"), arrived_at=_en(40), booking_id=tarde.id
     )
     await jobs.cancel_for_delay(
-        job_tarde.id, idempotency_key=clave("demora-2"), occurred_at=_en(41), tolerance_min=20
+        job_tarde.id, idempotency_key=clave("demora-2"), occurred_at=_en(41)
     )
     await jobs.reverse_retention(
         job_tarde.id, idempotency_key=clave("revierte-2"), occurred_at=_en(60), reason="Avisó"
     )
 
     # 3. Cancelado por el cliente con seña: la seña se devuelve.
-    cancelado = await turno(2, 180, premium.id, puesto_1.id, hold=RESERVA + timedelta(hours=1))
+    cancelado = await turno(2, 180, premium.id, puesto_1.id)
     await turnos.confirm_deposit(
         cancelado.id, pago(900_000, "sena-3", RESERVA, efectivo.id), now=RESERVA
     )
@@ -342,9 +354,7 @@ async def _seed_domain(
     )
 
     # 4. A cotizar: cotizado y aceptado, queda confirmado para el día siguiente.
-    cotizado = await turno(
-        3, 24 * 60 + 180, tapizado.id, puesto_1.id, hold=RESERVA + timedelta(days=2)
-    )
+    cotizado = await turno(3, 24 * 60 + 180, tapizado.id, puesto_1.id)
     cotizaciones = QuoteService(session, tenant_id, owner_id)
     assert cotizado.quote_id is not None
     await cotizaciones.quote(
@@ -363,11 +373,9 @@ async def _seed_domain(
     await cotizaciones.reject(suelta.id, decided_at=RESERVA)
 
     # 5. Pendiente de seña (hold vigente), vencido y no asistió.
-    await turno(4, 2 * 24 * 60, premium.id, puesto_1.id, hold=RESERVA + timedelta(days=30))
-    vencible = await turno(
-        4, 2 * 24 * 60, premium.id, puesto_2.id, hold=RESERVA + timedelta(minutes=30)
-    )
-    await turnos.expire_holds(vencible.resource_id, RESERVA + timedelta(hours=1))
+    await turno(4, 2 * 24 * 60, premium.id, puesto_1.id)
+    vencible = await turno(4, 2 * 24 * 60, premium.id, puesto_2.id)
+    await turnos.expire_holds(vencible.resource_id, RESERVA + timedelta(days=31))
     ausente = await turno(0, 3 * 24 * 60, lavado.id, puesto_1.id)
     await turnos.mark_no_show(ausente.id)
 
@@ -381,6 +389,7 @@ async def _seed_domain(
         service_ids=[lavado.id, motor.id],
         channel=Channel.CALLE,
     )
+    await ajustes.update({"deposit_enabled": False, "hold_min": DEFAULT_HOLD_MIN})
     return True
 
 

@@ -39,8 +39,9 @@ async def test_reaplicar_con_stamp_atrasado_no_falla(pg_admin_engine):
     # F2: tenants, users, idempotency_keys + lectura del dueño (4); F4 suma permission_profiles
     # (y saca dummy_resources);
     # F3: una política de aislamiento por cada una de las 20 tablas nuevas (18 + los ítems
-    # de turno y de job de la adenda C1).
-    assert politicas == 5 + 20
+    # de turno y de job de la adenda C1);
+    # F4 · 4.2: `tenant_settings`.
+    assert politicas == 5 + 20 + 1
     assert funciones == 1
     # Re-aplicar no duplica lo que no tiene `IF NOT EXISTS` nativo.
     assert triggers == 1

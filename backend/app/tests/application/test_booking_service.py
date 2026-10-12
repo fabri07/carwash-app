@@ -33,9 +33,11 @@ from app.persistence.models.cancellation import DEFAULT_REASON
 from app.persistence.repositories.agenda import BookingItemRepository
 from app.tests.application._armado import (
     AHORA,
+    PRECIO_BASE_TAPIZADO,
     PRECIO_CON_SENA,
     PRECIO_FIJO,
     SENA,
+    SENA_BPS,
     Lavadero,
     T,
     armar,
@@ -74,13 +76,14 @@ async def test_alta_sin_sena_nace_confirmada_con_snapshots(lav):
 
 async def test_los_servicios_se_suman(lav):
     """Adenda C1 (respuesta 7 del dueño): duración, precio y seña son la suma de los ítems, y
-    el turno ocupa el puesto por la duración total."""
+    el turno ocupa el puesto por la duración total. La seña es global (D4-4): el 30 % se
+    aplica a cada ítem y se suma."""
     booking = await lav.turno(servicios=[lav.lavado, lav.lavado_con_sena], hold=HOLD)
-    assert booking.status == S.PENDIENTE_SENA  # alcanza con que un servicio pida seña
+    assert booking.status == S.PENDIENTE_SENA
     assert booking.duration_min == 60 + 90
     assert booking.end_at == T + timedelta(minutes=150)
     assert booking.price_cents == PRECIO_FIJO + PRECIO_CON_SENA
-    assert booking.deposit_required_cents == SENA  # la seña es solo la del premium
+    assert booking.deposit_required_cents == 600_000 + SENA  # 30 % de cada ítem
     items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
     assert [(i.position, i.service_id) for i in items] == [
         (0, lav.lavado),
@@ -94,29 +97,35 @@ async def test_servicios_vacios_repetidos_o_dos_a_cotizar_fallan(lav):
     with pytest.raises(GuardFailedError, match="twice"):
         await lav.turno(servicios=[lav.lavado, lav.lavado])
     otro = await lav.catalogo.create_service("Pulido", PricingMode.A_COTIZAR)
-    await lav.catalogo.set_price(otro.id, lav.auto, price_cents=None, duration_min=60)
+    await lav.catalogo.set_price(otro.id, lav.auto, price_cents=1_000_000, duration_min=60)
     with pytest.raises(GuardFailedError, match="at most one"):
         await lav.turno(servicios=[lav.tapizado, otro.id], hold=HOLD)
 
 
-async def test_alta_con_sena_queda_pendiente_y_exige_hold(lav):
-    with pytest.raises(GuardFailedError):
-        await lav.turno(servicio=lav.lavado_con_sena)
-    booking = await _con_sena(lav)
+async def test_alta_con_sena_queda_pendiente_con_el_hold_del_negocio(lav):
+    """El hold sale de `tenant_settings.hold_min` (FASE-4-CONTRATO §5), no del llamador."""
+    booking = await lav.turno(servicio=lav.lavado_con_sena)
     assert booking.status == S.PENDIENTE_SENA
     assert booking.deposit_required_cents == SENA
-    assert booking.hold_expires_at == HOLD
+    assert as_aware(booking.hold_expires_at) == AHORA + timedelta(minutes=30)  # default
 
 
 async def test_alta_a_cotizar_crea_la_cotizacion_pendiente(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
+    """D4-6 y D4-13: el turno lleva el precio base, sin seña ni hold; la vigencia la fija
+    quien cotiza."""
+    booking = await lav.turno(servicio=lav.tapizado, sena=True)
     assert booking.status == S.PENDIENTE_COTIZACION
-    assert booking.price_cents is None
+    assert booking.price_cents == PRECIO_BASE_TAPIZADO
     assert booking.deposit_required_cents == 0
+    assert booking.hold_expires_at is None
+    items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
+    assert [(i.pricing_mode, i.price_cents, i.deposit_bps) for i in items] == [
+        (PricingMode.A_COTIZAR, PRECIO_BASE_TAPIZADO, SENA_BPS)
+    ]
     quote = await lav.session.get(Quote, booking.quote_id)
     assert quote is not None
     assert (quote.status, quote.booking_id) == (QuoteStatus.PENDIENTE, booking.id)
-    assert quote.expires_at is not None and as_aware(quote.expires_at) == HOLD  # SQLite: sin zona
+    assert quote.expires_at is None
 
 
 async def test_alta_con_codigo_repetido_choca(lav):
@@ -317,25 +326,37 @@ async def test_get_y_turno_ajeno(lav, db_session):
 async def test_precio_del_turno_es_snapshot(lav):
     booking = await _con_sena(lav)
     await lav.catalogo.set_price(
-        lav.lavado_con_sena, lav.auto, price_cents=9_999_900, duration_min=30, deposit_bps=0
+        lav.lavado_con_sena, lav.auto, price_cents=9_999_900, duration_min=30
     )
+    await lav.senar(False)
     assert booking.price_cents == PRECIO_CON_SENA
     assert booking.duration_min == 90
+    assert booking.deposit_required_cents == SENA
 
 
 # ── Arreglos de T3 (revisor adversarial y /code-review) ─────────────────────
 
 
-async def test_f4_un_turno_a_cotizar_vencido_no_se_confirma_tarde(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
-    await lav.turnos.expire_holds(lav.puesto, HOLD)
-    assert booking.status == S.VENCIDO
-    with pytest.raises(GuardFailedError, match="price"):
+async def test_un_turno_a_cotizar_no_vence_por_hold(lav):
+    """D4-13: no retiene horario, así que no tiene hold que vencer."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    assert await lav.turnos.expire_holds(lav.puesto, T + timedelta(days=30)) == []
+    assert booking.status == S.PENDIENTE_COTIZACION
+
+
+async def test_f4_un_turno_a_cotizar_vencido_no_se_confirma_tarde_aunque_tenga_precio_base(lav):
+    """FASE-4-CONTRATO §5: la guarda mira `pricing_mode` y la cotización, no el NULL del
+    precio. Un turno a cotizar `VENCIDO` (de antes de D4-13) tiene precio base y aun así no
+    se confirma tarde sin su cotización `ACEPTADO`."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    booking.status = S.VENCIDO  # como quedaban los turnos a cotizar con hold, en F3
+    await lav.session.flush()
+    with pytest.raises(GuardFailedError, match="accepted quote"):
         await lav.turnos.confirm_late(booking.id, now=HOLD)
-    with pytest.raises(GuardFailedError, match="price"):
+    with pytest.raises(GuardFailedError, match="accepted quote"):
         await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
     assert booking.status == S.VENCIDO
-    assert booking.price_cents is None
+    assert booking.price_cents == PRECIO_BASE_TAPIZADO
 
 
 async def test_f4_la_confirmacion_tardia_exige_la_sena_si_el_turno_la_pide(lav):
@@ -446,3 +467,13 @@ async def test_f7_cancel_by_client_toma_la_hora_del_server(lav):
     c = await lav.turnos.cancel_by_client(booking.id, now=T + timedelta(hours=2))
     assert c.requested_at == T + timedelta(hours=2)
     assert c.classification == CancellationClassification.POSTERIOR_AL_TURNO
+
+
+async def test_un_turno_vencido_no_se_confirma_tarde_sobre_un_puesto_anulado(lav):
+    """Un VENCIDO no frena la anulación del puesto; confirmarlo después exige que siga vivo."""
+    booking = await _con_sena(lav)
+    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    await lav.catalogo.void_resource(lav.puesto, now=HOLD)
+    with pytest.raises(NotFoundError):
+        await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
+    assert booking.status == S.VENCIDO

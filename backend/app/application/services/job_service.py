@@ -47,6 +47,7 @@ from app.application.services.errors import (
     IdempotencyKeyReusedError,
     QuoteAlreadyUsedError,
 )
+from app.application.services.settings_service import load_settings
 from app.domain.booking_state import BookingAction, next_booking_status
 from app.domain.delay import arrival_delay_min
 from app.domain.deposit import balance_due, net_paid, total_agreed
@@ -56,6 +57,7 @@ from app.domain.enums import (
     JobEventType,
     JobStatus,
     PaymentKind,
+    PricingMode,
     QuoteStatus,
 )
 from app.domain.exceptions import GuardFailedError, InvalidAmountError
@@ -109,6 +111,9 @@ _QUOTE = alive_unique("jobs", "quote_id")
 
 _J = JobStatus
 _E = JobEventType
+
+#: Un ítem del job antes de insertarlo: servicio, nombre, duración, modalidad y precio.
+_Line = tuple[uuid.UUID, str, int, PricingMode, int]
 
 #: Estados cerrados: una devolución no puede dejarlos con saldo > 0 (A11).
 _SETTLED_STATUSES = frozenset({_J.COBRADO, _J.RETIRADO})
@@ -366,17 +371,25 @@ class JobService(ServiceBase):
             raise GuardFailedError("the quote is not the booking's quote")
         # F13: el snapshot del turno decide, no el `pricing_mode` vivo del servicio (el
         # catálogo puede cambiar entre la reserva y la llegada).
-        lines = [
-            (item.service_id, item.service_name_snapshot, item.duration_min, item.price_cents)
+        lines: list[_Line] = [
+            (
+                item.service_id,
+                item.service_name_snapshot,
+                item.duration_min,
+                item.pricing_mode,
+                item.price_cents,
+            )
             for item in await BookingItemRepository(self._session).list_for_booking(
                 booking.id, self._tenant_id
             )
         ]
+        quoted_ids = {sid for sid, _, _, mode, _ in lines if mode == PricingMode.A_COTIZAR}
+        if quoted_ids and booking.quote_id is None:  # pragma: no cover  # lo garantiza `create`
+            raise GuardFailedError("the booking has an item to be quoted and no quote")
         if booking.quote_id is not None:
             quote = await self._require(QuoteRepository(self._session), booking.quote_id)
-            # El ítem cotizado es el que nació sin precio: la cotización tiene que ser de ese
-            # servicio (si no, pisaría el precio de un ítem de catálogo).
-            quoted_ids = {sid for sid, *_, price in lines if price is None}
+            # El ítem cotizado es el del snapshot `A_COTIZAR`: la cotización tiene que ser de
+            # ese servicio (si no, pisaría el precio de un ítem de catálogo).
             if quoted_ids != {quote.service_id}:
                 raise GuardFailedError("the quote is for another service")
             agreed_price, agreed_duration = await self._accepted_quote(
@@ -386,13 +399,13 @@ class JobService(ServiceBase):
                 booking_id=booking.id,
             )
             lines = [
-                (sid, name, agreed_duration, agreed_price)
+                (sid, name, agreed_duration, mode, agreed_price)
                 if sid == quote.service_id
-                else (sid, name, duration, price)
-                for sid, name, duration, price in lines
+                else (sid, name, duration, mode, price)
+                for sid, name, duration, mode, price in lines
             ]
-        if not lines or any(price is None for *_, price in lines):
-            raise GuardFailedError("the booking has no price to receive it with")
+        if not lines:  # pragma: no cover  # un turno nace con al menos un ítem
+            raise GuardFailedError("the booking has no items to receive it with")
         vehicle = vehicle_id or booking.vehicle_id
         if vehicle is None:
             raise GuardFailedError("a job needs a vehicle: the booking has none")
@@ -411,7 +424,7 @@ class JobService(ServiceBase):
             responsible_user_id=responsible,
             channel=booking.channel,
             status=target,
-            base_price_cents=sum(price or 0 for *_, price in lines),
+            base_price_cents=sum(price for *_, price in lines),
             deposit_required_cents=booking.deposit_required_cents,
             scheduled_at=scheduled_at,
             arrived_at=arrived_at,
@@ -439,9 +452,9 @@ class JobService(ServiceBase):
         await self._session.flush()
         return job
 
-    def _add_items(self, job: Job, lines: Sequence[tuple[uuid.UUID, str, int, int | None]]) -> None:
+    def _add_items(self, job: Job, lines: Sequence[_Line]) -> None:
         """Los ítems del job (adenda C1), en el orden del turno o del pedido."""
-        for position, (service_id, name, duration, price) in enumerate(lines):
+        for position, (service_id, name, duration, mode, price) in enumerate(lines):
             self._session.add(
                 JobItem(
                     tenant_id=self._tenant_id,
@@ -450,6 +463,7 @@ class JobService(ServiceBase):
                     position=position,
                     service_name_snapshot=name,
                     duration_min=duration,
+                    pricing_mode=mode,
                     price_cents=price,
                 )
             )
@@ -497,18 +511,28 @@ class JobService(ServiceBase):
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
         if customer_id is not None:
             await self._require(CustomerRepository(self._session), customer_id)
-        items = await catalog_items(self._session, self._tenant_id, service_ids, vehicle_size_id)
+        # Un walk-in no lleva seña: el % no importa.
+        items = await catalog_items(
+            self._session, self._tenant_id, service_ids, vehicle_size_id, deposit_bps=0
+        )
         quoted = next((item for item in items if item.quoted), None)
-        lines: list[tuple[uuid.UUID, str, int, int | None]] = []
+        lines: list[_Line] = []
         for item in items:
             if item is quoted:
                 price, duration = await self._accepted_quote(
                     quote_id, item.service_id, vehicle_size_id, booking_id=None
                 )
-                lines.append((item.service_id, item.name, duration, price))
+                lines.append((item.service_id, item.name, duration, item.pricing_mode, price))
             else:
-                assert item.duration_min is not None and item.price_cents is not None
-                lines.append((item.service_id, item.name, item.duration_min, item.price_cents))
+                lines.append(
+                    (
+                        item.service_id,
+                        item.name,
+                        item.duration_min,
+                        item.pricing_mode,
+                        item.price_cents,
+                    )
+                )
 
         target = apply_event(None, _E.JOB_RECEIVED)
         assert target is not None
@@ -522,7 +546,7 @@ class JobService(ServiceBase):
             responsible_user_id=responsible,
             channel=channel,
             status=target,
-            base_price_cents=sum(price or 0 for *_, price in lines),
+            base_price_cents=sum(price for *_, price in lines),
             arrived_at=arrived_at,
             notes=notes,
         )
@@ -669,13 +693,13 @@ class JobService(ServiceBase):
         *,
         idempotency_key: str,
         occurred_at: datetime,
-        tolerance_min: int,
         reason: str | None = None,
     ) -> Job:
         """`PRESENTE → CANCELADO_DEMORA` (acción humana, D-001.2).
 
         Guardas: el job tiene turno (un walk-in no se cancela por demora) y la demora,
-        **recalculada con el `occurred_at` del evento**, supera la tolerancia (parámetro).
+        **recalculada con el `occurred_at` del evento**, supera la tolerancia del negocio
+        (`tenant_settings.tolerance_min`, FASE-4-CONTRATO §5).
         Un `FINALIZADO` no se cancela (**[corregir]** R-O-016, C-7). El turno pasa a
         `CANCELADO_DEMORA` y se emite `DEPOSIT_RETAINED` con las señas cobradas (aunque sean
         0: la auditoría queda completa y la reversión tiene contra qué ir).
@@ -691,6 +715,7 @@ class JobService(ServiceBase):
             return job
         apply_event(job.status, _E.JOB_CANCELLED_DELAY)
         scheduled_at = as_aware(job.scheduled_at) if job.scheduled_at is not None else None
+        tolerance_min = (await load_settings(self._session, self._tenant_id)).tolerance_min
         delay = check_delay_cancellation(scheduled_at, occurred_at, tolerance_min)
         payments = await self._payments.list_for_job(job.id, self._tenant_id)
         live = [p for p in payments if p.voided_at is None]

@@ -2,12 +2,13 @@
 normalizada). Datos sintéticos: ningún teléfono ni patente sale del spec."""
 
 import uuid
-from datetime import time
+from datetime import time, timedelta
 
 import pytest
 import pytest_asyncio
 
 from app.application.services import CatalogService, check_price_coherence
+from app.application.services.catalog_service import ResourceInUseError, VehicleSizeInUseError
 from app.application.services.errors import (
     AlreadyExistsError,
     CatalogIncoherentError,
@@ -18,7 +19,7 @@ from app.domain.exceptions import GuardFailedError, InvalidAmountError, InvalidP
 from app.domain.phone import PhoneReason
 from app.persistence.repositories.catalog import BusinessHoursRepository
 from app.persistence.repositories.jobs import JobEventRepository
-from app.tests.application._armado import PRECIO_FIJO, Lavadero, armar
+from app.tests.application._armado import AHORA, PRECIO_FIJO, Lavadero, armar
 
 
 @pytest_asyncio.fixture
@@ -30,31 +31,27 @@ async def lav(db_session) -> Lavadero:
 
 
 @pytest.mark.parametrize(
-    ("modo", "precio", "bps", "error"),
+    ("precio", "error"),
     [
-        (PricingMode.PRECIO_FIJO, 100, 0, None),
-        (PricingMode.PRECIO_FIJO, 100, 5000, None),
-        (PricingMode.PRECIO_FIJO, None, 0, CatalogIncoherentError),
-        (PricingMode.A_COTIZAR, None, 0, None),
-        (PricingMode.A_COTIZAR, 100, 0, CatalogIncoherentError),
-        (PricingMode.A_COTIZAR, None, 1000, CatalogIncoherentError),
-        (PricingMode.PRECIO_FIJO, 0, 0, InvalidAmountError),
-        (PricingMode.PRECIO_FIJO, 100, 10_001, InvalidAmountError),
+        (100, None),
+        (None, CatalogIncoherentError),  # D4-6: todo servicio tiene precio base
+        (0, InvalidAmountError),
+        (-1, InvalidAmountError),
     ],
 )
-def test_coherencia_modalidad_precio(modo, precio, bps, error):
+def test_coherencia_del_precio_base(precio, error):
     if error is None:
-        check_price_coherence(modo, precio, bps)
+        check_price_coherence(precio)
     else:
         with pytest.raises(error):
-            check_price_coherence(modo, precio, bps)
+            check_price_coherence(precio)
 
 
 async def test_set_price_crea_o_actualiza_y_valida(lav):
     precio = await lav.catalogo.set_price(
-        lav.lavado, lav.auto, price_cents=2_500_000, duration_min=75, deposit_bps=1000
+        lav.lavado, lav.auto, price_cents=2_500_000, duration_min=75
     )
-    assert (precio.price_cents, precio.duration_min, precio.deposit_bps) == (2_500_000, 75, 1000)
+    assert (precio.price_cents, precio.duration_min) == (2_500_000, 75)
     with pytest.raises(CatalogIncoherentError):  # [corregir] R-T-002: borrar el precio no
         await lav.catalogo.set_price(lav.lavado, lav.auto, price_cents=None, duration_min=60)
     with pytest.raises(InvalidAmountError):
@@ -65,17 +62,24 @@ async def test_set_price_crea_o_actualiza_y_valida(lav):
         await lav.catalogo.set_price(lav.lavado, uuid.uuid4(), price_cents=1, duration_min=1)
 
 
-async def test_cambiar_la_modalidad_revalida_los_precios(lav):
-    with pytest.raises(CatalogIncoherentError):
-        await lav.catalogo.change_pricing_mode(lav.lavado, PricingMode.A_COTIZAR)
+async def test_un_servicio_a_cotizar_tambien_lleva_precio_base(lav):
+    """D4-6: `A_COTIZAR` es "desde $X"; el precio base es obligatorio igual."""
     servicio = await lav.catalogo.create_service("Pulido", PricingMode.A_COTIZAR, notes="Consultar")
-    await lav.catalogo.set_price(servicio.id, lav.auto, price_cents=None, duration_min=240)
+    precio = await lav.catalogo.set_price(
+        servicio.id, lav.auto, price_cents=5_000_000, duration_min=240
+    )
+    assert precio.price_cents == 5_000_000
     with pytest.raises(CatalogIncoherentError):
-        await lav.catalogo.change_pricing_mode(servicio.id, PricingMode.PRECIO_FIJO)
+        await lav.catalogo.set_price(servicio.id, lav.suv, price_cents=None, duration_min=240)
+
+
+async def test_cambiar_la_modalidad_conserva_los_precios(lav):
+    """Los precios valen en las dos modalidades: cambiar la modalidad no los invalida."""
+    cambiado = await lav.catalogo.change_pricing_mode(lav.lavado, PricingMode.A_COTIZAR)
+    assert cambiado.pricing_mode == PricingMode.A_COTIZAR
     await lav.catalogo.check_service(lav.lavado)
-    sin_precios = await lav.catalogo.create_service("Nuevo", PricingMode.A_COTIZAR)
-    cambiado = await lav.catalogo.change_pricing_mode(sin_precios.id, PricingMode.PRECIO_FIJO)
-    assert cambiado.pricing_mode == PricingMode.PRECIO_FIJO
+    vuelto = await lav.catalogo.change_pricing_mode(lav.lavado, PricingMode.PRECIO_FIJO)
+    assert vuelto.pricing_mode == PricingMode.PRECIO_FIJO
 
 
 async def test_altas_duplicadas_chocan(lav):
@@ -227,3 +231,24 @@ async def test_repositorio_de_eventos_lista_y_busca(lav):
     assert (await repo.get_by_key("rec-1", lav.tenant_id)) is evento
     assert evento.job_id == job.id
     assert job.base_price_cents == PRECIO_FIJO
+
+
+async def test_un_puesto_con_un_turno_a_cotizar_por_delante_no_se_anula(lav):
+    """El turno a cotizar no ocupa el puesto (D4-13), pero lo va a ocupar al aceptar: anular
+    el puesto lo dejaría sin lugar."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    with pytest.raises(ResourceInUseError):
+        await lav.catalogo.void_resource(lav.puesto, now=AHORA)
+    # Terminado el horario, ya no lo frena.
+    anulado = await lav.catalogo.void_resource(
+        lav.puesto, now=booking.end_at + timedelta(minutes=1)
+    )
+    assert anulado.voided_at is not None
+
+
+async def test_un_tamano_con_vehiculos_cargados_no_se_anula(lav):
+    """El vehículo del armado es AUTO: anular el tamaño lo dejaría sin poder atenderse."""
+    with pytest.raises(VehicleSizeInUseError):
+        await lav.catalogo.void_vehicle_size(lav.auto)
+    anulado = await lav.catalogo.void_vehicle_size(lav.suv)
+    assert anulado.voided_at is not None

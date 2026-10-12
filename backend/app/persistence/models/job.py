@@ -29,10 +29,12 @@ from app.domain.enums import (
     DIRT_LEVEL_ENUM,
     JOB_EVENT_TYPE_ENUM,
     JOB_STATUS_ENUM,
+    PRICING_MODE_ENUM,
     Channel,
     DirtLevel,
     JobEventType,
     JobStatus,
+    PricingMode,
 )
 from app.persistence.db.base import (
     PGJSONB,
@@ -163,6 +165,10 @@ class JobItem(TenantScopedModel):
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     service_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Snapshot de la modalidad (FASE-4-CONTRATO §3.2).
+    pricing_mode: Mapped[PricingMode] = mapped_column(
+        pg_enum(PricingMode, PRICING_MODE_ENUM), nullable=False
+    )
     price_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 

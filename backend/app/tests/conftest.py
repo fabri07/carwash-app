@@ -38,7 +38,7 @@ from app.main import create_app  # noqa: E402
 from app.persistence.db.base import Base  # noqa: E402
 from app.persistence.db.redis import get_redis  # noqa: E402
 from app.persistence.db.session import get_db_session  # noqa: E402
-from app.persistence.models import PermissionProfile, Tenant, User  # noqa: E402
+from app.persistence.models import PermissionProfile, Tenant, TenantSettings, User  # noqa: E402
 from app.utils import security as _security  # noqa: E402
 from app.utils.cookies import ACCESS_COOKIE  # noqa: E402
 from app.utils.security import create_access_token, hash_password  # noqa: E402
@@ -186,8 +186,12 @@ async def isolated_db_engine() -> AsyncGenerator[AsyncEngine, None]:
 
 
 async def make_tenant(session: AsyncSession, name: str) -> Tenant:
-    tenant = Tenant(id=uuid.uuid4(), name=name)
+    """Tenant con slug único y su `tenant_settings` (lo que crea `provision_tenant`, Y3)."""
+    tenant_id = uuid.uuid4()
+    tenant = Tenant(id=tenant_id, name=name, slug=f"t-{tenant_id.hex[:12]}")
     session.add(tenant)
+    await session.flush()
+    session.add(TenantSettings(tenant_id=tenant_id))
     await session.flush()
     return tenant
 

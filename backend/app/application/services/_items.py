@@ -4,11 +4,12 @@ Los servicios **se suman**: un turno o un job lleva N. Lo comparten `BookingServ
 walk-in de `JobService.receive`, para que las reglas se escriban una vez:
 
 - al menos un servicio y ninguno repetido;
-- cada uno con su fila de precio para el tamaño, coherente con la modalidad (§1.1);
+- cada uno con su fila de precio para el tamaño: siempre hay precio base (FASE-4-CONTRATO D4-6);
 - **a lo sumo uno `A_COTIZAR`**: la cotización (`quotes.service_id`) es de un servicio.
 
 La seña se calcula **por ítem** (`round_half_up(precio × bps)`) y se suma: así el total no depende
-de en qué orden se redondea.
+de en qué orden se redondea. El % es el del tenant si la seña está activa y 0 si no (D4-4); el
+ítem cotizado lo guarda igual, pero no lleva seña hasta aceptar la cotización (D4-7).
 """
 
 import uuid
@@ -27,13 +28,13 @@ from app.persistence.repositories.catalog import ServicePriceRepository, Service
 
 @dataclass(frozen=True, slots=True)
 class CatalogItem:
-    """Un servicio con su precio para el tamaño. `price_cents` NULL = a cotizar."""
+    """Un servicio con su precio base para el tamaño y el % de seña vigente al pedirlo."""
 
     service_id: uuid.UUID
     name: str
     pricing_mode: PricingMode
-    duration_min: int | None
-    price_cents: int | None
+    duration_min: int
+    price_cents: int
     deposit_bps: int
 
     @property
@@ -42,6 +43,9 @@ class CatalogItem:
 
     @property
     def deposit_cents(self) -> int:
+        """0 para el ítem cotizado: su seña sale del precio acordado, al aceptar (D4-7)."""
+        if self.quoted:
+            return 0
         return deposit_required(self.price_cents, self.deposit_bps)
 
 
@@ -60,11 +64,14 @@ async def catalog_items(
     tenant_id: uuid.UUID,
     service_ids: Sequence[uuid.UUID],
     vehicle_size_id: uuid.UUID,
+    *,
+    deposit_bps: int,
 ) -> list[CatalogItem]:
     """Los servicios pedidos, en el mismo orden, con precio y duración del catálogo.
 
-    Un `PRECIO_FIJO` exige su fila de precio; un `A_COTIZAR` puede no tenerla (el walk-in toma
-    precio y duración de la cotización). Más de un `A_COTIZAR` es `GuardFailedError`.
+    Todo servicio exige su fila de precio para el tamaño (`CatalogIncoherentError` si falta,
+    p. ej. un tamaño agregado después del alta, §6). `deposit_bps`: el % efectivo del tenant
+    (`TenantSettings.effective_deposit_bps`). Más de un `A_COTIZAR` es `GuardFailedError`.
     """
     services = ServiceRepository(session)
     prices = ServicePriceRepository(session)
@@ -74,18 +81,17 @@ async def catalog_items(
         if service is None:
             raise NotFoundError("services", service_id)
         row = await prices.find_for(service_id, vehicle_size_id, tenant_id)
-        if row is None and service.pricing_mode == PricingMode.PRECIO_FIJO:
+        if row is None:
             raise CatalogIncoherentError("the service has no price row for that vehicle size")
-        if row is not None:
-            check_price_coherence(service.pricing_mode, row.price_cents, row.deposit_bps)
+        check_price_coherence(row.price_cents)
         items.append(
             CatalogItem(
                 service_id=service.id,
                 name=service.name,
                 pricing_mode=service.pricing_mode,
-                duration_min=row.duration_min if row is not None else None,
-                price_cents=row.price_cents if row is not None else None,
-                deposit_bps=row.deposit_bps if row is not None else 0,
+                duration_min=row.duration_min,
+                price_cents=row.price_cents,
+                deposit_bps=deposit_bps,
             )
         )
     if sum(1 for item in items if item.quoted) > 1:

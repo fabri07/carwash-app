@@ -21,7 +21,7 @@ import typing
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import Any
 
 from app.application import services as paquete_servicios
@@ -50,6 +50,12 @@ def _catalogo(lv: Lavadero) -> Ids:
         "cliente": lv.cliente,
         "vehiculo": lv.vehiculo,
     }
+
+
+async def con_franja(lv: Lavadero, ids: Ids) -> Ids:
+    """El armado no siembra franjas: una para los intentos del ABM de horarios (PR 4.2)."""
+    ids["franja"] = (await lv.catalogo.add_business_hours(1, time(9), time(13))).id
+    return ids
 
 
 async def cancelada(lv: Lavadero, inicio: Any) -> Any:
@@ -91,7 +97,7 @@ async def perdido(lv: Lavadero) -> uuid.UUID:
 
 async def armar_a(lv: Lavadero) -> Ids:
     """Una fila de A lista para cada operación: si el tenant no se chequeara, funcionaría."""
-    ids = _catalogo(lv)
+    ids = await con_franja(lv, _catalogo(lv))
     ids["job_presente"] = (await lv.walk_in()).id
     en_proceso = await lv.walk_in()
     await lv.jobs.start(en_proceso.id, idempotency_key=k(), occurred_at=T)
@@ -112,7 +118,6 @@ async def armar_a(lv: Lavadero) -> Ids:
         demorado.id,
         idempotency_key=k(),
         occurred_at=otra_hora + timedelta(minutes=40),
-        tolerance_min=20,
     )
     ids["job_cancelado_demora"] = demorado.id
     ids["booking_conf"] = (await lv.turno(inicio=T + timedelta(hours=2))).id
@@ -154,7 +159,7 @@ async def armar_a(lv: Lavadero) -> Ids:
 
 async def armar_b(lv: Lavadero) -> Ids:
     """Lo propio de B que algunas operaciones combinan con un id de A."""
-    ids = _catalogo(lv)
+    ids = await con_franja(lv, _catalogo(lv))
     ids["job_finalizado"] = (await lv.finalizado()).id
     ids["booking_pend_sena"] = (
         await lv.turno(
@@ -279,7 +284,7 @@ INTENTOS: dict[str, Intento] = {
         "job_turno_presente",
         "jobs",
         lambda lv, ib, x: lv.jobs.cancel_for_delay(
-            x, idempotency_key=k(), occurred_at=T + timedelta(minutes=40), tolerance_min=20
+            x, idempotency_key=k(), occurred_at=T + timedelta(minutes=40)
         ),
         "JobService.cancel_for_delay",
     ),
@@ -588,6 +593,79 @@ INTENTOS: dict[str, Intento] = {
         "services",
         lambda lv, ib, x: lv.catalogo.check_service(x),
         "CatalogService.check_service",
+    ),
+    # ── PR 4.2: ABM de catálogos ──
+    "catalog.vehicle_size.get": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.catalogo.get_vehicle_size(x),
+        "CatalogService.get_vehicle_size",
+    ),
+    "catalog.vehicle_size.update": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.catalogo.update_vehicle_size(x, label="Pisado"),
+        "CatalogService.update_vehicle_size",
+    ),
+    "catalog.vehicle_size.void": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.catalogo.void_vehicle_size(x),
+        "CatalogService.void_vehicle_size",
+    ),
+    "catalog.resource.get": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.catalogo.get_resource(x),
+        "CatalogService.get_resource",
+    ),
+    "catalog.resource.update": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.catalogo.update_resource(x, name="Pisado"),
+        "CatalogService.update_resource",
+    ),
+    "catalog.resource.void": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.catalogo.void_resource(x, now=AHORA),
+        "CatalogService.void_resource",
+    ),
+    "catalog.business_hours.get": Intento(
+        "franja",
+        "business_hours",
+        lambda lv, ib, x: lv.catalogo.get_business_hours(x),
+        "CatalogService.get_business_hours",
+    ),
+    "catalog.business_hours.update": Intento(
+        "franja",
+        "business_hours",
+        lambda lv, ib, x: lv.catalogo.update_business_hours(x, weekday=2),
+        "CatalogService.update_business_hours",
+    ),
+    "catalog.business_hours.void": Intento(
+        "franja",
+        "business_hours",
+        lambda lv, ib, x: lv.catalogo.void_business_hours(x),
+        "CatalogService.void_business_hours",
+    ),
+    "catalog.payment_method.get": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.catalogo.get_payment_method(x),
+        "CatalogService.get_payment_method",
+    ),
+    "catalog.payment_method.update": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.catalogo.update_payment_method(x, label="Pisado"),
+        "CatalogService.update_payment_method",
+    ),
+    "catalog.payment_method.void": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.catalogo.void_payment_method(x),
+        "CatalogService.void_payment_method",
     ),
 }
 

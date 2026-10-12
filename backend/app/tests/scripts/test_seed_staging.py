@@ -122,8 +122,13 @@ async def test_seed_completa_el_dominio_de_un_staging_sembrado_en_fase_2(pg_admi
         for spec in seed_staging.TENANTS:
             tenant_id = uuid.uuid4()
             await conn.execute(
-                text("INSERT INTO tenants (id, name) VALUES (:id, :name)"),
-                {"id": tenant_id, "name": spec["name"]},
+                text("INSERT INTO tenants (id, name, slug) VALUES (:id, :name, :slug)"),
+                {"id": tenant_id, "name": spec["name"], "slug": f"previo-{tenant_id.hex[:8]}"},
+            )
+            # Como queda después de la migración 0005: cada tenant tiene su configuración.
+            await conn.execute(
+                text("INSERT INTO tenant_settings (id, tenant_id) VALUES (:id, :t)"),
+                {"id": uuid.uuid4(), "t": tenant_id},
             )
             # Como queda después de la migración 0004: el STAFF de antes tiene Encargado.
             perfil = uuid.uuid4()

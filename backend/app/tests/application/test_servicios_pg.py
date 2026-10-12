@@ -373,7 +373,7 @@ async def test_b13_y_c3_contra_postgres(fabrica, lav, pg_admin_engine):
             fabrica,
             lav,
             lambda lv: lv.jobs.cancel_for_delay(
-                job.id, idempotency_key="c", occurred_at=T + timedelta(hours=2), tolerance_min=20
+                job.id, idempotency_key="c", occurred_at=T + timedelta(hours=2)
             ),
         )
 
@@ -384,7 +384,7 @@ async def test_b13_y_c3_contra_postgres(fabrica, lav, pg_admin_engine):
             fabrica,
             lav,
             lambda lv: lv.jobs.cancel_for_delay(
-                walk.id, idempotency_key="c", occurred_at=T + timedelta(hours=2), tolerance_min=20
+                walk.id, idempotency_key="c", occurred_at=T + timedelta(hours=2)
             ),
         )
     assert (
@@ -406,7 +406,7 @@ async def test_cancelar_por_demora_y_revertir_contra_postgres(fabrica, lav, pg_a
         fabrica,
         lav,
         lambda lv: lv.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=45), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=45)
         ),
     )
     await _en_tx(

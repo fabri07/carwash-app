@@ -360,7 +360,7 @@ describe("Perfiles", () => {
         permissions: ["AGENDA_VER"],
       }),
     );
-    expect(useToastStore.getState().toasts.at(-1)?.message).toBe("Perfil actualizado.");
+    expect(useToastStore.getState().toasts.at(-1)?.message).toBe("Cambios guardados.");
   });
 
   it("borrar un perfil en uso muestra el 409 PROFILE_IN_USE claro, sin cerrar", async () => {
