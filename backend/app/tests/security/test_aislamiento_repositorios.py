@@ -326,9 +326,7 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("PaymentMethodRepository", "find_by_code"): lambda r, a, t: r.find_by_code(
         a.claves["code"], t
     ),
-    ("ResourceRepository", "get_for_share"): lambda r, a, t: r.get_for_share(
-        a.ids["resources"], t
-    ),
+    ("ResourceRepository", "get_for_share"): lambda r, a, t: r.get_for_share(a.ids["resources"], t),
     ("CustomerRepository", "find_by_phone"): lambda r, a, t: r.find_by_phone(a.claves["phone"], t),
     ("VehicleRepository", "find_by_plate"): lambda r, a, t: r.find_by_plate(a.claves["plate"], t),
     ("CustomerVehicleRepository", "find_active_link"): lambda r, a, t: r.find_active_link(
