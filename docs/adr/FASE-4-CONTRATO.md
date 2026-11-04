@@ -331,3 +331,48 @@ un solo snapshot de seña (§3.2, §5), guarda explícita de cotización en `con
 con procedimiento y numeración por merge (§3), PK de `tenant_settings` (ADR-0004), `PUT` en CORS (§4),
 excepciones del cambio de clave (§2.3), `search.py` en 4.2 (Y8), anticipación mínima de 5 min (D-002),
 wizard reanudable (§6) y alcance del CSV (A14).
+
+---
+
+## 11. Adenda del PR 4.2 (2026-11-04)
+
+Resultado de leer el código antes de construir el 4.2. Lo que sigue **corrige o completa** §3.2, §4 y §5;
+donde choque con ellos, manda esta adenda. Las tres primeras son decisiones del dueño; el resto son
+discrepancias entre el contrato y el código verificadas.
+
+### 11.1 Decisiones del dueño
+
+| # | Decisión |
+|---|---|
+| D4-14 | **El 4.2 se parte en tres PRs, en orden:** **4.2.0** (solo `scripts/prepare_staging_0005.py` y su test, sin migración) → **4.2a** (backend: migración `0005`, servicios de F3, endpoints, `search.py`) → **4.2b** (front de `/configuracion`, una página con pestañas). |
+| D4-15 | **Un turno a cotizar no vence solo: vence con su cotización.** `PENDIENTE_COTIZACION` deja de tener `hold_expires_at` (sale de `HOLD_STATUSES`, del CHECK `hold_obligatorio` y de `expire_holds`). La vigencia es `quotes.expires_at`. |
+| D4-16 | **La cotización vale 24 horas.** Columna nueva `tenant_settings.quote_validity_hours` (int NN, default 24, > 0), editable; la cotización nace con `expires_at = ahora + quote_validity_hours`. Antes la vigencia salía del hold del turno (`booking_service.create` se lo pasaba a `quote_service` como `expires_at`); sin hold quedaría `None` y nada vencería nunca. |
+
+### 11.2 Por qué existe el PR 4.2.0 (corrige §3.2, "Preparación de staging")
+
+§3.2 dice que el script se corre "antes de mergear 4.2". No se puede: staging se despliega al mergear a
+`main` (ADR-0012 §4) y la consola de Railway corre la imagen ya desplegada, así que el script no está ahí
+hasta que se mergea el PR que lo trae; y ese mismo PR trae la `0005`, que **corta** si queda un precio NULL.
+Con el script en su propio PR el orden es: mergear 4.2.0 → el dueño corre
+`python scripts/prepare_staging_0005.py` → recién entonces mergear 4.2a. El script es descartable: se borra
+una vez que `0005` corrió en staging.
+
+### 11.3 Discrepancias contrato ↔ código
+
+- `record_deposit` (§5) no existe: los métodos reales son `confirm_deposit` (público) y `_record_deposit`.
+- `BLOCKING_BOOKING_STATUSES` (`domain/booking_state.py`) es la fuente única del `WHERE` del `EXCLUDE`: hay
+  que sacar `PENDIENTE_COTIZACION` de ahí y recrear el `EXCLUDE` en la migración (Postgres no altera el `WHERE`).
+- `job_service._receive_booking` también reconoce el ítem cotizado por `price_cents IS NULL`; §5 solo nombraba
+  `_pass_to_booking`. Los dos pasan a reconocerlo por `pricing_mode`.
+- `_pass_to_booking` hoy ignora al ítem cotizado en la seña; debe sumarlo con su `deposit_bps` guardado × acordado.
+- `cancel_operational` pasa `DEFAULT_LATE_THRESHOLD_MIN` sin usarlo para clasificar: sobra al sacar la constante.
+- `tenant_settings` es "sin anulación" y por eso no hereda `TenantScopedModel` (trae `VoidableMixin`): se arma con
+  `Base + UUIDPrimaryKeyMixin + TenantMixin + TimestampMixin` y `UniqueConstraint("tenant_id")`.
+- **`GET /auth/me` suma `onboardingCompleted` en el 4.2** (§4, fila 4.1: "llega en 4.2"), derivado de
+  `tenant_settings.onboarding_completed_at IS NOT NULL`.
+- **El `slug` se edita por `PATCH /settings`** (solo `OWNER`) aunque viva en `tenants`. Errores: formato, ya
+  tomado (409) y palabras reservadas (`admin`, `api`, `login`, `registro`, `onboarding`, `configuracion`…),
+  porque va en la URL pública de F5. `provision_tenant` reintenta con sufijo nuevo ante una colisión.
+- **Lecturas "autenticado sin permiso"** (`GET /settings` y lecturas de catálogo): el meta-test A3 exige que toda
+  ruta `/v1` declare rol o permiso. Se agrega la dependencia `require_authenticated()` (`api/v1/deps.py`), que deja
+  la marca de autorización "cualquier usuario autenticado"; no se amplía la lista de excepciones del meta-test.
