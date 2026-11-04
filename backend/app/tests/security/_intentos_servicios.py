@@ -54,9 +54,7 @@ def _catalogo(lv: Lavadero) -> Ids:
 
 async def cancelada(lv: Lavadero, inicio: Any) -> Any:
     """Turno con seña pagada, cancelado a tiempo: caso `DEVOLUCION_PENDIENTE`."""
-    turno = await lv.turno(
-        inicio=inicio, servicio=lv.lavado_con_sena, hold=AHORA + timedelta(hours=2)
-    )
+    turno = await lv.turno_con_sena(inicio=inicio)
     await lv.turnos.confirm_deposit(turno.id, lv.pago(SENA), now=AHORA)
     cancelacion = await lv.turnos.cancel_by_client(turno.id, now=AHORA)
     assert cancelacion.deposit_status == DepositStatus.DEVOLUCION_PENDIENTE
@@ -65,13 +63,11 @@ async def cancelada(lv: Lavadero, inicio: Any) -> Any:
 
 async def vencido_con_sena(lv: Lavadero) -> uuid.UUID:
     """Turno con seña, hold vencido, horario libre (puesto 2, T+6h): `confirm_late` funciona."""
-    turno = await lv.turno(
+    turno = await lv.turno_con_sena(
         inicio=T + timedelta(hours=6),
-        servicio=lv.lavado_con_sena,
         puesto=lv.puesto_2,
-        hold=AHORA + timedelta(minutes=10),
     )
-    await lv.turnos.expire_holds(lv.puesto_2, AHORA + timedelta(minutes=20))
+    await lv.turnos.expire_holds(lv.puesto_2, AHORA + timedelta(minutes=40))
     return turno.id
 
 
@@ -79,13 +75,11 @@ async def perdido(lv: Lavadero) -> uuid.UUID:
     """Turno con seña vencido cuyo horario tomó otro (puesto 2, T+14h): para
     `record_deposit_after_slot_lost`."""
     inicio = T + timedelta(hours=14)
-    turno = await lv.turno(
+    turno = await lv.turno_con_sena(
         inicio=inicio,
-        servicio=lv.lavado_con_sena,
         puesto=lv.puesto_2,
-        hold=AHORA + timedelta(minutes=10),
     )
-    await lv.turno(inicio=inicio, puesto=lv.puesto_2, ahora=AHORA + timedelta(minutes=20))
+    await lv.turno(inicio=inicio, puesto=lv.puesto_2, ahora=AHORA + timedelta(minutes=40))
     return turno.id
 
 
@@ -112,17 +106,10 @@ async def armar_a(lv: Lavadero) -> Ids:
         demorado.id,
         idempotency_key=k(),
         occurred_at=otra_hora + timedelta(minutes=40),
-        tolerance_min=20,
     )
     ids["job_cancelado_demora"] = demorado.id
     ids["booking_conf"] = (await lv.turno(inicio=T + timedelta(hours=2))).id
-    ids["booking_pend_sena"] = (
-        await lv.turno(
-            inicio=T + timedelta(hours=4),
-            servicio=lv.lavado_con_sena,
-            hold=AHORA + timedelta(hours=2),
-        )
-    ).id
+    ids["booking_pend_sena"] = (await lv.turno_con_sena(inicio=T + timedelta(hours=4))).id
     ids["booking_vencido"] = await vencido_con_sena(lv)
     ids["booking_perdido"] = await perdido(lv)
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
@@ -156,13 +143,7 @@ async def armar_b(lv: Lavadero) -> Ids:
     """Lo propio de B que algunas operaciones combinan con un id de A."""
     ids = _catalogo(lv)
     ids["job_finalizado"] = (await lv.finalizado()).id
-    ids["booking_pend_sena"] = (
-        await lv.turno(
-            inicio=T + timedelta(hours=4),
-            servicio=lv.lavado_con_sena,
-            hold=AHORA + timedelta(hours=2),
-        )
-    ).id
+    ids["booking_pend_sena"] = (await lv.turno_con_sena(inicio=T + timedelta(hours=4))).id
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
     ids["booking_vencido"] = await vencido_con_sena(lv)
     ids["booking_perdido"] = await perdido(lv)
@@ -279,7 +260,7 @@ INTENTOS: dict[str, Intento] = {
         "job_turno_presente",
         "jobs",
         lambda lv, ib, x: lv.jobs.cancel_for_delay(
-            x, idempotency_key=k(), occurred_at=T + timedelta(minutes=40), tolerance_min=20
+            x, idempotency_key=k(), occurred_at=T + timedelta(minutes=40)
         ),
         "JobService.cancel_for_delay",
     ),

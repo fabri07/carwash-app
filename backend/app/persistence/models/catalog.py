@@ -63,7 +63,8 @@ class Service(TenantScopedModel):
 class ServicePrice(TenantScopedModel):
     """Servicio × tamaño. La coherencia con la modalidad la valida `CatalogService` (cruza tablas).
 
-    El monto de la seña no se guarda: `round_half_up(price × bps / 10000)` (R-T-003).
+    Todo servicio tiene precio base por tamaño (D4-6): en `A_COTIZAR` es la referencia "desde $X".
+    La seña ya no vive acá: es global, del negocio (`tenant_settings`, D4-4).
     """
 
     __tablename__ = "service_prices"
@@ -73,19 +74,15 @@ class ServicePrice(TenantScopedModel):
         tenant_index("service_prices", "service_id"),
         tenant_index("service_prices", "vehicle_size_id"),
         unique_alive("service_prices", "service_id", "vehicle_size_id"),
-        check("price_cents IS NULL OR price_cents > 0", "precio_positivo"),
+        check("price_cents > 0", "precio_positivo"),
         check("duration_min > 0", "duracion_positiva"),
-        check("deposit_bps BETWEEN 0 AND 10000", "sena_bps_rango"),
     )
 
     service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     vehicle_size_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    #: NULL en `A_COTIZAR` (D-006).
-    price_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    #: Obligatoria aun sin precio (D-006).
+    #: Siempre presente (D4-6). En `A_COTIZAR` es el precio base de referencia.
+    price_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
-    #: Única fuente del % de seña (hoy en 3 lugares, R-O-031).
-    deposit_bps: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class Resource(TenantScopedModel):

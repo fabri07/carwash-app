@@ -10,11 +10,9 @@ from app.domain.enums import BookingStatus
 from app.persistence.models.agenda import Booking, BookingItem, ScheduleBlock
 from app.persistence.repositories.base import BaseRepository
 
-#: Estados con hold (`hold_expires_at`): los únicos que vencen (§2.1).
-HOLD_STATUSES: tuple[BookingStatus, ...] = (
-    BookingStatus.PENDIENTE_SENA,
-    BookingStatus.PENDIENTE_COTIZACION,
-)
+#: Estados con hold (`hold_expires_at`): los únicos que vencen por reloj del turno (§2.1).
+#: `PENDIENTE_COTIZACION` no: no ocupa el puesto y vence con su cotización (D4-15).
+HOLD_STATUSES: tuple[BookingStatus, ...] = (BookingStatus.PENDIENTE_SENA,)
 
 
 class BookingRepository(BaseRepository[Booking]):

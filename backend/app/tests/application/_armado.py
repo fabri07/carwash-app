@@ -9,7 +9,9 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services import (
@@ -24,7 +26,8 @@ from app.application.services import (
 )
 from app.domain.enums import BookingSource, Channel, PricingMode
 from app.domain.roles import Role
-from app.persistence.models import Booking, Job
+from app.persistence.db.tenant_context import set_tenant_context
+from app.persistence.models import Booking, Job, TenantSettings
 from app.tests.conftest import make_tenant, make_user
 
 #: Lunes 21/9/2026, 10:00 UTC: la hora del turno de referencia.
@@ -33,9 +36,11 @@ T = datetime(2026, 9, 21, 10, tzinfo=UTC)
 AHORA = T - timedelta(days=1)
 
 PRECIO_FIJO = 2_000_000  # $ 20.000
-PRECIO_CON_SENA = 3_000_000  # $ 30.000, seña 30 % = $ 9.000
+PRECIO_CON_SENA = 3_000_000  # $ 30.000: con la seña activa al 30 % pide $ 9.000
+PRECIO_BASE_COTIZAR = 1_500_000  # $ 15.000: el "desde $X" del servicio a cotizar (D4-6)
+#: La seña es global (D4-4): `activar_sena` la prende para todos los servicios de fija.
 SENA_BPS = 3000
-SENA = 900_000
+SENA = 900_000  # 30 % de PRECIO_CON_SENA
 COMISION_CREDITO_BPS = 500  # 5 %
 
 
@@ -46,9 +51,9 @@ class Lavadero:
     owner_id: uuid.UUID
     auto: uuid.UUID
     suv: uuid.UUID
-    lavado: uuid.UUID  # PRECIO_FIJO sin seña, 60 min
-    lavado_con_sena: uuid.UUID  # PRECIO_FIJO con seña 30 %, 90 min
-    tapizado: uuid.UUID  # A_COTIZAR, 120 min
+    lavado: uuid.UUID  # PRECIO_FIJO, 60 min
+    lavado_con_sena: uuid.UUID  # PRECIO_FIJO de $ 30.000, 90 min (para los tests de seña)
+    tapizado: uuid.UUID  # A_COTIZAR, base $ 15.000, 120 min
     puesto: uuid.UUID
     puesto_2: uuid.UUID
     efectivo: uuid.UUID
@@ -88,6 +93,40 @@ class Lavadero:
     def senas(self) -> DepositResolutionService:
         return DepositResolutionService(self.session, self.tenant_id, self.owner_id)
 
+    async def configurar(self, **campos: object) -> TenantSettings:
+        """Cambia la configuración del negocio (`tenant_settings`), como lo haría el dueño."""
+        # Con RLS forzado (Postgres) la fila no se ve sin el contexto de tenant: lo fijan los
+        # servicios, pero esto lee antes de llamar a ninguno.
+        await set_tenant_context(self.session, self.tenant_id)
+        row = await self.session.scalar(
+            select(TenantSettings).where(TenantSettings.tenant_id == self.tenant_id)
+        )
+        assert row is not None
+        for campo, valor in campos.items():
+            setattr(row, campo, valor)
+        await self.session.flush()
+        return row
+
+    async def activar_sena(self, bps: int = SENA_BPS) -> TenantSettings:
+        """Prende la seña global (D4-4). Las reservas nuevas guardan este % en cada ítem."""
+        return await self.configurar(deposit_enabled=True, deposit_bps=bps)
+
+    async def turno_con_sena(self, **kw: Any) -> Booking:
+        """Un turno **con seña** (por defecto del servicio `lavado_con_sena`, al 30 %).
+
+        La seña es global (D4-4) y el % se guarda en cada ítem al reservar: se la prende solo
+        durante esta alta y se vuelve al estado anterior, así los demás turnos del escenario
+        siguen sin seña.
+        """
+        kw.setdefault("servicio", self.lavado_con_sena)
+        row = await self.configurar()
+        antes = (row.deposit_enabled, row.deposit_bps)
+        await self.activar_sena()
+        try:
+            return await self.turno(**kw)
+        finally:
+            await self.configurar(deposit_enabled=antes[0], deposit_bps=antes[1])
+
     def pago(
         self,
         monto: int,
@@ -110,7 +149,6 @@ class Lavadero:
         servicio: uuid.UUID | None = None,
         servicios: Sequence[uuid.UUID] | None = None,
         puesto: uuid.UUID | None = None,
-        hold: datetime | None = None,
         vehiculo: uuid.UUID | None | object = ...,
         ahora: datetime = AHORA,
         codigo: str | None = None,
@@ -125,7 +163,6 @@ class Lavadero:
             service_ids=servicios if servicios is not None else [servicio or self.lavado],
             vehicle_size_id=self.auto,
             vehicle_id=self.vehiculo if vehiculo is ... else vehiculo,  # type: ignore[arg-type]
-            hold_expires_at=hold,
             now=ahora,
         )
 
@@ -183,14 +220,10 @@ async def armar_catalogo(
     tapizado = await catalogo.create_service("Tapizado", PricingMode.A_COTIZAR)
     for size in (auto, suv):
         await catalogo.set_price(lavado.id, size.id, price_cents=PRECIO_FIJO, duration_min=60)
+        await catalogo.set_price(con_sena.id, size.id, price_cents=PRECIO_CON_SENA, duration_min=90)
         await catalogo.set_price(
-            con_sena.id,
-            size.id,
-            price_cents=PRECIO_CON_SENA,
-            duration_min=90,
-            deposit_bps=SENA_BPS,
+            tapizado.id, size.id, price_cents=PRECIO_BASE_COTIZAR, duration_min=120
         )
-        await catalogo.set_price(tapizado.id, size.id, price_cents=None, duration_min=120)
     puesto = await catalogo.create_resource("Puesto 1")
     puesto_2 = await catalogo.create_resource("Puesto 2", sort_order=1)
     efectivo = await catalogo.create_payment_method("EFECTIVO", "Efectivo")

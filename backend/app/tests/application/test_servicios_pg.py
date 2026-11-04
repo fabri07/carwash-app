@@ -28,9 +28,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.application.services.errors import QuoteAlreadyUsedError, SlotTakenError
-from app.domain.enums import BookingStatus, Channel, DepositStatus, JobEventType, JobStatus
+from app.domain.enums import (
+    BookingStatus,
+    Channel,
+    DepositStatus,
+    JobEventType,
+    JobStatus,
+    QuoteStatus,
+)
 from app.domain.exceptions import GuardFailedError, InvalidTransition
-from app.persistence.models import Customer, Job, JobEvent
+from app.persistence.db.tenant_context import set_tenant_context
+from app.persistence.models import Customer, Job, JobEvent, Quote
 from app.persistence.repositories.agenda import BookingRepository
 from app.tests.application._armado import (
     AHORA,
@@ -83,7 +91,7 @@ async def _contar(pg_admin_engine, sql: str, **params: Any) -> int:
 
 
 async def test_reservar_sobre_un_hold_vencido_del_mismo_puesto_funciona(fabrica, lav):
-    viejo = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    viejo = await _en_tx(fabrica, lav, lambda lv: lv.turno_con_sena())
 
     async def reservar(lv: Lavadero):
         return await lv.turno(ahora=HOLD + timedelta(minutes=1))
@@ -95,7 +103,7 @@ async def test_reservar_sobre_un_hold_vencido_del_mismo_puesto_funciona(fabrica,
 
 
 async def test_reservar_sobre_un_hold_vigente_choca_y_la_transaccion_sigue(fabrica, lav):
-    await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    await _en_tx(fabrica, lav, lambda lv: lv.turno_con_sena())
     async with fabrica() as s, s.begin():
         lv = lav.en(s)
         with pytest.raises(SlotTakenError):
@@ -106,10 +114,62 @@ async def test_reservar_sobre_un_hold_vigente_choca_y_la_transaccion_sigue(fabri
         assert otro.status == borde.status == BookingStatus.CONFIRMADO
 
 
+# ── Un turno a cotizar no ocupa el puesto (D4-13, A7b) ───────────────────────
+
+
+async def test_un_turno_a_cotizar_no_ocupa_el_puesto(fabrica, lav):
+    """`PENDIENTE_COTIZACION` salió del `WHERE` del `EXCLUDE`: dos turnos a cotizar en el mismo
+    puesto y horario conviven, y un confirmado entra encima sin chocar."""
+    primero = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.tapizado))
+    segundo = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.tapizado))
+    confirmado = await _en_tx(fabrica, lav, lambda lv: lv.turno())
+    assert primero.status == segundo.status == BookingStatus.PENDIENTE_COTIZACION
+    assert confirmado.status == BookingStatus.CONFIRMADO
+
+
+async def test_aceptar_con_el_horario_ya_tomado_da_slot_taken_y_la_cotizacion_sigue_cotizada(
+    fabrica, lav
+):
+    """D4-13: recién al aceptar el turno ocupa el puesto. Si otro tomó el horario, el `EXCLUDE`
+    lo rechaza (`SlotTakenError`) y la cotización **sigue `COTIZADO`** para aceptarse con otro."""
+    booking = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.tapizado))
+    await _en_tx(fabrica, lav, lambda lv: lv.turno())  # un confirmado toma el puesto
+
+    async def cotizar(lv: Lavadero):
+        await lv.cotizaciones.quote(
+            booking.quote_id,
+            agreed_price_cents=1_000_000,
+            agreed_duration_min=120,
+            quoted_at=AHORA,
+        )
+
+    await _en_tx(fabrica, lav, cotizar)
+    async with fabrica() as s, s.begin():
+        with pytest.raises(SlotTakenError):
+            await lav.en(s).cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
+    async with fabrica() as s, s.begin():
+        await set_tenant_context(s, lav.tenant_id)  # sin contexto, RLS no deja ver la fila
+        quote = await s.get(Quote, booking.quote_id)
+        assert quote is not None and quote.status == QuoteStatus.COTIZADO
+        assert (await lav.en(s).turnos.get(booking.id)).status == BookingStatus.PENDIENTE_COTIZACION
+    # Con otro horario libre, la misma cotización se puede aceptar.
+    async with fabrica() as s, s.begin():
+        lv = lav.en(s)
+        libre = await lv.turno(servicio=lv.tapizado, inicio=T + timedelta(hours=5))
+        await lv.cotizaciones.quote(
+            libre.quote_id,
+            agreed_price_cents=1_000_000,
+            agreed_duration_min=120,
+            quoted_at=AHORA,
+        )
+        await lv.cotizaciones.accept(libre.quote_id, decided_at=AHORA, now=AHORA)
+        assert libre.status == BookingStatus.CONFIRMADO
+
+
 async def test_los_servicios_sumados_ocupan_el_puesto_por_la_duracion_total(fabrica, lav):
     """Adenda C1: lavado (60) + premium (90) = 150 min en el `EXCLUDE`."""
     await _en_tx(
-        fabrica, lav, lambda lv: lv.turno(servicios=[lv.lavado, lv.lavado_con_sena], hold=HOLD)
+        fabrica, lav, lambda lv: lv.turno_con_sena(servicios=[lv.lavado, lv.lavado_con_sena])
     )
     async with fabrica() as s, s.begin():
         lv = lav.en(s)
@@ -120,9 +180,7 @@ async def test_los_servicios_sumados_ocupan_el_puesto_por_la_duracion_total(fabr
 
 
 async def test_confirmacion_tardia_sobre_un_horario_ya_tomado_choca(fabrica, lav):
-    vencido = await _en_tx(
-        fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD)
-    )
+    vencido = await _en_tx(fabrica, lav, lambda lv: lv.turno_con_sena())
     await _en_tx(fabrica, lav, lambda lv: lv.turno(ahora=HOLD))  # vence el hold y toma el horario
     async with fabrica() as s, s.begin():
         with pytest.raises(SlotTakenError):
@@ -131,9 +189,7 @@ async def test_confirmacion_tardia_sobre_un_horario_ya_tomado_choca(fabrica, lav
 
 
 async def test_aceptar_una_cotizacion_que_alarga_el_turno_sobre_otro_choca(fabrica, lav):
-    turno = await _en_tx(
-        fabrica, lav, lambda lv: lv.turno(servicio=lv.tapizado, hold=AHORA + timedelta(hours=3))
-    )
+    turno = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.tapizado))
     await _en_tx(fabrica, lav, lambda lv: lv.turno(inicio=T + timedelta(hours=3)))
     assert turno.quote_id is not None
 
@@ -336,7 +392,7 @@ async def test_los_servicios_fijan_el_tenant_y_rls_filtra_el_resto(fabrica, lav,
 
 async def test_b13_y_c3_contra_postgres(fabrica, lav, pg_admin_engine):
     # recibir dos veces el mismo turno devuelve el mismo job
-    turno = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    turno = await _en_tx(fabrica, lav, lambda lv: lv.turno_con_sena())
     await _en_tx(
         fabrica, lav, lambda lv: lv.turnos.confirm_deposit(turno.id, lv.pago(SENA), now=AHORA)
     )
@@ -373,7 +429,7 @@ async def test_b13_y_c3_contra_postgres(fabrica, lav, pg_admin_engine):
             fabrica,
             lav,
             lambda lv: lv.jobs.cancel_for_delay(
-                job.id, idempotency_key="c", occurred_at=T + timedelta(hours=2), tolerance_min=20
+                job.id, idempotency_key="c", occurred_at=T + timedelta(hours=2)
             ),
         )
 
@@ -384,7 +440,7 @@ async def test_b13_y_c3_contra_postgres(fabrica, lav, pg_admin_engine):
             fabrica,
             lav,
             lambda lv: lv.jobs.cancel_for_delay(
-                walk.id, idempotency_key="c", occurred_at=T + timedelta(hours=2), tolerance_min=20
+                walk.id, idempotency_key="c", occurred_at=T + timedelta(hours=2)
             ),
         )
     assert (
@@ -406,7 +462,7 @@ async def test_cancelar_por_demora_y_revertir_contra_postgres(fabrica, lav, pg_a
         fabrica,
         lav,
         lambda lv: lv.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=45), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=45)
         ),
     )
     await _en_tx(
@@ -476,7 +532,7 @@ async def test_f5_la_sena_que_llega_despues_de_perder_el_horario_queda_registrad
 ):
     """El escenario del revisor: el hold de A vence, B toma el horario y la seña de A llega
     después. `confirm_deposit` y `confirm_late` fallan; la plata igual queda registrada."""
-    a = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    a = await _en_tx(fabrica, lav, lambda lv: lv.turno_con_sena())
     await _en_tx(fabrica, lav, lambda lv: lv.turno(ahora=HOLD + timedelta(minutes=1)))
     tarde = HOLD + timedelta(minutes=2)
     with pytest.raises(InvalidTransition):
@@ -521,11 +577,11 @@ async def test_f5_la_sena_que_llega_despues_de_perder_el_horario_queda_registrad
 async def test_f12_dos_turnos_vencidos_del_mismo_puesto_no_se_bloquean_en_cruz(fabrica, lav):
     """Cada transacción tiene tomado **su** turno (un hold vencido) y vence los holds del
     puesto: sin `SKIP LOCKED` una espera el turno de la otra y viceversa (40P01)."""
-    x = await _en_tx(fabrica, lav, lambda lv: lv.turno(servicio=lv.lavado_con_sena, hold=HOLD))
+    x = await _en_tx(fabrica, lav, lambda lv: lv.turno_con_sena())
     y = await _en_tx(
         fabrica,
         lav,
-        lambda lv: lv.turno(inicio=T + timedelta(hours=3), servicio=lv.lavado_con_sena, hold=HOLD),
+        lambda lv: lv.turno_con_sena(inicio=T + timedelta(hours=3)),
     )
     tarde = HOLD + timedelta(minutes=1)
 

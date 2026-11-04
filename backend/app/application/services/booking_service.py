@@ -34,16 +34,14 @@ from app.application.services._base import (
     require_instant,
     require_key,
 )
-from app.application.services._items import catalog_items
+from app.application.services._items import catalog_items, deposit_bps_snapshot
 from app.application.services._payments import PaymentInput, create_payment
 from app.application.services.errors import (
     AlreadyExistsError,
-    CatalogIncoherentError,
     IdempotencyKeyReusedError,
     SlotTakenError,
 )
 from app.domain.booking_state import (
-    DEFAULT_LATE_THRESHOLD_MIN,
     BookingAction,
     anticipation_min,
     classify_cancellation,
@@ -57,6 +55,8 @@ from app.domain.enums import (
     CancellationInitiator,
     Channel,
     PaymentKind,
+    PricingMode,
+    QuoteStatus,
 )
 from app.domain.exceptions import GuardFailedError, InvalidTransition
 from app.domain.quote_state import QuoteAction, next_quote_status
@@ -79,7 +79,11 @@ from app.persistence.models.cancellation import (
 from app.persistence.models.catalog import PaymentMethod
 from app.persistence.models.money import Payment
 from app.persistence.models.quote import Quote
-from app.persistence.repositories.agenda import HOLD_STATUSES, BookingRepository
+from app.persistence.repositories.agenda import (
+    HOLD_STATUSES,
+    BookingItemRepository,
+    BookingRepository,
+)
 from app.persistence.repositories.cancellations import CancellationRepository
 from app.persistence.repositories.catalog import (
     PaymentMethodRepository,
@@ -88,6 +92,7 @@ from app.persistence.repositories.catalog import (
 )
 from app.persistence.repositories.customers import CustomerRepository, VehicleRepository
 from app.persistence.repositories.money import PaymentRepository, deposits_paid
+from app.persistence.repositories.quotes import QuoteRepository
 
 #: `CHECK (length(reason) <= 160)` de `cancellations`.
 MAX_CANCELLATION_REASON = 160
@@ -126,7 +131,10 @@ class BookingService(ServiceBase):
     # ── Vencimiento perezoso ──────────────────────────────────────────────────
 
     async def expire_holds(self, resource_id: uuid.UUID, now: datetime) -> list[Booking]:
-        """Vence `PENDIENTE_SEÑA`/`PENDIENTE_COTIZACION` del puesto con `hold_expires_at <= now`.
+        """Vence los `PENDIENTE_SEÑA` del puesto con `hold_expires_at <= now`.
+
+        `PENDIENTE_COTIZACION` no entra: no ocupa el puesto ni tiene hold, vence con su cotización
+        (`QuoteService.expire`, D4-15).
 
         Toma los turnos con `FOR UPDATE SKIP LOCKED` (en orden de `id`) y los pasa a
         `VENCIDO` (no terminal, R-T-030). Devuelve los que venció. Un hold que otra
@@ -158,7 +166,6 @@ class BookingService(ServiceBase):
         vehicle_size_id: uuid.UUID,
         now: datetime,
         vehicle_id: uuid.UUID | None = None,
-        hold_expires_at: datetime | None = None,
         notes: str | None = None,
         terms_version: str | None = None,
         terms_accepted_at: datetime | None = None,
@@ -166,14 +173,19 @@ class BookingService(ServiceBase):
         """Alta de un turno con estado, precio, duración y seña **snapshot** del catálogo.
 
         Los servicios **se suman** (adenda C1): un ítem por servicio, y el turno guarda los
-        totales (duración y precio sumados; seña, la suma de la de cada ítem).
+        totales (duración y precio **base** sumados; seña, la suma de la de cada ítem). Lee
+        `tenant_settings` (FASE-4-CONTRATO §5): la seña global, `min_advance_min`, `hold_min` y
+        `quote_validity_hours`. El llamador no pasa vencimientos: salen de `now` y la configuración.
 
-        - Con un ítem `A_COTIZAR` (a lo sumo uno) → `PENDIENTE_COTIZACION`, sin precio ni seña
-          hasta aceptar la cotización, y nace su cotización `PENDIENTE` para ese servicio.
-        - Con seña requerida > 0 → `PENDIENTE_SEÑA`. Sin seña → `CONFIRMADO`.
+        - Con un ítem `A_COTIZAR` (a lo sumo uno) → `PENDIENTE_COTIZACION`, **sin ocupar el
+          puesto, sin hold y sin seña** (D4-13, D4-7): el precio del turno es la suma de las bases
+          y se acuerda al aceptar la cotización. Nace su cotización `PENDIENTE`, que vence a las
+          `quote_validity_hours` (D4-16).
+        - Con seña requerida > 0 → `PENDIENTE_SEÑA`, con `hold_expires_at = now + hold_min`.
+        - Sin seña → `CONFIRMADO`.
 
-        Los estados con hold exigen `hold_expires_at`. Un choque del `EXCLUDE` es
-        `SlotTakenError`; un código repetido, `AlreadyExistsError`.
+        Reservar con menos de `min_advance_min` de anticipación es `GuardFailedError`. Un choque
+        del `EXCLUDE` es `SlotTakenError`; un código repetido, `AlreadyExistsError`.
         """
         await self._enter()
         require_instant(start_at)
@@ -183,13 +195,21 @@ class BookingService(ServiceBase):
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
         if vehicle_id is not None:
             await self._require(VehicleRepository(self._session), vehicle_id)
-        items = await catalog_items(self._session, self._tenant_id, service_ids, vehicle_size_id)
-        durations = [item.duration_min for item in items]
-        if None in durations:
-            raise CatalogIncoherentError("the service has no price row for that vehicle size")
-        duration = sum(d for d in durations if d is not None)
+        settings = await self._settings()
+        if anticipation_min(start_at, now) < settings.min_advance_min:
+            raise GuardFailedError(
+                f"a booking needs at least {settings.min_advance_min} min of advance notice"
+            )
+        items = await catalog_items(
+            self._session,
+            self._tenant_id,
+            service_ids,
+            vehicle_size_id,
+            deposit_bps=deposit_bps_snapshot(settings),
+        )
+        duration = sum(item.duration_min for item in items)
         quoted = next((item for item in items if item.quoted), None)
-        price = None if quoted is not None else sum(item.price_cents or 0 for item in items)
+        price = sum(item.price_cents for item in items)
         deposit = 0 if quoted is not None else sum(item.deposit_cents for item in items)
         if quoted is not None:
             action = BookingAction.CREATE_FOR_QUOTE
@@ -198,12 +218,9 @@ class BookingService(ServiceBase):
         else:
             action = BookingAction.CREATE_CONFIRMED
         status = next_booking_status(None, action)
-        if status in HOLD_STATUSES:
-            if hold_expires_at is None:
-                raise GuardFailedError(f"a {status} booking needs hold_expires_at")
-            require_instant(hold_expires_at)
-        else:
-            hold_expires_at = None
+        hold_expires_at = (
+            now + timedelta(minutes=settings.hold_min) if status in HOLD_STATUSES else None
+        )
 
         await self.expire_holds(resource_id, now)
         booking = Booking(
@@ -240,6 +257,7 @@ class BookingService(ServiceBase):
                     position=position,
                     service_name_snapshot=item.name,
                     duration_min=item.duration_min,
+                    pricing_mode=item.pricing_mode,
                     price_cents=item.price_cents,
                     deposit_bps=item.deposit_bps,
                 )
@@ -256,7 +274,7 @@ class BookingService(ServiceBase):
                 booking_id=booking.id,
                 status=next_quote_status(None, QuoteAction.CREATE),
                 requested_at=now,
-                expires_at=hold_expires_at,
+                expires_at=now + timedelta(hours=settings.quote_validity_hours),
             )
             self._session.add(quote)
             await self._session.flush()
@@ -323,6 +341,28 @@ class BookingService(ServiceBase):
             booking_id=booking.id,
         )
 
+    async def _require_accepted_quote(self, booking: Booking) -> None:
+        """Un turno con un ítem `A_COTIZAR` solo avanza con su cotización `ACEPTADO` (D4-7, A7b).
+
+        Desde la F4 todo ítem tiene precio base, así que `price_cents` ya no distingue "a
+        cotizar": se mira la modalidad del ítem (snapshot) y el estado de la cotización. Una
+        cotización pendiente, vencida, rechazada o cancelada no alcanza, aunque haya precio.
+        """
+        items = await BookingItemRepository(self._session).list_for_booking(
+            booking.id, self._tenant_id
+        )
+        if not any(item.pricing_mode == PricingMode.A_COTIZAR for item in items):
+            return
+        quote = (
+            await QuoteRepository(self._session).get_by_id(booking.quote_id, self._tenant_id)
+            if booking.quote_id is not None
+            else None
+        )
+        if quote is None or quote.status != QuoteStatus.ACEPTADO:
+            raise GuardFailedError(
+                "the booking has a service to be quoted: its quote has to be accepted first"
+            )
+
     async def confirm_deposit(
         self, booking_id: uuid.UUID, payment: PaymentInput, *, now: datetime
     ) -> DepositConfirmation:
@@ -353,10 +393,10 @@ class BookingService(ServiceBase):
         """`VENCIDO → CONFIRMADO` (confirmación tardía): el `EXCLUDE` decide si el horario
         sigue libre (`SlotTakenError` si no). Con `payment`, registra además la seña.
 
-        Guardas (F4): el turno tiene precio (un `A_COTIZAR` vencido se vuelve a cotizar, no
-        se confirma tarde sin precio); si pide seña (`deposit_required_cents > 0`) exige su
-        pago, y si no la pide rechaza uno. Si el horario ya no está libre, la seña se
-        registra con `record_deposit_after_slot_lost`.
+        Guardas (F4): un turno con ítem `A_COTIZAR` exige su cotización `ACEPTADO` (una vencida
+        o pendiente se vuelve a cotizar, no se confirma tarde: D4-7); si pide seña
+        (`deposit_required_cents > 0`) exige su pago, y si no la pide rechaza uno. Si el horario
+        ya no está libre, la seña se registra con `record_deposit_after_slot_lost`.
         """
         await self._enter()
         require_instant(now)
@@ -366,10 +406,7 @@ class BookingService(ServiceBase):
             if await self._replayed_deposit(booking, key) is not None:
                 return booking
         target = next_booking_status(booking.status, BookingAction.LATE_CONFIRM)
-        if booking.price_cents is None:
-            raise GuardFailedError(
-                "a booking without a price (to be quoted) cannot be confirmed late"
-            )
+        await self._require_accepted_quote(booking)
         if booking.deposit_required_cents > 0 and payment is None:
             raise GuardFailedError("the booking requires a deposit: confirm late with its payment")
         if booking.deposit_required_cents == 0 and payment is not None:
@@ -452,7 +489,6 @@ class BookingService(ServiceBase):
         *,
         now: datetime,
         reason: str | None = None,
-        late_threshold_min: int = DEFAULT_LATE_THRESHOLD_MIN,
     ) -> Cancellation:
         """El cliente cancela: `CANCELADO_CLIENTE` (anticipación ≥ 0) o
         `AUSENTE_CON_AVISO_POSTERIOR` (< 0). Clasifica (R-T-037) y abre el caso de la seña
@@ -462,6 +498,8 @@ class BookingService(ServiceBase):
         decide si la seña se puede retener (`EN_REVISION` → `RETENIDA`), y un cliente que
         mandara una hora anterior se la sacaría de encima. Queda como `requested_at`.
 
+        El umbral de "tardía" es `late_cancel_threshold_min` de `tenant_settings`.
+
         Idempotente por turno: si ya hay una cancelación, la devuelve (R-T-035).
         """
         return await self._cancel(
@@ -469,7 +507,6 @@ class BookingService(ServiceBase):
             requested_at=now,
             reason=reason,
             initiator=CancellationInitiator.CLIENTE,
-            late_threshold_min=late_threshold_min,
         )
 
     async def cancel_operational(
@@ -485,7 +522,6 @@ class BookingService(ServiceBase):
             requested_at=requested_at,
             reason=reason,
             initiator=CancellationInitiator.NEGOCIO,
-            late_threshold_min=DEFAULT_LATE_THRESHOLD_MIN,
         )
 
     async def _cancel(
@@ -495,7 +531,6 @@ class BookingService(ServiceBase):
         requested_at: datetime,
         reason: str | None,
         initiator: CancellationInitiator,
-        late_threshold_min: int,
     ) -> Cancellation:
         await self._enter()
         require_instant(requested_at)
@@ -512,7 +547,8 @@ class BookingService(ServiceBase):
                 if anticipation >= 0
                 else BookingAction.CANCEL_BY_CLIENT_AFTER_START
             )
-            classification = classify_cancellation(anticipation, late_threshold_min)
+            threshold = (await self._settings()).late_cancel_threshold_min
+            classification = classify_cancellation(anticipation, threshold)
         else:
             action = BookingAction.CANCEL_OPERATIONAL
             classification = CancellationClassification.OPERATIVA

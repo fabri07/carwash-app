@@ -62,7 +62,7 @@ async def _eventos(lav: Lavadero, job_id: uuid.UUID) -> list[JobEventType]:
 
 
 async def _turno_con_sena_pagada(lav: Lavadero) -> Booking:
-    booking = await lav.turno(servicio=lav.lavado_con_sena, hold=AHORA + timedelta(minutes=30))
+    booking = await lav.turno(servicio=lav.lavado_con_sena)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     return booking
 
@@ -130,6 +130,7 @@ async def test_una_clave_de_otra_operacion_no_sirve_para_recibir(lav):
 
 
 async def test_recibir_vincula_las_senas_del_turno_al_job(lav):
+    await lav.activar_sena()
     booking = await _turno_con_sena_pagada(lav)
     job = await lav.recibido(booking)
     pagos = (
@@ -142,7 +143,8 @@ async def test_recibir_vincula_las_senas_del_turno_al_job(lav):
 
 async def test_recibir_con_sena_sin_pagar_esta_permitido_por_ahora(lav):
     # [abierto] pregunta 3: la tabla lo permite, la guarda es configurable en F6.
-    booking = await lav.turno(servicio=lav.lavado_con_sena, hold=AHORA + timedelta(minutes=30))
+    await lav.activar_sena()
+    booking = await lav.turno(servicio=lav.lavado_con_sena)
     job = await lav.recibido(booking)
     assert job.status == JobStatus.PRESENTE
 
@@ -166,7 +168,7 @@ async def test_no_se_recibe_un_turno_cancelado(lav):
 
 
 async def test_a_cotizar_no_se_recibe_sin_cotizacion_aceptada(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    booking = await lav.turno(servicio=lav.tapizado)
     with pytest.raises(InvalidTransition):  # PENDIENTE_COTIZACION no es recibible
         await lav.recibido(booking)
     assert booking.quote_id is not None
@@ -231,6 +233,7 @@ async def test_walk_in_a_cotizar_exige_cotizacion_aceptada_del_mismo_servicio(la
 
 async def test_walk_in_con_varios_servicios_los_suma(lav):
     """Adenda C1: el lavado del catálogo más el tapizado cotizado, en el orden pedido."""
+    await lav.activar_sena()
     quote = await _cotizacion_aceptada(lav, precio=4_000_000)
     job = await lav.jobs.receive(
         idempotency_key="w",
@@ -254,19 +257,16 @@ async def test_walk_in_con_varios_servicios_los_suma(lav):
 
 
 async def test_recibir_un_turno_con_varios_servicios_copia_los_items(lav):
-    booking = await lav.turno(
-        servicios=[lav.lavado_con_sena, lav.tapizado], hold=AHORA + timedelta(hours=1)
-    )
+    await lav.activar_sena()
+    booking = await lav.turno(servicios=[lav.lavado_con_sena, lav.tapizado])
     assert booking.quote_id is not None
     await lav.cotizaciones.quote(
         booking.quote_id, agreed_price_cents=1_000_000, agreed_duration_min=45, quoted_at=AHORA
     )
-    await lav.cotizaciones.accept(
-        booking.quote_id, decided_at=AHORA, now=AHORA, hold_expires_at=AHORA + timedelta(hours=1)
-    )
+    await lav.cotizaciones.accept(booking.quote_id, decided_at=AHORA, now=AHORA)
     job = await lav.recibido(booking)
     assert job.base_price_cents == PRECIO_CON_SENA + 1_000_000 == booking.price_cents
-    assert job.deposit_required_cents == SENA
+    assert job.deposit_required_cents == SENA + 300_000  # + 30 % del acordado (D4-7)
     items = await lav.jobs.items(job.id)
     assert [(i.service_id, i.price_cents, i.duration_min) for i in items] == [
         (lav.lavado_con_sena, PRECIO_CON_SENA, 90),
@@ -513,7 +513,8 @@ async def test_reenviar_un_cobro_devuelve_el_mismo_pago(lav):
 
 
 async def test_la_clave_de_una_sena_no_sirve_para_un_cobro(lav):
-    booking = await lav.turno(servicio=lav.lavado_con_sena, hold=AHORA + timedelta(minutes=30))
+    await lav.activar_sena()
+    booking = await lav.turno(servicio=lav.lavado_con_sena)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA, "sena-1"), now=AHORA)
     job = await lav.walk_in()
     with pytest.raises(IdempotencyKeyReusedError):
@@ -545,6 +546,7 @@ async def test_devolucion_resta_y_sale_de_caja(lav):
 
 
 async def test_un_cobro_no_puede_ser_sena_ni_de_importe_no_positivo(lav):
+    await lav.activar_sena()
     job = await lav.walk_in()
     with pytest.raises(GuardFailedError):
         await lav.jobs.record_payment(job.id, lav.pago(100), kind=PaymentKind.SENA)
@@ -640,11 +642,12 @@ async def test_anular_una_devolucion_en_finalizado_puede_cerrar_el_cobro(lav):
 
 
 async def test_anular_exige_motivo_y_pago_de_un_job(lav):
+    await lav.activar_sena()
     job = await lav.walk_in()
     pago = await lav.jobs.record_payment(job.id, lav.pago(1_000))
     with pytest.raises(GuardFailedError):
         await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="  ")
-    booking = await lav.turno(servicio=lav.lavado_con_sena, hold=AHORA + timedelta(minutes=30))
+    booking = await lav.turno(servicio=lav.lavado_con_sena)
     sena = await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     with pytest.raises(GuardFailedError):
         await lav.jobs.void_payment(
@@ -661,7 +664,7 @@ async def test_b13_walk_in_no_se_cancela_por_demora(lav):
     job = await lav.walk_in()
     with pytest.raises(GuardFailedError):
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1)
         )
 
 
@@ -669,7 +672,7 @@ async def test_b13_cancelar_por_demora_un_finalizado_falla(lav):
     job = await lav.finalizado(await lav.recibido())
     with pytest.raises(InvalidTransition):
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(hours=1)
         )
 
 
@@ -677,18 +680,18 @@ async def test_la_demora_se_recalcula_con_el_momento_del_evento(lav):
     job = await lav.recibido(llegada=T + timedelta(minutes=25))  # llegó 25 tarde
     with pytest.raises(GuardFailedError):  # pero el toque dice 20: igual no alcanza
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=20), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=20)
         )
 
 
 async def test_cancelar_por_demora_retiene_la_sena_y_cancela_el_turno(lav):
+    await lav.activar_sena()
     booking = await _turno_con_sena_pagada(lav)
     job = await lav.recibido(booking, llegada=T + timedelta(minutes=30))
     await lav.jobs.cancel_for_delay(
         job.id,
         idempotency_key="c",
         occurred_at=T + timedelta(minutes=31),
-        tolerance_min=20,
         reason="Llegó tarde",
     )
     assert job.status == JobStatus.CANCELADO_DEMORA
@@ -709,7 +712,7 @@ async def test_cancelar_por_demora_retiene_la_sena_y_cancela_el_turno(lav):
         await lav.jobs.record_payment(job.id, lav.pago(1_000))
     # reenvío sin efectos
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=31), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=31)
     )
     assert len(await lav.jobs.history(job.id)) == len(eventos)
 
@@ -719,7 +722,7 @@ async def test_revertir_la_retencion_exige_motivo_y_una_retencion_vigente(lav):
     with pytest.raises(InvalidTransition):  # todavía no está cancelado
         await lav.jobs.reverse_retention(job.id, idempotency_key="r", occurred_at=T, reason="x")
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=40), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=40)
     )
     with pytest.raises(GuardFailedError):
         await lav.jobs.reverse_retention(job.id, idempotency_key="r", occurred_at=T, reason=" ")
@@ -896,25 +899,26 @@ async def test_f2_no_se_cancela_por_demora_con_cobros_vivos(lav):
     pago = await lav.jobs.record_payment(job.id, lav.pago(PRECIO_FIJO))
     with pytest.raises(GuardFailedError, match="payment"):
         await lav.jobs.cancel_for_delay(
-            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+            job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41)
         )
     assert job.status == JobStatus.PRESENTE
     assert booking.status == BookingStatus.RECIBIDO
     # anulado el cobro, se cancela
     await lav.jobs.void_payment(pago.id, idempotency_key="v", occurred_at=T, reason="Error")
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41)
     )
     assert job.status == JobStatus.CANCELADO_DEMORA
 
 
 async def test_f2_un_cobro_devuelto_no_impide_cancelar_por_demora(lav):
+    await lav.activar_sena()
     booking = await _turno_con_sena_pagada(lav)
     job = await lav.recibido(booking, llegada=T + timedelta(minutes=40))
     await lav.jobs.record_payment(job.id, lav.pago(1_000_000))
     await lav.jobs.record_payment(job.id, lav.pago(1_000_000), kind=PaymentKind.DEVOLUCION)
     await lav.jobs.cancel_for_delay(
-        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41), tolerance_min=20
+        job.id, idempotency_key="c", occurred_at=T + timedelta(minutes=41)
     )
     assert job.status == JobStatus.CANCELADO_DEMORA
     retenido = (await lav.jobs.history(job.id))[-1]
@@ -958,7 +962,7 @@ async def test_f3_una_cotizacion_se_usa_en_un_solo_job(lav):
 
 
 async def test_f3_la_cotizacion_de_un_turno_no_sirve_para_un_walk_in(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    booking = await lav.turno(servicio=lav.tapizado)
     assert booking.quote_id is not None
     await lav.cotizaciones.quote(
         booking.quote_id, agreed_price_cents=100_000, agreed_duration_min=60, quoted_at=AHORA
@@ -971,7 +975,7 @@ async def test_f3_la_cotizacion_de_un_turno_no_sirve_para_un_walk_in(lav):
 
 
 async def test_f3_recibir_un_turno_exige_la_cotizacion_del_turno(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    booking = await lav.turno(servicio=lav.tapizado)
     assert booking.quote_id is not None
     await lav.cotizaciones.quote(
         booking.quote_id, agreed_price_cents=100_000, agreed_duration_min=60, quoted_at=AHORA
@@ -991,7 +995,7 @@ async def test_f3_recibir_un_turno_exige_la_cotizacion_del_turno(lav):
 async def test_f3_la_cotizacion_del_turno_ya_usada_por_otro_job_es_error_de_dominio(lav):
     """La red final es el único parcial `(tenant_id, quote_id)`: si otro job ya tiene la
     cotización (carrera, dato migrado), recibir el turno falla con error de dominio, no 500."""
-    booking = await lav.turno(servicio=lav.tapizado, hold=AHORA + timedelta(hours=2))
+    booking = await lav.turno(servicio=lav.tapizado)
     assert booking.quote_id is not None
     await lav.cotizaciones.quote(
         booking.quote_id, agreed_price_cents=100_000, agreed_duration_min=60, quoted_at=AHORA

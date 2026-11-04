@@ -4,11 +4,16 @@ Los servicios **se suman**: un turno o un job lleva N. Lo comparten `BookingServ
 walk-in de `JobService.receive`, para que las reglas se escriban una vez:
 
 - al menos un servicio y ninguno repetido;
-- cada uno con su fila de precio para el tamaño, coherente con la modalidad (§1.1);
+- cada uno con su fila de precio para el tamaño (§1.1);
 - **a lo sumo uno `A_COTIZAR`**: la cotización (`quotes.service_id`) es de un servicio.
 
-La seña se calcula **por ítem** (`round_half_up(precio × bps)`) y se suma: así el total no depende
-de en qué orden se redondea.
+Todo servicio tiene precio base por tamaño (D4-6, FASE-4-CONTRATO): en `A_COTIZAR` es la
+referencia "desde $X" y la cotización fija el final.
+
+La seña es **global** (D4-4): el % del negocio, si la seña está activa, se guarda en cada ítem al
+reservar (`deposit_bps`, único snapshot). Se calcula **por ítem** (`round_half_up(precio × bps)`) y
+se suma: así el total no depende de en qué orden se redondea. El ítem a cotizar guarda el % pero
+**su seña es 0 hasta que se acepta la cotización** (D4-7: se calcula sobre el precio acordado).
 """
 
 import uuid
@@ -22,18 +27,24 @@ from app.application.services.errors import CatalogIncoherentError, NotFoundErro
 from app.domain.deposit import deposit_required
 from app.domain.enums import PricingMode
 from app.domain.exceptions import GuardFailedError
+from app.persistence.models.tenant import TenantSettings
 from app.persistence.repositories.catalog import ServicePriceRepository, ServiceRepository
+
+
+def deposit_bps_snapshot(settings: TenantSettings) -> int:
+    """El % de seña que se guarda al reservar: el del negocio si la seña está activa, 0 si no."""
+    return settings.deposit_bps if settings.deposit_enabled else 0
 
 
 @dataclass(frozen=True, slots=True)
 class CatalogItem:
-    """Un servicio con su precio para el tamaño. `price_cents` NULL = a cotizar."""
+    """Un servicio con su precio base para el tamaño y el % de seña vigente al reservar."""
 
     service_id: uuid.UUID
     name: str
     pricing_mode: PricingMode
-    duration_min: int | None
-    price_cents: int | None
+    duration_min: int
+    price_cents: int
     deposit_bps: int
 
     @property
@@ -42,6 +53,9 @@ class CatalogItem:
 
     @property
     def deposit_cents(self) -> int:
+        """Seña al reservar. Un ítem a cotizar no lleva seña hasta aceptar la cotización (D4-7)."""
+        if self.quoted:
+            return 0
         return deposit_required(self.price_cents, self.deposit_bps)
 
 
@@ -60,11 +74,14 @@ async def catalog_items(
     tenant_id: uuid.UUID,
     service_ids: Sequence[uuid.UUID],
     vehicle_size_id: uuid.UUID,
+    *,
+    deposit_bps: int,
 ) -> list[CatalogItem]:
-    """Los servicios pedidos, en el mismo orden, con precio y duración del catálogo.
+    """Los servicios pedidos, en el mismo orden, con precio base y duración del catálogo.
 
-    Un `PRECIO_FIJO` exige su fila de precio; un `A_COTIZAR` puede no tenerla (el walk-in toma
-    precio y duración de la cotización). Más de un `A_COTIZAR` es `GuardFailedError`.
+    `deposit_bps` es el snapshot de seña del negocio (`deposit_bps_snapshot`). Todo servicio exige
+    su fila de precio para el tamaño, en las dos modalidades. Más de un `A_COTIZAR` es
+    `GuardFailedError`.
     """
     services = ServiceRepository(session)
     prices = ServicePriceRepository(session)
@@ -74,18 +91,17 @@ async def catalog_items(
         if service is None:
             raise NotFoundError("services", service_id)
         row = await prices.find_for(service_id, vehicle_size_id, tenant_id)
-        if row is None and service.pricing_mode == PricingMode.PRECIO_FIJO:
+        if row is None:
             raise CatalogIncoherentError("the service has no price row for that vehicle size")
-        if row is not None:
-            check_price_coherence(service.pricing_mode, row.price_cents, row.deposit_bps)
+        check_price_coherence(service.pricing_mode, row.price_cents)
         items.append(
             CatalogItem(
                 service_id=service.id,
                 name=service.name,
                 pricing_mode=service.pricing_mode,
-                duration_min=row.duration_min if row is not None else None,
-                price_cents=row.price_cents if row is not None else None,
-                deposit_bps=row.deposit_bps if row is not None else 0,
+                duration_min=row.duration_min,
+                price_cents=row.price_cents,
+                deposit_bps=deposit_bps,
             )
         )
     if sum(1 for item in items if item.quoted) > 1:

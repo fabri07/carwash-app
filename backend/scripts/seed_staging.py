@@ -79,6 +79,7 @@ from app.domain.roles import Role  # noqa: E402
 from app.persistence.models.agenda import Booking  # noqa: E402
 from app.persistence.models.catalog import VehicleSize  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
+from app.persistence.models.tenant import TenantSettings  # noqa: E402
 from app.persistence.models.user import User  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
@@ -215,9 +216,12 @@ async def _seed_domain(
         await catalogo.set_price(lavado.id, size.id, price_cents=2_000_000 + extra, duration_min=60)
         await catalogo.set_price(motor.id, size.id, price_cents=800_000 + extra, duration_min=30)
         await catalogo.set_price(
-            premium.id, size.id, price_cents=3_000_000 + extra, duration_min=90, deposit_bps=3000
+            premium.id, size.id, price_cents=3_000_000 + extra, duration_min=90
         )
-        await catalogo.set_price(tapizado.id, size.id, price_cents=None, duration_min=120)
+        # D4-6: el servicio a cotizar también lleva precio base ("desde $X").
+        await catalogo.set_price(
+            tapizado.id, size.id, price_cents=1_500_000 + extra, duration_min=120
+        )
     puesto_1 = await catalogo.create_resource("Puesto 1")
     puesto_2 = await catalogo.create_resource("Puesto 2", sort_order=1)
     for weekday in range(1, 7):
@@ -258,23 +262,45 @@ async def _seed_domain(
 
     codigos = iter(range(1, 100))
 
+    ajustes = await session.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+    )
+    assert ajustes is not None  # la crea `provision_tenant` (FASE-4-CONTRATO Y3)
+
     async def turno(
-        n: int, minutos: int, servicio: uuid.UUID, puesto: uuid.UUID, hold: datetime | None = None
+        n: int,
+        minutos: int,
+        servicio: uuid.UUID,
+        puesto: uuid.UUID,
+        *,
+        con_sena: bool = False,
+        hold_min: int | None = None,
     ) -> Booking:
+        # La seña es global (D4-4) y su % se guarda en cada ítem al reservar: se prende solo para
+        # los turnos que la necesitan y se vuelve al estado anterior. Lo mismo con la retención.
+        antes = (ajustes.deposit_enabled, ajustes.deposit_bps, ajustes.hold_min)
+        if con_sena:
+            ajustes.deposit_enabled, ajustes.deposit_bps = True, 3000
+        if hold_min is not None:
+            ajustes.hold_min = hold_min
+        await session.flush()
         cliente_id, vehiculo_id = gente[n]
-        return await turnos.create(
-            code=f"DEMO-{next(codigos):03d}",
-            source=BookingSource.PANEL,
-            channel=Channel.WHATSAPP,
-            resource_id=puesto,
-            start_at=_en(minutos),
-            customer_id=cliente_id,
-            vehicle_id=vehiculo_id,
-            service_ids=[servicio],
-            vehicle_size_id=auto.id,
-            hold_expires_at=hold,
-            now=RESERVA,
-        )
+        try:
+            return await turnos.create(
+                code=f"DEMO-{next(codigos):03d}",
+                source=BookingSource.PANEL,
+                channel=Channel.WHATSAPP,
+                resource_id=puesto,
+                start_at=_en(minutos),
+                customer_id=cliente_id,
+                vehicle_id=vehiculo_id,
+                service_ids=[servicio],
+                vehicle_size_id=auto.id,
+                now=RESERVA,
+            )
+        finally:
+            ajustes.deposit_enabled, ajustes.deposit_bps, ajustes.hold_min = antes
+            await session.flush()
 
     def pago(monto: int, clave: str, cuando: datetime, medio: uuid.UUID) -> PaymentInput:
         return PaymentInput(monto, medio, f"seed-{tenant_id}-{clave}", cuando)
@@ -283,7 +309,7 @@ async def _seed_domain(
         return f"seed-{tenant_id}-{nombre}"
 
     # 1. Turno con seña que recorre toda la máquina del job hasta RETIRADO.
-    completo = await turno(0, 0, premium.id, puesto_1.id, hold=RESERVA + timedelta(hours=1))
+    completo = await turno(0, 0, premium.id, puesto_1.id, con_sena=True)
     await turnos.confirm_deposit(
         completo.id, pago(900_000, "sena-1", RESERVA, efectivo.id), now=RESERVA
     )
@@ -321,14 +347,14 @@ async def _seed_domain(
         idempotency_key=clave("rec-2"), arrived_at=_en(40), booking_id=tarde.id
     )
     await jobs.cancel_for_delay(
-        job_tarde.id, idempotency_key=clave("demora-2"), occurred_at=_en(41), tolerance_min=20
+        job_tarde.id, idempotency_key=clave("demora-2"), occurred_at=_en(41)
     )
     await jobs.reverse_retention(
         job_tarde.id, idempotency_key=clave("revierte-2"), occurred_at=_en(60), reason="Avisó"
     )
 
     # 3. Cancelado por el cliente con seña: la seña se devuelve.
-    cancelado = await turno(2, 180, premium.id, puesto_1.id, hold=RESERVA + timedelta(hours=1))
+    cancelado = await turno(2, 180, premium.id, puesto_1.id, con_sena=True)
     await turnos.confirm_deposit(
         cancelado.id, pago(900_000, "sena-3", RESERVA, efectivo.id), now=RESERVA
     )
@@ -342,9 +368,7 @@ async def _seed_domain(
     )
 
     # 4. A cotizar: cotizado y aceptado, queda confirmado para el día siguiente.
-    cotizado = await turno(
-        3, 24 * 60 + 180, tapizado.id, puesto_1.id, hold=RESERVA + timedelta(days=2)
-    )
+    cotizado = await turno(3, 24 * 60 + 180, tapizado.id, puesto_1.id)
     cotizaciones = QuoteService(session, tenant_id, owner_id)
     assert cotizado.quote_id is not None
     await cotizaciones.quote(
@@ -363,10 +387,8 @@ async def _seed_domain(
     await cotizaciones.reject(suelta.id, decided_at=RESERVA)
 
     # 5. Pendiente de seña (hold vigente), vencido y no asistió.
-    await turno(4, 2 * 24 * 60, premium.id, puesto_1.id, hold=RESERVA + timedelta(days=30))
-    vencible = await turno(
-        4, 2 * 24 * 60, premium.id, puesto_2.id, hold=RESERVA + timedelta(minutes=30)
-    )
+    await turno(4, 2 * 24 * 60, premium.id, puesto_1.id, con_sena=True, hold_min=30 * 24 * 60)
+    vencible = await turno(4, 2 * 24 * 60, premium.id, puesto_2.id, con_sena=True)
     await turnos.expire_holds(vencible.resource_id, RESERVA + timedelta(hours=1))
     ausente = await turno(0, 3 * 24 * 60, lavado.id, puesto_1.id)
     await turnos.mark_no_show(ausente.id)

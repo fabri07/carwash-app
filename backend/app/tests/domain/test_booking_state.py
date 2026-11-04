@@ -85,12 +85,13 @@ def test_vencido_no_es_terminal():
 
 def test_estados_que_bloquean_el_intervalo_coinciden_con_el_exclude():
     # El WHERE del EXCLUDE de §1.3, textual.
+    # D4-13: un turno a cotizar NO ocupa el puesto (`PENDIENTE_COTIZACION` no está).
     assert {s.value for s in BLOCKING_BOOKING_STATUSES} == {
         "PENDIENTE_SEÑA",
-        "PENDIENTE_COTIZACION",
         "CONFIRMADO",
         "RECIBIDO",
     }
+    assert BookingStatus.PENDIENTE_COTIZACION not in BLOCKING_BOOKING_STATUSES
     assert isinstance(BLOCKING_BOOKING_STATUSES, frozenset)
 
 
@@ -115,8 +116,9 @@ def test_can_client_cancel_solo_desde_activos(estado):
         (-600, CancellationClassification.POSTERIOR_AL_TURNO),
     ],
 )
-def test_classify_cancellation_con_umbral_default(anticipacion, clasificacion):
-    assert classify_cancellation(anticipacion) is clasificacion
+def test_classify_cancellation_con_el_umbral_de_12_horas(anticipacion, clasificacion):
+    # 720 min es el default de `tenant_settings.late_cancel_threshold_min`; el dominio lo recibe.
+    assert classify_cancellation(anticipacion, late_threshold_min=720) is clasificacion
 
 
 def test_classify_cancellation_con_umbral_parametrizado():

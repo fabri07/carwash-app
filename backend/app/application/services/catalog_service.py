@@ -1,10 +1,9 @@
 """Catálogo del lavadero — FASE-3-CONTRATO §1.1 y §4.
 
-Lo central es `check_price_coherence`: la regla modalidad ↔ precio cruza `services` y
-`service_prices`, así que no entra en un CHECK y la valida este servicio:
-
-- `PRECIO_FIJO` ⇒ precio presente.
-- `A_COTIZAR` ⇒ sin precio y seña 0 (D-006; sin precio no hay seña, R-C-032).
+Lo central es `check_price_coherence`. Desde la F4 (D4-6) **todo servicio tiene precio base por
+tamaño**, en las dos modalidades: en `PRECIO_FIJO` es el precio; en `A_COTIZAR` es la referencia
+"desde $X" y la cotización fija el final. Nada se crea sin precio. La seña ya no vive en el precio:
+es global, del negocio (`tenant_settings`, D4-4).
 
 **[corregir]** R-T-002: borrar el precio **no** convierte el servicio en "a cotizar"; cambiar
 la modalidad es una operación explícita (`change_pricing_mode`) que revalida los precios.
@@ -42,18 +41,18 @@ from app.persistence.repositories.catalog import (
 )
 
 
-def check_price_coherence(mode: PricingMode, price_cents: int | None, deposit_bps: int) -> None:
-    """Coherencia modalidad ↔ precio (§1.1). Levanta `CatalogIncoherentError`."""
-    if not 0 <= deposit_bps <= BPS_DENOMINATOR:
-        raise InvalidAmountError(f"deposit basis points must be in 0..{BPS_DENOMINATOR}")
-    if price_cents is not None and price_cents <= 0:
+def check_price_coherence(mode: PricingMode, price_cents: int | None) -> None:
+    """Todo precio de catálogo es un entero > 0, sea cual sea la modalidad (D4-6).
+
+    Levanta `CatalogIncoherentError` si falta y `InvalidAmountError` si no es positivo. `mode` se
+    conserva en la firma: la regla es la misma en las dos modalidades, pero es el punto único
+    donde agregar una distinción si algún día aparece.
+    """
+    del mode
+    if price_cents is None:
+        raise CatalogIncoherentError("every service needs a base price per vehicle size")
+    if price_cents <= 0:
         raise InvalidAmountError(f"price must be > 0: {price_cents}")
-    if mode == PricingMode.PRECIO_FIJO and price_cents is None:
-        raise CatalogIncoherentError("a fixed-price service needs a price")
-    if mode == PricingMode.A_COTIZAR and price_cents is not None:
-        raise CatalogIncoherentError("a quoted service has no catalog price")
-    if mode == PricingMode.A_COTIZAR and deposit_bps != 0:
-        raise CatalogIncoherentError("a quoted service has no deposit")
 
 
 class CatalogService(ServiceBase):
@@ -87,15 +86,14 @@ class CatalogService(ServiceBase):
         service_id: uuid.UUID,
         vehicle_size_id: uuid.UUID,
         *,
-        price_cents: int | None,
+        price_cents: int,
         duration_min: int,
-        deposit_bps: int = 0,
     ) -> ServicePrice:
-        """Alta o actualización del precio servicio × tamaño, validando la coherencia."""
+        """Alta o actualización del precio base servicio × tamaño (D4-6): siempre con precio."""
         await self._enter()
         service = await self._lock(ServiceRepository(self._session), service_id)
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
-        check_price_coherence(service.pricing_mode, price_cents, deposit_bps)
+        check_price_coherence(service.pricing_mode, price_cents)
         if duration_min <= 0:
             raise InvalidAmountError(f"duration must be > 0: {duration_min}")
         repo = ServicePriceRepository(self._session)
@@ -103,7 +101,6 @@ class CatalogService(ServiceBase):
         if price is not None:
             price.price_cents = price_cents
             price.duration_min = duration_min
-            price.deposit_bps = deposit_bps
             await self._session.flush()
             return price
         return await self._insert_unique(
@@ -113,7 +110,6 @@ class CatalogService(ServiceBase):
                 vehicle_size_id=vehicle_size_id,
                 price_cents=price_cents,
                 duration_min=duration_min,
-                deposit_bps=deposit_bps,
             ),
             "service_id",
             "vehicle_size_id",
@@ -127,7 +123,7 @@ class CatalogService(ServiceBase):
             service_id, self._tenant_id
         )
         for price in prices:
-            check_price_coherence(mode, price.price_cents, price.deposit_bps)
+            check_price_coherence(mode, price.price_cents)
         service.pricing_mode = mode
         await self._session.flush()
         return service
@@ -140,7 +136,7 @@ class CatalogService(ServiceBase):
             service_id, self._tenant_id
         )
         for price in prices:
-            check_price_coherence(service.pricing_mode, price.price_cents, price.deposit_bps)
+            check_price_coherence(service.pricing_mode, price.price_cents)
 
     async def create_resource(self, name: str, sort_order: int = 0) -> Resource:
         await self._enter()

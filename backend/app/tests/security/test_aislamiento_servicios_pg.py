@@ -323,7 +323,6 @@ async def _cancelado_por_demora(lv: Lavadero) -> Any:
         job.id,
         idempotency_key=k(),
         occurred_at=T + timedelta(days=2, minutes=40),
-        tolerance_min=20,
     )
     return job
 
@@ -404,7 +403,6 @@ CON_CLAVE: dict[str, ConClave] = {
                 job.id,
                 idempotency_key=k,
                 occurred_at=T + timedelta(days=2, minutes=40),
-                tolerance_min=20,
             ),
             k,
         ),
@@ -418,11 +416,7 @@ CON_CLAVE: dict[str, ConClave] = {
         ),
     ),
     "confirm_deposit": ConClave(
-        lambda lv: lv.turno(
-            inicio=T + timedelta(days=4),
-            servicio=lv.lavado_con_sena,
-            hold=AHORA + timedelta(hours=2),
-        ),
+        lambda lv: lv.turno_con_sena(inicio=T + timedelta(days=4)),
         lambda lv, turno, k: _id_pago_sena(lv, turno, k),
     ),
     "resolve.refund": ConClave(

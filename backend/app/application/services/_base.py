@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import SessionTransaction
@@ -25,6 +26,7 @@ from app.domain.exceptions import GuardFailedError
 from app.persistence.db._savepoint import unique_violation_classifier
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.db.tenant_context import set_tenant_context
+from app.persistence.models.tenant import TenantSettings
 from app.persistence.repositories.base import BaseRepository
 
 Classifier = Callable[[IntegrityError], str | None]
@@ -97,6 +99,19 @@ class ServiceBase:
             return
         await set_tenant_context(self._session, self._tenant_id)
         self._context_tx = self._session.sync_session.get_transaction()
+
+    async def _settings(self) -> TenantSettings:
+        """La configuración del negocio (FASE-4-CONTRATO §3.2): seña global, umbrales, retención.
+
+        Siempre existe: `provision_tenant` la crea con el tenant y la migración 0005 completó los
+        que ya existían. Que falte es un error de datos, no un caso de uso (`NotFoundError`).
+        """
+        row = await self._session.scalar(
+            select(TenantSettings).where(TenantSettings.tenant_id == self._tenant_id)
+        )
+        if row is None:
+            raise NotFoundError("tenant_settings", self._tenant_id)
+        return row
 
     def _actor(self) -> uuid.UUID:
         """El actor identificado (D-001.4). Solo una cancelación desde la web va sin actor."""
