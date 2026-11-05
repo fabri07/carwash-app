@@ -189,6 +189,27 @@ async def test_rechazar_cancelar_y_vencer(lav):
     assert con_ttl.status == Q.VENCIDO
 
 
+async def test_rechazar_o_cancelar_la_cotizacion_cierra_su_turno(lav):
+    """Sin hold, el turno a cotizar no vence solo: se cierra con la decisión (D4-15)."""
+    rechazado = await lav.turno(servicio=lav.tapizado)
+    await _cotizada(lav, rechazado.quote_id)
+    await lav.cotizaciones.reject(rechazado.quote_id, decided_at=AHORA)
+    assert rechazado.status == BookingStatus.CANCELADO_CLIENTE
+    cancelado = await lav.turno(servicio=lav.tapizado, inicio=T + timedelta(days=1))
+    await lav.cotizaciones.cancel(cancelado.quote_id, decided_at=AHORA)
+    assert cancelado.status == BookingStatus.CANCELADO_OPERATIVO
+
+
+async def test_aceptar_no_confirma_un_turno_que_ya_empezo(lav):
+    booking = await lav.turno(servicio=lav.tapizado)
+    await _cotizada(lav, booking.quote_id)
+    with pytest.raises(GuardFailedError):  # 1 min antes del inicio: menos que min_advance_min
+        await lav.cotizaciones.accept(
+            booking.quote_id, decided_at=T - timedelta(minutes=1), now=T - timedelta(minutes=1)
+        )
+    assert booking.status == BookingStatus.PENDIENTE_COTIZACION
+
+
 async def test_cotizacion_con_referencias_ajenas_no_existe(lav):
     with pytest.raises(NotFoundError):
         await lav.cotizaciones.create(

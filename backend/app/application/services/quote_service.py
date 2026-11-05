@@ -22,7 +22,12 @@ from datetime import datetime, timedelta
 from app.application.services._base import ServiceBase, as_aware, require_instant
 from app.application.services.booking_service import BookingService
 from app.application.services.errors import SlotTakenError
-from app.domain.booking_state import BookingAction, hold_expired, next_booking_status
+from app.domain.booking_state import (
+    BookingAction,
+    anticipation_min,
+    hold_expired,
+    next_booking_status,
+)
 from app.domain.deposit import deposit_required
 from app.domain.enums import BookingStatus, PricingMode, SuppliesPurchaser
 from app.domain.exceptions import GuardFailedError, InvalidAmountError
@@ -155,6 +160,12 @@ class QuoteService(ServiceBase):
         assert quote.agreed_price_cents is not None and quote.agreed_duration_min is not None
         self._actor()
         booking = await self._lock(BookingRepository(self._session), quote.booking_id)
+        settings = await self._settings()
+        if anticipation_min(as_aware(booking.start_at), now) < settings.min_advance_min:
+            raise GuardFailedError(
+                "the booking can no longer be confirmed: it starts in less than "
+                f"{settings.min_advance_min} min"
+            )
         await BookingService(self._session, self._tenant_id, self._actor_user_id).expire_holds(
             booking.resource_id, now
         )
@@ -182,7 +193,7 @@ class QuoteService(ServiceBase):
         )
         booking_target = next_booking_status(booking.status, action)
         hold = (
-            now + timedelta(minutes=(await self._settings()).hold_min)
+            now + timedelta(minutes=settings.hold_min)
             if booking_target == BookingStatus.PENDIENTE_SENA
             else None
         )
@@ -210,8 +221,24 @@ class QuoteService(ServiceBase):
         quote.status = next_quote_status(quote.status, action)
         quote.decided_at = at
         quote.decided_by_user_id = self._actor()
+        # El turno a cotizar vive con su cotización (D4-15): si se rechaza o se cancela, el
+        # turno se cierra con ella en vez de quedar sin hold y sin vencer nunca.
+        booking_action = (
+            BookingAction.CANCEL_BY_CLIENT
+            if action == QuoteAction.REJECT
+            else BookingAction.CANCEL_OPERATIONAL
+        )
+        await self._close_booking(quote, booking_action)
         await self._session.flush()
         return quote
+
+    async def _close_booking(self, quote: Quote, action: BookingAction) -> None:
+        """Lleva el turno de la cotización a su estado final, si sigue `PENDIENTE_COTIZACION`."""
+        if quote.booking_id is None:
+            return
+        booking = await self._lock(BookingRepository(self._session), quote.booking_id)
+        if booking.status == BookingStatus.PENDIENTE_COTIZACION:
+            booking.status = next_booking_status(booking.status, action)
 
     async def expire(self, quote_id: uuid.UUID, *, now: datetime) -> Quote:
         """`PENDIENTE, COTIZADO → VENCIDO`, solo con `expires_at <= now` (mismo comparador
@@ -228,8 +255,6 @@ class QuoteService(ServiceBase):
             raise GuardFailedError("the quote has not expired yet")
         quote.status = target
         if quote.booking_id is not None:
-            booking = await self._lock(BookingRepository(self._session), quote.booking_id)
-            if booking.status == BookingStatus.PENDIENTE_COTIZACION:
-                booking.status = next_booking_status(booking.status, BookingAction.EXPIRE_HOLD)
+            await self._close_booking(quote, BookingAction.EXPIRE_HOLD)
         await self._session.flush()
         return quote

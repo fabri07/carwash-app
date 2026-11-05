@@ -101,7 +101,14 @@ class SettingsUpdate(BaseModel):
     palette: StyleCode | None = None
     font: StyleCode | None = None
 
-    @field_validator("address", "welcome_text", "cancellation_policy", mode="before")
+    @field_validator(
+        "address",
+        "welcome_text",
+        "cancellation_policy",
+        "whatsapp_e164",
+        "instagram_url",
+        mode="before",
+    )
     @classmethod
     def _vacio_es_null(cls, value: object) -> object:
         return _blank_to_none(value)

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.services.errors import AlreadyExistsError
+from app.application.services.errors import AlreadyExistsError, SlugUnavailableError
 from app.domain.permissions import DEFAULT_PROFILES, sorted_permissions
 from app.domain.roles import Role
 from app.domain.slug import candidate_slug
@@ -108,4 +108,4 @@ async def _add_tenant(session: AsyncSession, tenant_id: uuid.UUID, name: str) ->
         except SavepointConflictError:
             continue
         return tenant
-    raise AlreadyExistsError("slug")
+    raise SlugUnavailableError("could not allocate a free business slug")

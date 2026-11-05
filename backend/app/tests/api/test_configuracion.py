@@ -159,3 +159,54 @@ async def test_los_listados_respetan_el_orden_configurado(client):
         for i in (await client.get("/v1/business-hours")).json()["items"]
     ]
     assert franjas == [(1, "08:00:00"), (1, "12:00:00"), (3, "10:00:00")]
+
+
+async def test_whatsapp_e_instagram_en_blanco_se_borran(client):
+    await _registrar(client)
+    await client.patch(
+        "/v1/settings",
+        json={"whatsapp_e164": "+5493515551234", "instagram_url": "https://instagram.com/lavadero"},
+    )
+    r = await client.patch("/v1/settings", json={"whatsapp_e164": "", "instagram_url": "  "})
+    assert r.status_code == 200, r.text
+    assert r.json()["whatsapp_e164"] is None and r.json()["instagram_url"] is None
+
+
+async def test_horario_con_zona_horaria_es_422_no_500(client):
+    await _registrar(client)
+    mezcla = await client.post(
+        "/v1/business-hours", json={"weekday": 1, "opens_at": "08:00:00Z", "closes_at": "18:00"}
+    )
+    assert mezcla.status_code == 422, mezcla.text
+    ok = await client.post(
+        "/v1/business-hours", json={"weekday": 1, "opens_at": "08:00", "closes_at": "18:00"}
+    )
+    hid = ok.json()["id"]
+    parche = await client.patch(f"/v1/business-hours/{hid}", json={"closes_at": "19:00:00+02:00"})
+    assert parche.status_code == 422, parche.text
+
+
+async def test_no_se_anula_el_ultimo_medio_de_pago(client):
+    await _registrar(client)
+    unico = (
+        await client.post("/v1/payment-methods", json={"code": "EFECTIVO", "label": "Efectivo"})
+    ).json()
+    r = await client.delete(f"/v1/payment-methods/{unico['id']}")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "IN_USE"
+    otro = await client.post("/v1/payment-methods", json={"code": "TARJETA", "label": "Tarjeta"})
+    assert otro.status_code == 201
+    assert (await client.delete(f"/v1/payment-methods/{unico['id']}")).status_code == 204
+
+
+async def test_si_se_agotan_los_slugs_el_registro_no_dice_email_tomado(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.application.services.tenant_provisioning.candidate_slug",
+        lambda name, suffix=None: "siempre-igual",
+    )
+    await _registrar(client, email="uno@example.com", negocio="Uno")
+    r = await client.post(
+        "/v1/auth/register",
+        json={"email": "dos@example.com", "password": PASSWORD, "tenant": "Dos"},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "SLUG_TAKEN"

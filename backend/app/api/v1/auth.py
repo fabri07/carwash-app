@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.rate_limit import limiter
 from app.api.v1.deps import DbSession, SessionUser
 from app.api.v1.errors import ERROR_RESPONSES, ApiError, unauthenticated
-from app.application.services.errors import AlreadyExistsError
+from app.application.services.errors import AlreadyExistsError, SlugUnavailableError
 from app.application.services.team_service import effective_permissions
 from app.application.services.tenant_provisioning import provision_tenant
 from app.config.settings import get_settings
@@ -139,6 +139,12 @@ async def register(
     except AlreadyExistsError as exc:
         raise ApiError(
             status.HTTP_409_CONFLICT, ErrorCode.EMAIL_TAKEN, "Email already registered."
+        ) from exc
+    except SlugUnavailableError as exc:
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            ErrorCode.SLUG_TAKEN,
+            "Could not allocate a URL for the business: try again.",
         ) from exc
 
     _set_session_cookies(response, provisioned.owner)

@@ -79,7 +79,7 @@ SLUG_RESERVED = frozenset(
         "www",
     }
 )
-# `tests/persistence/test_settings_defaults.py` compara estos valores con el modelo.
+# `tests/persistence/test_migracion_0005_pg.py` compara estos valores con el modelo.
 DEFAULTS = {
     "deposit_bps": 2000,
     "tolerance_min": 20,
@@ -114,10 +114,6 @@ FORCED = (
 
 def _has_table(name: str) -> bool:
     return sa.inspect(op.get_bind()).has_table(name)
-
-
-def _has_column(table: str, column: str) -> bool:
-    return any(c["name"] == column for c in sa.inspect(op.get_bind()).get_columns(table))
 
 
 def _add_constraint(table: str, name: str, definition: str) -> None:

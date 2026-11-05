@@ -522,7 +522,12 @@ class JobService(ServiceBase):
             await self._require(CustomerRepository(self._session), customer_id)
         # Un walk-in no lleva seña (no hay turno): el % que guardan los ítems no se usa.
         items = await catalog_items(
-            self._session, self._tenant_id, service_ids, vehicle_size_id, deposit_bps=0
+            self._session,
+            self._tenant_id,
+            service_ids,
+            vehicle_size_id,
+            deposit_bps=0,
+            quoted_without_base=True,
         )
         quoted = next((item for item in items if item.quoted), None)
         lines: list[_Line] = []

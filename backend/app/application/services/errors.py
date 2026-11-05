@@ -34,6 +34,15 @@ class AlreadyExistsError(DomainError):
     """Choque con un único "entre vivos" (código, nombre, patente, teléfono)."""
 
 
+class InUseError(DomainError):
+    """La fila que se quiere anular todavía la usan otras (turnos futuros, precios vivos, último
+    medio de pago). La API la traduce a 409 `IN_USE`."""
+
+
+class SlugUnavailableError(DomainError):
+    """Se agotaron los intentos de generar una URL pública libre al registrar el negocio."""
+
+
 class CatalogIncoherentError(GuardFailedError):
     """Precio y modalidad no concuerdan (§1.1): `PRECIO_FIJO` ⇒ precio; `A_COTIZAR` ⇒ sin
     precio y seña 0. La regla cruza tablas y por eso vive en la aplicación, no en un CHECK."""

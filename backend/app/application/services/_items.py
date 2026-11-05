@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.services.catalog_service import check_price_coherence
+from app.application.services.catalog_service import check_price
 from app.application.services.errors import CatalogIncoherentError, NotFoundError
 from app.domain.deposit import deposit_required
 from app.domain.enums import PricingMode
@@ -59,6 +59,14 @@ class CatalogItem:
         return deposit_required(self.price_cents, self.deposit_bps)
 
 
+def booking_deposit_cents(items: Sequence[CatalogItem]) -> int:
+    """Seña con la que nace un turno. Con un ítem a cotizar es 0: la seña total se calcula al
+    aceptar la cotización (D4-7), sobre el precio acordado y junto con la de los demás ítems."""
+    if any(item.quoted for item in items):
+        return 0
+    return sum(item.deposit_cents for item in items)
+
+
 def require_service_ids(service_ids: Sequence[uuid.UUID]) -> list[uuid.UUID]:
     """Al menos uno y sin repetidos (único vivo `(…_id, service_id)` de los ítems)."""
     ids = list(service_ids)
@@ -76,12 +84,16 @@ async def catalog_items(
     vehicle_size_id: uuid.UUID,
     *,
     deposit_bps: int,
+    quoted_without_base: bool = False,
 ) -> list[CatalogItem]:
     """Los servicios pedidos, en el mismo orden, con precio base y duración del catálogo.
 
     `deposit_bps` es el snapshot de seña del negocio (`deposit_bps_snapshot`). Todo servicio exige
     su fila de precio para el tamaño, en las dos modalidades. Más de un `A_COTIZAR` es
     `GuardFailedError`.
+
+    `quoted_without_base`: un walk-in toma precio y duración del `A_COTIZAR` de su cotización
+    aceptada, así que ahí la fila base del servicio a cotizar puede faltar (queda en 0).
     """
     services = ServiceRepository(session)
     prices = ServicePriceRepository(session)
@@ -92,15 +104,19 @@ async def catalog_items(
             raise NotFoundError("services", service_id)
         row = await prices.find_for(service_id, vehicle_size_id, tenant_id)
         if row is None:
-            raise CatalogIncoherentError("the service has no price row for that vehicle size")
-        check_price_coherence(service.pricing_mode, row.price_cents)
+            if not (quoted_without_base and service.pricing_mode == PricingMode.A_COTIZAR):
+                raise CatalogIncoherentError("the service has no price row for that vehicle size")
+            price_cents, duration_min = 0, 0
+        else:
+            check_price(row.price_cents)
+            price_cents, duration_min = row.price_cents, row.duration_min
         items.append(
             CatalogItem(
                 service_id=service.id,
                 name=service.name,
                 pricing_mode=service.pricing_mode,
-                duration_min=row.duration_min,
-                price_cents=row.price_cents,
+                duration_min=duration_min,
+                price_cents=price_cents,
                 deposit_bps=deposit_bps,
             )
         )
