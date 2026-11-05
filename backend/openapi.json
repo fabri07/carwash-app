@@ -155,6 +155,7 @@
           "NAME_TAKEN",
           "PROFILE_IN_USE",
           "CODE_TAKEN",
+          "IN_USE",
           "SLUG_TAKEN",
           "SLUG_RESERVED",
           "PASSWORD_CHANGE_REQUIRED",

@@ -9,7 +9,15 @@ import uuid
 from datetime import datetime, time
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.persistence.models.catalog import CODE_PATTERN
 from app.schemas.auth import _sin_nul
@@ -87,10 +95,19 @@ class ResourceResponse(_Out):
 # ── Franjas de atención ──────────────────────────────────────────────────────
 
 
+def _naive_time(value: time | None) -> time | None:
+    """La franja es hora local del negocio: una hora con zona se rechaza (422), no se compara."""
+    if value is not None and value.tzinfo is not None:
+        raise ValueError("must be a local time without timezone, e.g. 08:00")
+    return value
+
+
 class BusinessHoursCreate(_Body):
     weekday: Weekday
     opens_at: time
     closes_at: time
+
+    _sin_zona = field_validator("opens_at", "closes_at")(_naive_time)
 
     @model_validator(mode="after")
     def _cierra_despues(self) -> "BusinessHoursCreate":
@@ -103,6 +120,8 @@ class BusinessHoursUpdate(_Body):
     weekday: Weekday | None = None
     opens_at: time | None = None
     closes_at: time | None = None
+
+    _sin_zona = field_validator("opens_at", "closes_at")(_naive_time)
 
 
 class BusinessHoursResponse(_Out):

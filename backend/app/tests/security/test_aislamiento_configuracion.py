@@ -100,6 +100,12 @@ async def staff_todo(staff_cookies):
     return staff_cookies
 
 
+async def _con_otro_medio_de_pago(client, recurso: Recurso, cookies) -> None:
+    """El último medio de pago no se anula (409 IN_USE): el ABM completo necesita otro vivo."""
+    if recurso.path == "/v1/payment-methods":
+        await _crear(client, recurso, cookies, {"code": "OTRO", "label": "Otro"})
+
+
 async def _crear(client, recurso: Recurso, cookies, body=None) -> dict[str, Any]:
     r = await client.post(recurso.path, json=body or recurso.crear, cookies=cookies)
     assert r.status_code == 201, r.text
@@ -120,6 +126,7 @@ def _codigo(r) -> str:
 
 @pytest.mark.parametrize("recurso", RECURSOS, ids=IDS)
 async def test_owner_hace_el_abm_completo(client, cookies_a, recurso):
+    await _con_otro_medio_de_pago(client, recurso, cookies_a)
     creado = await _crear(client, recurso, cookies_a)
     url = f"{recurso.path}/{creado['id']}"
     assert (await client.get(url, cookies=cookies_a)).status_code == 200
@@ -131,6 +138,7 @@ async def test_owner_hace_el_abm_completo(client, cookies_a, recurso):
 
 @pytest.mark.parametrize("recurso", RECURSOS, ids=IDS)
 async def test_staff_con_catalogo_editar_escribe_el_catalogo(client, staff_editor, recurso):
+    await _con_otro_medio_de_pago(client, recurso, staff_editor)
     creado = await _crear(client, recurso, staff_editor)
     url = f"{recurso.path}/{creado['id']}"
     assert (await client.patch(url, json=recurso.editar, cookies=staff_editor)).status_code == 200

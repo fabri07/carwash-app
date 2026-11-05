@@ -1,6 +1,6 @@
 """Catálogo del lavadero — FASE-3-CONTRATO §1.1 y §4.
 
-Lo central es `check_price_coherence`. Desde la F4 (D4-6) **todo servicio tiene precio base por
+Lo central es `check_price`. Desde la F4 (D4-6) **todo servicio tiene precio base por
 tamaño**, en las dos modalidades: en `PRECIO_FIJO` es el precio; en `A_COTIZAR` es la referencia
 "desde $X" y la cotización fija el final. Nada se crea sin precio. La seña ya no vive en el precio:
 es global, del negocio (`tenant_settings`, D4-4).
@@ -16,14 +16,16 @@ import uuid
 from datetime import time
 from typing import Any
 
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, func, select
 
 from app.application.services._base import ServiceBase, alive_unique
 from app.application.services.errors import (
     AlreadyExistsError,
     CatalogIncoherentError,
+    InUseError,
     NotFoundError,
 )
+from app.domain.booking_state import BLOCKING_BOOKING_STATUSES
 from app.domain.enums import PricingMode
 from app.domain.exceptions import InvalidAmountError
 from app.domain.money import BPS_DENOMINATOR
@@ -33,6 +35,7 @@ from app.persistence.db._savepoint import (
     guarded_savepoint,
 )
 from app.persistence.db.base import TenantScopedModel
+from app.persistence.models.agenda import Booking
 from app.persistence.models.catalog import (
     BusinessHours,
     PaymentMethod,
@@ -59,19 +62,21 @@ def _check_hours(weekday: int, opens_at: time, closes_at: time) -> None:
         raise InvalidAmountError("a business-hours range must close after it opens")
 
 
+def _check_flows(for_income: bool, for_expense: bool) -> None:
+    if not (for_income or for_expense):
+        raise InvalidAmountError("a payment method must be usable for income or expense")
+
+
 def _check_commission(commission_bps: int) -> None:
     if not 0 <= commission_bps <= BPS_DENOMINATOR:
         raise InvalidAmountError(f"commission basis points must be in 0..{BPS_DENOMINATOR}")
 
 
-def check_price_coherence(mode: PricingMode, price_cents: int | None) -> None:
+def check_price(price_cents: int | None) -> None:
     """Todo precio de catálogo es un entero > 0, sea cual sea la modalidad (D4-6).
 
-    Levanta `CatalogIncoherentError` si falta y `InvalidAmountError` si no es positivo. `mode` se
-    conserva en la firma: la regla es la misma en las dos modalidades, pero es el punto único
-    donde agregar una distinción si algún día aparece.
+    Levanta `CatalogIncoherentError` si falta y `InvalidAmountError` si no es positivo.
     """
-    del mode
     if price_cents is None:
         raise CatalogIncoherentError("every service needs a base price per vehicle size")
     if price_cents <= 0:
@@ -114,9 +119,9 @@ class CatalogService(ServiceBase):
     ) -> ServicePrice:
         """Alta o actualización del precio base servicio × tamaño (D4-6): siempre con precio."""
         await self._enter()
-        service = await self._lock(ServiceRepository(self._session), service_id)
+        await self._lock(ServiceRepository(self._session), service_id)
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
-        check_price_coherence(service.pricing_mode, price_cents)
+        check_price(price_cents)
         if duration_min <= 0:
             raise InvalidAmountError(f"duration must be > 0: {duration_min}")
         repo = ServicePriceRepository(self._session)
@@ -146,7 +151,7 @@ class CatalogService(ServiceBase):
             service_id, self._tenant_id
         )
         for price in prices:
-            check_price_coherence(mode, price.price_cents)
+            check_price(price.price_cents)
         service.pricing_mode = mode
         await self._session.flush()
         return service
@@ -154,12 +159,12 @@ class CatalogService(ServiceBase):
     async def check_service(self, service_id: uuid.UUID) -> None:
         """Revalida todos los precios vivos del servicio contra su modalidad."""
         await self._enter()
-        service = await self._require(ServiceRepository(self._session), service_id)
+        await self._require(ServiceRepository(self._session), service_id)
         prices = await ServicePriceRepository(self._session).list_for_service(
             service_id, self._tenant_id
         )
         for price in prices:
-            check_price_coherence(service.pricing_mode, price.price_cents)
+            check_price(price.price_cents)
 
     async def create_resource(self, name: str, sort_order: int = 0) -> Resource:
         await self._enter()
@@ -167,11 +172,33 @@ class CatalogService(ServiceBase):
             Resource(tenant_id=self._tenant_id, name=name, sort_order=sort_order), "name"
         )
 
+    async def _check_no_overlap(
+        self, own_id: uuid.UUID | None, weekday: int, opens_at: time, closes_at: time
+    ) -> None:
+        """Dos franjas vivas del mismo día no se pisan. Que una cierre justo cuando abre la otra
+        (`[09–13)` y `[13–18)`) es válido."""
+        query = (
+            select(func.count())
+            .select_from(BusinessHours)
+            .where(
+                BusinessHours.tenant_id == self._tenant_id,
+                BusinessHours.voided_at.is_(None),
+                BusinessHours.weekday == weekday,
+                BusinessHours.opens_at < closes_at,
+                BusinessHours.closes_at > opens_at,
+            )
+        )
+        if own_id is not None:
+            query = query.where(BusinessHours.id != own_id)
+        if await self._session.scalar(query):
+            raise InvalidAmountError("the range overlaps another business-hours range that day")
+
     async def add_business_hours(
         self, weekday: int, opens_at: time, closes_at: time
     ) -> BusinessHours:
         await self._enter()
         _check_hours(weekday, opens_at, closes_at)
+        await self._check_no_overlap(None, weekday, opens_at, closes_at)
         hours = BusinessHours(
             tenant_id=self._tenant_id, weekday=weekday, opens_at=opens_at, closes_at=closes_at
         )
@@ -191,6 +218,7 @@ class CatalogService(ServiceBase):
     ) -> PaymentMethod:
         await self._enter()
         _check_commission(commission_bps)
+        _check_flows(for_income, for_expense)
         return await self._insert_unique(
             PaymentMethod(
                 tenant_id=self._tenant_id,
@@ -257,6 +285,20 @@ class CatalogService(ServiceBase):
         return size
 
     async def void_vehicle_size(self, id: uuid.UUID) -> None:
+        """No se anula un tamaño con precios vivos: sin él esos servicios quedarían sin precio."""
+        await self._enter()
+        size = await self._require(VehicleSizeRepository(self._session), id)
+        prices = await self._session.scalar(
+            select(func.count())
+            .select_from(ServicePrice)
+            .where(
+                ServicePrice.tenant_id == self._tenant_id,
+                ServicePrice.vehicle_size_id == size.id,
+                ServicePrice.voided_at.is_(None),
+            )
+        )
+        if prices:
+            raise InUseError("the vehicle size still has prices: remove them first")
         await self._void(VehicleSizeRepository(self._session), id)
 
     async def list_resources(self, *, limit: int, offset: int) -> Page[Resource]:
@@ -286,6 +328,22 @@ class CatalogService(ServiceBase):
         return resource
 
     async def void_resource(self, id: uuid.UUID) -> None:
+        """No se anula un puesto con turnos que lo ocupan hoy o más adelante."""
+        await self._enter()
+        resource = await self._require(ResourceRepository(self._session), id)
+        busy = await self._session.scalar(
+            select(func.count())
+            .select_from(Booking)
+            .where(
+                Booking.tenant_id == self._tenant_id,
+                Booking.resource_id == resource.id,
+                Booking.voided_at.is_(None),
+                Booking.status.in_(BLOCKING_BOOKING_STATUSES),
+                Booking.end_at > func.now(),
+            )
+        )
+        if busy:
+            raise InUseError("the resource has upcoming bookings: move or cancel them first")
         await self._void(ResourceRepository(self._session), id)
 
     async def list_business_hours(self, *, limit: int, offset: int) -> Page[BusinessHours]:
@@ -313,6 +371,7 @@ class CatalogService(ServiceBase):
         new_opens = hours.opens_at if opens_at is None else opens_at
         new_closes = hours.closes_at if closes_at is None else closes_at
         _check_hours(new_weekday, new_opens, new_closes)
+        await self._check_no_overlap(hours.id, new_weekday, new_opens, new_closes)
         hours.weekday, hours.opens_at, hours.closes_at = new_weekday, new_opens, new_closes
         await self._session.flush()
         return hours
@@ -352,8 +411,23 @@ class CatalogService(ServiceBase):
             method.for_income = for_income
         if for_expense is not None:
             method.for_expense = for_expense
+        _check_flows(method.for_income, method.for_expense)
         await self._session.flush()
         return method
 
     async def void_payment_method(self, id: uuid.UUID) -> None:
+        """No se anula el último medio de pago vivo: el negocio quedaría sin forma de cobrar."""
+        await self._enter()
+        method = await self._require(PaymentMethodRepository(self._session), id)
+        others = await self._session.scalar(
+            select(func.count())
+            .select_from(PaymentMethod)
+            .where(
+                PaymentMethod.tenant_id == self._tenant_id,
+                PaymentMethod.id != method.id,
+                PaymentMethod.voided_at.is_(None),
+            )
+        )
+        if not others:
+            raise InUseError("it is the last payment method: add another before removing it")
         await self._void(PaymentMethodRepository(self._session), id)

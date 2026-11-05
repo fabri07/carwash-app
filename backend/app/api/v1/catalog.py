@@ -24,7 +24,7 @@ from app.api.v1.errors import (
 from app.api.v1.pagination import Paginacion
 from app.application.idempotency import claim_idempotency_key
 from app.application.services.catalog_service import CatalogService
-from app.application.services.errors import AlreadyExistsError, NotFoundError
+from app.application.services.errors import AlreadyExistsError, InUseError, NotFoundError
 from app.domain.errors import ErrorCode
 from app.domain.exceptions import InvalidAmountError
 from app.domain.permissions import Permission
@@ -77,6 +77,8 @@ async def _guard[T](call: Coroutine[Any, Any, T], on_taken: ApiError | None = No
         if on_taken is None:  # pragma: no cover  # toda ruta con único pasa su error
             raise
         raise on_taken from exc
+    except InUseError as exc:
+        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.IN_USE, str(exc)) from exc
     except InvalidAmountError as exc:
         raise _invalid(exc) from exc
 

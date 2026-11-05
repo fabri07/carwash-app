@@ -34,7 +34,11 @@ from app.application.services._base import (
     require_instant,
     require_key,
 )
-from app.application.services._items import catalog_items, deposit_bps_snapshot
+from app.application.services._items import (
+    booking_deposit_cents,
+    catalog_items,
+    deposit_bps_snapshot,
+)
 from app.application.services._payments import PaymentInput, create_payment
 from app.application.services.errors import (
     AlreadyExistsError,
@@ -210,7 +214,7 @@ class BookingService(ServiceBase):
         duration = sum(item.duration_min for item in items)
         quoted = next((item for item in items if item.quoted), None)
         price = sum(item.price_cents for item in items)
-        deposit = 0 if quoted is not None else sum(item.deposit_cents for item in items)
+        deposit = booking_deposit_cents(items)
         if quoted is not None:
             action = BookingAction.CREATE_FOR_QUOTE
         elif deposit > 0:

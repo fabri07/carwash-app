@@ -7,7 +7,7 @@ from datetime import time
 import pytest
 import pytest_asyncio
 
-from app.application.services import CatalogService, check_price_coherence
+from app.application.services import CatalogService, check_price
 from app.application.services.errors import (
     AlreadyExistsError,
     CatalogIncoherentError,
@@ -30,24 +30,21 @@ async def lav(db_session) -> Lavadero:
 
 
 @pytest.mark.parametrize(
-    ("modo", "precio", "error"),
+    ("precio", "error"),
     [
-        (PricingMode.PRECIO_FIJO, 100, None),
-        # D4-6: un servicio a cotizar también lleva precio base ("desde $X").
-        (PricingMode.A_COTIZAR, 100, None),
-        # Nada se crea sin precio, sea cual sea la modalidad.
-        (PricingMode.PRECIO_FIJO, None, CatalogIncoherentError),
-        (PricingMode.A_COTIZAR, None, CatalogIncoherentError),
-        (PricingMode.PRECIO_FIJO, 0, InvalidAmountError),
-        (PricingMode.A_COTIZAR, -1, InvalidAmountError),
+        (100, None),
+        # Nada se crea sin precio, sea cual sea la modalidad (D4-6).
+        (None, CatalogIncoherentError),
+        (0, InvalidAmountError),
+        (-1, InvalidAmountError),
     ],
 )
-def test_coherencia_modalidad_precio(modo, precio, error):
+def test_precio_de_catalogo(precio, error):
     if error is None:
-        check_price_coherence(modo, precio)
+        check_price(precio)
     else:
         with pytest.raises(error):
-            check_price_coherence(modo, precio)
+            check_price(precio)
 
 
 async def test_set_price_crea_o_actualiza_y_valida(lav):
@@ -233,3 +230,23 @@ async def test_repositorio_de_eventos_lista_y_busca(lav):
     assert (await repo.get_by_key("rec-1", lav.tenant_id)) is evento
     assert evento.job_id == job.id
     assert job.base_price_cents == PRECIO_FIJO
+
+
+async def test_no_se_anula_lo_que_esta_en_uso(lav):
+    """Tamaño con precios vivos y puesto con turnos que lo ocupan: `InUseError`."""
+    from datetime import timedelta  # noqa: PLC0415
+
+    from app.application.services.errors import InUseError  # noqa: PLC0415
+    from app.tests.application._armado import T  # noqa: PLC0415
+
+    with pytest.raises(InUseError):
+        await lav.catalogo.void_vehicle_size(lav.auto)
+    libre = await lav.catalogo.create_vehicle_size("MOTO", "Moto")
+    await lav.catalogo.void_vehicle_size(libre.id)
+
+    # El puesto del armado tiene un turno futuro (el reloj de la base es el real: lo pongo lejos).
+    await lav.turno(inicio=T + timedelta(days=36500))
+    with pytest.raises(InUseError):
+        await lav.catalogo.void_resource(lav.puesto)
+    otro = await lav.catalogo.create_resource("Puesto vacío")
+    await lav.catalogo.void_resource(otro.id)

@@ -231,6 +231,32 @@ async def test_walk_in_a_cotizar_exige_cotizacion_aceptada_del_mismo_servicio(la
     ]
 
 
+async def test_walk_in_a_cotizar_no_exige_precio_base_para_el_tamano(lav):
+    """El walk-in toma precio y duración de la cotización: un tamaño sin fila base no lo traba."""
+    sin_base = (await lav.catalogo.create_vehicle_size("PICKUP", "Pickup", sort_order=9)).id
+    quote = await lav.cotizaciones.create(
+        customer_id=lav.cliente,
+        service_id=lav.tapizado,
+        vehicle_size_id=sin_base,
+        requested_at=AHORA,
+    )
+    await lav.cotizaciones.quote(
+        quote.id, agreed_price_cents=6_000_000, agreed_duration_min=200, quoted_at=AHORA
+    )
+    await lav.cotizaciones.accept(quote.id, decided_at=AHORA, now=AHORA)
+    job = await lav.jobs.receive(
+        idempotency_key="w-sin-base",
+        arrived_at=T,
+        vehicle_id=lav.vehiculo,
+        vehicle_size_id=sin_base,
+        service_ids=[lav.tapizado],
+        channel=Channel.CALLE,
+        customer_id=lav.cliente,
+        quote_id=quote.id,
+    )
+    assert job.base_price_cents == 6_000_000
+
+
 async def test_walk_in_con_varios_servicios_los_suma(lav):
     """Adenda C1: el lavado del catálogo más el tapizado cotizado, en el orden pedido."""
     await lav.activar_sena()

@@ -7,7 +7,7 @@ la transacción del llamador y levantan excepciones del dominio o de `errors.py`
 
 from app.application.services._payments import PaymentInput
 from app.application.services.booking_service import BookingService, DepositConfirmation
-from app.application.services.catalog_service import CatalogService, check_price_coherence
+from app.application.services.catalog_service import CatalogService, check_price
 from app.application.services.customer_service import (
     CustomerResolution,
     CustomerService,
@@ -30,5 +30,5 @@ __all__ = [
     "QuoteService",
     "VehicleResolution",
     "VehicleService",
-    "check_price_coherence",
+    "check_price",
 ]
