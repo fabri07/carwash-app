@@ -376,3 +376,25 @@ una vez que `0005` corrió en staging.
 - **Lecturas "autenticado sin permiso"** (`GET /settings` y lecturas de catálogo): el meta-test A3 exige que toda
   ruta `/v1` declare rol o permiso. Se agrega la dependencia `require_authenticated()` (`api/v1/deps.py`), que deja
   la marca de autorización "cualquier usuario autenticado"; no se amplía la lista de excepciones del meta-test.
+
+### 11.4 Lo que cambió al construir el 4.2a
+
+- **El script de staging se borró.** `prepare_staging_0005.py` y su test salieron en el 4.2a: ya corrió en
+  staging y el seed nuevo no genera precios NULL, así que su test ya no podía pasar. `seed_staging.py` carga el
+  precio base del servicio a cotizar.
+- **Backfill de `bookings.price_cents`**: la `0005` deja a los turnos a cotizar existentes con la suma de los
+  precios base de sus ítems (antes `NULL`). Los ítems con precio `NULL` no se completan: la migración **corta**
+  y lista las filas, que es para lo que sirvió el script de staging.
+- **`palette` y `font` nacen en `"default"`** hasta que el 4.5 defina el catálogo; en la base solo se valida el formato.
+- **La `0005` no toca `quotes.expires_at`** (§11.1 preveía completarlo si era `NULL`): las cotizaciones nuevas
+  nacen con `ahora + quote_validity_hours` y las existentes conservan su vencimiento.
+- **Códigos de error nuevos**: `CODE_TAKEN` (código de tamaño o medio de pago repetido), `SLUG_TAKEN` (409) y
+  `SLUG_RESERVED` (422).
+- **`PUT` en CORS** (`allow_methods`), con test de preflight. Los endpoints del 4.2 usan `PATCH`, pero el
+  contrato (§4) pedía el método para los siguientes PRs.
+- **Búsqueda (`domain/search.py`)**: `normalize`, `edit_distance` (Damerau) y `matches(query, search_key,
+  aliases=…)`. Los alias (sinónimos del glosario: "ppf", "sacar rayas") los aporta el llamador; el
+  `glosario.json` llega en el 4.3.
+- **Diferido**: anular un puesto, un tamaño o un medio de pago **no** revisa si está en uso (turnos futuros,
+  precios vivos). Es soft-delete y no rompe datos, pero un puesto anulado con turnos futuros los deja sin puesto
+  visible. Se resuelve con el 409 `IN_USE` cuando el 4.3 (precios por tamaño) y la agenda (F5) lo necesiten.

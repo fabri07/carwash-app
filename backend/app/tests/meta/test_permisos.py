@@ -200,6 +200,37 @@ def test_las_rutas_de_equipo_son_solo_del_owner():
             )
 
 
+def test_settings_y_catalogo_tienen_la_autorizacion_del_contrato():
+    """§4: lectura abierta a todo usuario autenticado; `PATCH /settings` solo del OWNER;
+    escritura del catálogo con `CATALOGO_EDITAR`."""
+    app = create_app()
+    prefijos = ("/v1/vehicle-sizes", "/v1/resources", "/v1/business-hours", "/v1/payment-methods")
+    vistas = 0
+    for ruta in app.routes:
+        if not isinstance(ruta, APIRoute):
+            continue
+        marcas = _autorizaciones(ruta.dependant)
+        if ruta.path == "/v1/settings":
+            esperada = (
+                {("role", frozenset({Role.OWNER}))}
+                if "PATCH" in ruta.methods
+                else {("authenticated", frozenset())}
+            )
+        elif ruta.path.startswith(prefijos):
+            esperada = (
+                {("authenticated", frozenset())}
+                if ruta.methods == {"GET"}
+                else {("permission", frozenset({Permission.CATALOGO_EDITAR}))}
+            )
+        else:
+            continue
+        assert marcas == esperada, (ruta.methods, ruta.path, marcas)
+        vistas += 1
+    assert (
+        vistas == 2 + 4 * 5
+    )  # settings GET/PATCH + 4 recursos x (lista, alta, ver, editar, anular)
+
+
 def _mini_app(*dependencias: Callable[..., Any]) -> FastAPI:
     router = APIRouter()
 

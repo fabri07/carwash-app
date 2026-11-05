@@ -136,6 +136,25 @@ def require_permission(*permissions: Permission) -> Callable[..., Awaitable[User
     return _check
 
 
+def require_authenticated() -> Callable[..., Awaitable[User]]:
+    """Dependencia de las lecturas que ve **cualquier** usuario del negocio, sin permiso propio
+    (`GET /settings`, lecturas de catálogo; FASE-4-CONTRATO §4).
+
+    No agrega una comprobación (`CurrentUser` ya exige sesión y clave al día): deja la marca
+    `.authorization` para que el meta-test A3 distinga "abierta a propósito a todo usuario
+    autenticado" de "se olvidaron de proteger la ruta".
+    """
+
+    async def _check(current_user: CurrentUser) -> User:
+        return current_user
+
+    _check.authorization = ("authenticated", frozenset())  # type: ignore[attr-defined]  # meta-test A3
+    return _check
+
+
+#: Cualquier usuario autenticado del negocio (lecturas de configuración y catálogo).
+AuthenticatedUser = Annotated[User, Depends(require_authenticated())]
+
 #: El dueño: configuración del negocio y equipo (Y5).
 OwnerUser = Annotated[User, Depends(require_role(Role.OWNER))]
 

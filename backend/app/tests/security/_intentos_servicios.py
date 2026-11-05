@@ -21,7 +21,7 @@ import typing
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import Any
 
 from app.application import services as paquete_servicios
@@ -86,6 +86,7 @@ async def perdido(lv: Lavadero) -> uuid.UUID:
 async def armar_a(lv: Lavadero) -> Ids:
     """Una fila de A lista para cada operación: si el tenant no se chequeara, funcionaría."""
     ids = _catalogo(lv)
+    ids["horario"] = (await lv.catalogo.add_business_hours(1, time(9, 0), time(18, 0))).id
     ids["job_presente"] = (await lv.walk_in()).id
     en_proceso = await lv.walk_in()
     await lv.jobs.start(en_proceso.id, idempotency_key=k(), occurred_at=T)
@@ -569,6 +570,78 @@ INTENTOS: dict[str, Intento] = {
         "services",
         lambda lv, ib, x: lv.catalogo.check_service(x),
         "CatalogService.check_service",
+    ),
+    "catalog.get_vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.catalogo.get_vehicle_size(x),
+        "CatalogService.get_vehicle_size",
+    ),
+    "catalog.update_vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.catalogo.update_vehicle_size(x, label="Pisado"),
+        "CatalogService.update_vehicle_size",
+    ),
+    "catalog.void_vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.catalogo.void_vehicle_size(x),
+        "CatalogService.void_vehicle_size",
+    ),
+    "catalog.get_resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.catalogo.get_resource(x),
+        "CatalogService.get_resource",
+    ),
+    "catalog.update_resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.catalogo.update_resource(x, name="Pisado"),
+        "CatalogService.update_resource",
+    ),
+    "catalog.void_resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.catalogo.void_resource(x),
+        "CatalogService.void_resource",
+    ),
+    "catalog.get_business_hours": Intento(
+        "horario",
+        "business_hours",
+        lambda lv, ib, x: lv.catalogo.get_business_hours(x),
+        "CatalogService.get_business_hours",
+    ),
+    "catalog.update_business_hours": Intento(
+        "horario",
+        "business_hours",
+        lambda lv, ib, x: lv.catalogo.update_business_hours(x, closes_at=time(20, 0)),
+        "CatalogService.update_business_hours",
+    ),
+    "catalog.void_business_hours": Intento(
+        "horario",
+        "business_hours",
+        lambda lv, ib, x: lv.catalogo.void_business_hours(x),
+        "CatalogService.void_business_hours",
+    ),
+    "catalog.get_payment_method": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.catalogo.get_payment_method(x),
+        "CatalogService.get_payment_method",
+    ),
+    "catalog.update_payment_method": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.catalogo.update_payment_method(x, label="Pisado"),
+        "CatalogService.update_payment_method",
+    ),
+    "catalog.void_payment_method": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.catalogo.void_payment_method(x),
+        "CatalogService.void_payment_method",
     ),
 }
 

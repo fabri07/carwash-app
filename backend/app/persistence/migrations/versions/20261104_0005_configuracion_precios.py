@@ -18,9 +18,10 @@ Por qué (FASE-4-CONTRATO §3.2, §5 y adenda §11):
   altera: se recrea).
 
 **Corta antes de alterar nada** si queda algún precio NULL en `service_prices`, `booking_items` o
-`job_items`, y lista las filas. En staging se prepara antes con `scripts/prepare_staging_0005.py`
-(PR 4.2.0). Las tablas tienen `FORCE ROW LEVEL SECURITY`: el dueño de la migración no ve filas sin
-tenant en contexto, así que el chequeo y los rellenos corren con `NO FORCE` y se vuelve a forzar
+`job_items`, y lista las filas. Hay que completar esos precios a mano (SQL) antes de migrar; el
+script de staging (PR 4.2.0) ya cumplió su función y se borró.
+Las tablas tienen `FORCE ROW LEVEL SECURITY`: el dueño de la migración no ve filas sin tenant en
+contexto, así que el chequeo y los rellenos corren con `NO FORCE` y se vuelve a forzar
 antes de terminar, todo en la misma transacción (si algo falla, el rollback deja todo como estaba).
 
 Idempotente (A6), como 0003 y 0004.
@@ -182,7 +183,7 @@ def _preflight() -> None:
             IF total > 0 THEN
                 RAISE EXCEPTION
                     '0005: hay precios NULL (primeras filas: %). Completarlos antes de migrar: '
-                    'en staging, `python scripts/prepare_staging_0005.py`.', filas;
+                    'completá esos precios (UPDATE) y reintentá.', filas;
             END IF;
         END $$
         """
@@ -380,7 +381,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Vuelve al esquema de 0004. Ver el docstring del módulo: la baja pierde la seña por precio."""
+    """Vuelve al esquema de 0004. Ver el docstring del módulo: la baja pierde la seña por precio.
+
+    Además de lo que chequea acá abajo, recrear el `EXCLUDE` con `PENDIENTE_COTIZACION` fallará si
+    ya hay turnos a cotizar que se solapan (desde la 0005 no ocupan el puesto): en ese caso hay
+    que cancelar uno de los dos antes de bajar.
+    """
     op.execute(LOCK_TIMEOUT)
     _force(False)
     op.execute(

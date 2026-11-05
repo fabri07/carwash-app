@@ -14,12 +14,20 @@ su UI es F4. Existen para que el seed de staging y los tests ejerciten el domini
 
 import uuid
 from datetime import time
+from typing import Any
+
+from sqlalchemy import ColumnElement
 
 from app.application.services._base import ServiceBase, alive_unique
-from app.application.services.errors import AlreadyExistsError, CatalogIncoherentError
+from app.application.services.errors import (
+    AlreadyExistsError,
+    CatalogIncoherentError,
+    NotFoundError,
+)
 from app.domain.enums import PricingMode
 from app.domain.exceptions import InvalidAmountError
 from app.domain.money import BPS_DENOMINATOR
+from app.domain.void import VoidReason
 from app.persistence.db._savepoint import (
     SavepointConflictError,
     guarded_savepoint,
@@ -33,12 +41,27 @@ from app.persistence.models.catalog import (
     ServicePrice,
     VehicleSize,
 )
+from app.persistence.repositories.base import BaseRepository, Page
 from app.persistence.repositories.catalog import (
+    BusinessHoursRepository,
     PaymentMethodRepository,
+    ResourceRepository,
     ServicePriceRepository,
     ServiceRepository,
     VehicleSizeRepository,
 )
+
+
+def _check_hours(weekday: int, opens_at: time, closes_at: time) -> None:
+    if not 1 <= weekday <= 7:  # ISO: 1 = lunes … 7 = domingo
+        raise InvalidAmountError(f"weekday must be ISO 1..7: {weekday}")
+    if closes_at <= opens_at:
+        raise InvalidAmountError("a business-hours range must close after it opens")
+
+
+def _check_commission(commission_bps: int) -> None:
+    if not 0 <= commission_bps <= BPS_DENOMINATOR:
+        raise InvalidAmountError(f"commission basis points must be in 0..{BPS_DENOMINATOR}")
 
 
 def check_price_coherence(mode: PricingMode, price_cents: int | None) -> None:
@@ -148,10 +171,7 @@ class CatalogService(ServiceBase):
         self, weekday: int, opens_at: time, closes_at: time
     ) -> BusinessHours:
         await self._enter()
-        if not 1 <= weekday <= 7:  # ISO: 1 = lunes … 7 = domingo
-            raise InvalidAmountError(f"weekday must be ISO 1..7: {weekday}")
-        if closes_at <= opens_at:
-            raise InvalidAmountError("a business-hours range must close after it opens")
+        _check_hours(weekday, opens_at, closes_at)
         hours = BusinessHours(
             tenant_id=self._tenant_id, weekday=weekday, opens_at=opens_at, closes_at=closes_at
         )
@@ -170,8 +190,7 @@ class CatalogService(ServiceBase):
         for_expense: bool = False,
     ) -> PaymentMethod:
         await self._enter()
-        if not 0 <= commission_bps <= BPS_DENOMINATOR:
-            raise InvalidAmountError(f"commission basis points must be in 0..{BPS_DENOMINATOR}")
+        _check_commission(commission_bps)
         return await self._insert_unique(
             PaymentMethod(
                 tenant_id=self._tenant_id,
@@ -188,3 +207,153 @@ class CatalogService(ServiceBase):
     async def find_payment_method(self, code: str) -> PaymentMethod | None:
         await self._enter()
         return await PaymentMethodRepository(self._session).find_by_code(code, self._tenant_id)
+
+    # ── ABM de la configuración (F4.2): listar, leer, editar y anular ─────────────────────────
+    # El código de un tamaño o medio de pago es su identidad: no se edita (se anula y se crea otro).
+
+    async def _list[M: TenantScopedModel](
+        self,
+        repo: BaseRepository[M],
+        *,
+        limit: int,
+        offset: int,
+        order_by: tuple[ColumnElement[Any], ...] | None = None,
+    ) -> Page[M]:
+        await self._enter()
+        return await repo.list_by_tenant(
+            self._tenant_id, limit=limit, offset=offset, order_by=order_by
+        )
+
+    async def _get[M: TenantScopedModel](self, repo: BaseRepository[M], id: uuid.UUID) -> M:
+        await self._enter()
+        return await self._require(repo, id)
+
+    async def _void[M: TenantScopedModel](self, repo: BaseRepository[M], id: uuid.UUID) -> None:
+        await self._enter()
+        if await repo.void(id, self._tenant_id, VoidReason.PEDIDO_DEL_USUARIO) is None:
+            raise NotFoundError(repo.model.__tablename__, id)
+
+    async def list_vehicle_sizes(self, *, limit: int, offset: int) -> Page[VehicleSize]:
+        return await self._list(
+            VehicleSizeRepository(self._session),
+            limit=limit,
+            offset=offset,
+            order_by=(VehicleSize.sort_order.asc(), VehicleSize.label.asc()),
+        )
+
+    async def get_vehicle_size(self, id: uuid.UUID) -> VehicleSize:
+        return await self._get(VehicleSizeRepository(self._session), id)
+
+    async def update_vehicle_size(
+        self, id: uuid.UUID, *, label: str | None = None, sort_order: int | None = None
+    ) -> VehicleSize:
+        await self._enter()
+        size = await self._lock(VehicleSizeRepository(self._session), id)
+        if label is not None:
+            size.label = label
+        if sort_order is not None:
+            size.sort_order = sort_order
+        await self._session.flush()
+        return size
+
+    async def void_vehicle_size(self, id: uuid.UUID) -> None:
+        await self._void(VehicleSizeRepository(self._session), id)
+
+    async def list_resources(self, *, limit: int, offset: int) -> Page[Resource]:
+        return await self._list(
+            ResourceRepository(self._session),
+            limit=limit,
+            offset=offset,
+            order_by=(Resource.sort_order.asc(), Resource.name.asc()),
+        )
+
+    async def get_resource(self, id: uuid.UUID) -> Resource:
+        return await self._get(ResourceRepository(self._session), id)
+
+    async def update_resource(
+        self, id: uuid.UUID, *, name: str | None = None, sort_order: int | None = None
+    ) -> Resource:
+        await self._enter()
+        resource = await self._lock(ResourceRepository(self._session), id)
+        try:
+            async with guarded_savepoint(self._session, alive_unique("resources", "name")):
+                if name is not None:
+                    resource.name = name
+                if sort_order is not None:
+                    resource.sort_order = sort_order
+        except SavepointConflictError as exc:
+            raise AlreadyExistsError("resources: ('name',) already taken") from exc
+        return resource
+
+    async def void_resource(self, id: uuid.UUID) -> None:
+        await self._void(ResourceRepository(self._session), id)
+
+    async def list_business_hours(self, *, limit: int, offset: int) -> Page[BusinessHours]:
+        return await self._list(
+            BusinessHoursRepository(self._session),
+            limit=limit,
+            offset=offset,
+            order_by=(BusinessHours.weekday.asc(), BusinessHours.opens_at.asc()),
+        )
+
+    async def get_business_hours(self, id: uuid.UUID) -> BusinessHours:
+        return await self._get(BusinessHoursRepository(self._session), id)
+
+    async def update_business_hours(
+        self,
+        id: uuid.UUID,
+        *,
+        weekday: int | None = None,
+        opens_at: time | None = None,
+        closes_at: time | None = None,
+    ) -> BusinessHours:
+        await self._enter()
+        hours = await self._lock(BusinessHoursRepository(self._session), id)
+        new_weekday = hours.weekday if weekday is None else weekday
+        new_opens = hours.opens_at if opens_at is None else opens_at
+        new_closes = hours.closes_at if closes_at is None else closes_at
+        _check_hours(new_weekday, new_opens, new_closes)
+        hours.weekday, hours.opens_at, hours.closes_at = new_weekday, new_opens, new_closes
+        await self._session.flush()
+        return hours
+
+    async def void_business_hours(self, id: uuid.UUID) -> None:
+        await self._void(BusinessHoursRepository(self._session), id)
+
+    async def list_payment_methods(self, *, limit: int, offset: int) -> Page[PaymentMethod]:
+        return await self._list(PaymentMethodRepository(self._session), limit=limit, offset=offset)
+
+    async def get_payment_method(self, id: uuid.UUID) -> PaymentMethod:
+        return await self._get(PaymentMethodRepository(self._session), id)
+
+    async def update_payment_method(
+        self,
+        id: uuid.UUID,
+        *,
+        label: str | None = None,
+        commission_bps: int | None = None,
+        settlement_account: str | None = None,
+        clear_settlement_account: bool = False,
+        for_income: bool | None = None,
+        for_expense: bool | None = None,
+    ) -> PaymentMethod:
+        await self._enter()
+        method = await self._lock(PaymentMethodRepository(self._session), id)
+        if commission_bps is not None:
+            _check_commission(commission_bps)
+            method.commission_bps = commission_bps
+        if label is not None:
+            method.label = label
+        if clear_settlement_account:
+            method.settlement_account = None
+        elif settlement_account is not None:
+            method.settlement_account = settlement_account
+        if for_income is not None:
+            method.for_income = for_income
+        if for_expense is not None:
+            method.for_expense = for_expense
+        await self._session.flush()
+        return method
+
+    async def void_payment_method(self, id: uuid.UUID) -> None:
+        await self._void(PaymentMethodRepository(self._session), id)

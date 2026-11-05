@@ -23,6 +23,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.rate_limit import limiter
@@ -35,7 +36,7 @@ from app.config.settings import get_settings
 from app.domain.errors import ErrorCode
 from app.domain.permissions import sorted_permissions
 from app.persistence.db.tenant_context import set_tenant_context
-from app.persistence.models.tenant import Tenant
+from app.persistence.models.tenant import Tenant, TenantSettings
 from app.persistence.models.user import User
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.auth import (
@@ -108,6 +109,12 @@ async def _me(session: AsyncSession, user: User) -> MeResponse:
         tenant=TenantResponse.model_validate(tenant),
         permissions=sorted_permissions(await effective_permissions(session, user)),
         must_change_password=user.must_change_password,
+        onboarding_completed=await session.scalar(
+            select(TenantSettings.onboarding_completed_at.is_not(None)).where(
+                TenantSettings.tenant_id == user.tenant_id
+            )
+        )
+        or False,
     )
 
 
