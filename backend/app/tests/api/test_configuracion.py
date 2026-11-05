@@ -150,9 +150,13 @@ async def test_los_listados_respetan_el_orden_configurado(client):
         await client.post("/v1/resources", json={"name": nombre, "sort_order": orden})
     nombres = [i["name"] for i in (await client.get("/v1/resources")).json()["items"]]
     assert nombres == ["Z", "M", "A"]
-    for dia, hora in ((3, "10:00:00"), (1, "12:00:00"), (1, "08:00:00")):
+    for dia, hora, cierra in (
+        (3, "10:00:00", "23:00:00"),
+        (1, "12:00:00", "23:00:00"),
+        (1, "08:00:00", "11:00:00"),
+    ):
         await client.post(
-            "/v1/business-hours", json={"weekday": dia, "opens_at": hora, "closes_at": "23:00:00"}
+            "/v1/business-hours", json={"weekday": dia, "opens_at": hora, "closes_at": cierra}
         )
     franjas = [
         (i["weekday"], i["opens_at"])
@@ -210,3 +214,49 @@ async def test_si_se_agotan_los_slugs_el_registro_no_dice_email_tomado(client, m
     )
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "SLUG_TAKEN"
+
+
+async def test_las_franjas_de_un_dia_no_se_pisan(client):
+    await _registrar(client)
+
+    def franja(dia, abre, cierra):
+        return {"weekday": dia, "opens_at": abre, "closes_at": cierra}
+
+    manana = await client.post("/v1/business-hours", json=franja(1, "09:00", "13:00"))
+    assert manana.status_code == 201, manana.text
+    pisa = await client.post("/v1/business-hours", json=franja(1, "12:00", "18:00"))
+    assert pisa.status_code == 422 and pisa.json()["detail"]["code"] == "VALIDATION_ERROR"
+    # pegada (cierra justo cuando abre la otra) y otro día: válidas
+    tarde = await client.post("/v1/business-hours", json=franja(1, "13:00", "18:00"))
+    assert tarde.status_code == 201, tarde.text
+    otro_dia = await client.post("/v1/business-hours", json=franja(2, "09:00", "18:00"))
+    assert otro_dia.status_code == 201
+    # editar una franja para que pise a la otra
+    mal = await client.patch(f"/v1/business-hours/{tarde.json()['id']}", json={"opens_at": "11:00"})
+    assert mal.status_code == 422
+    # editarse a sí misma sin cambiar de lugar no cuenta como pisada
+    mismo = await client.patch(
+        f"/v1/business-hours/{manana.json()['id']}", json={"closes_at": "12:30"}
+    )
+    assert mismo.status_code == 200, mismo.text
+    # una anulada libera el lugar
+    assert (await client.delete(f"/v1/business-hours/{manana.json()['id']}")).status_code == 204
+    libre = await client.post("/v1/business-hours", json=franja(1, "09:00", "12:00"))
+    assert libre.status_code == 201, libre.text
+
+
+async def test_un_medio_de_pago_sirve_para_ingreso_o_egreso(client):
+    await _registrar(client)
+    sin_uso = await client.post(
+        "/v1/payment-methods",
+        json={"code": "NADA", "label": "Nada", "for_income": False, "for_expense": False},
+    )
+    assert sin_uso.status_code == 422, sin_uso.text
+    ok = await client.post("/v1/payment-methods", json={"code": "EFECTIVO", "label": "Efectivo"})
+    mid = ok.json()["id"]
+    apagar = await client.patch(f"/v1/payment-methods/{mid}", json={"for_income": False})
+    assert apagar.status_code == 422, apagar.text
+    solo_egreso = await client.patch(
+        f"/v1/payment-methods/{mid}", json={"for_income": False, "for_expense": True}
+    )
+    assert solo_egreso.status_code == 200, solo_egreso.text

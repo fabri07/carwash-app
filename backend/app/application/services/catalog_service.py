@@ -62,6 +62,11 @@ def _check_hours(weekday: int, opens_at: time, closes_at: time) -> None:
         raise InvalidAmountError("a business-hours range must close after it opens")
 
 
+def _check_flows(for_income: bool, for_expense: bool) -> None:
+    if not (for_income or for_expense):
+        raise InvalidAmountError("a payment method must be usable for income or expense")
+
+
 def _check_commission(commission_bps: int) -> None:
     if not 0 <= commission_bps <= BPS_DENOMINATOR:
         raise InvalidAmountError(f"commission basis points must be in 0..{BPS_DENOMINATOR}")
@@ -167,11 +172,33 @@ class CatalogService(ServiceBase):
             Resource(tenant_id=self._tenant_id, name=name, sort_order=sort_order), "name"
         )
 
+    async def _check_no_overlap(
+        self, own_id: uuid.UUID | None, weekday: int, opens_at: time, closes_at: time
+    ) -> None:
+        """Dos franjas vivas del mismo día no se pisan. Que una cierre justo cuando abre la otra
+        (`[09–13)` y `[13–18)`) es válido."""
+        query = (
+            select(func.count())
+            .select_from(BusinessHours)
+            .where(
+                BusinessHours.tenant_id == self._tenant_id,
+                BusinessHours.voided_at.is_(None),
+                BusinessHours.weekday == weekday,
+                BusinessHours.opens_at < closes_at,
+                BusinessHours.closes_at > opens_at,
+            )
+        )
+        if own_id is not None:
+            query = query.where(BusinessHours.id != own_id)
+        if await self._session.scalar(query):
+            raise InvalidAmountError("the range overlaps another business-hours range that day")
+
     async def add_business_hours(
         self, weekday: int, opens_at: time, closes_at: time
     ) -> BusinessHours:
         await self._enter()
         _check_hours(weekday, opens_at, closes_at)
+        await self._check_no_overlap(None, weekday, opens_at, closes_at)
         hours = BusinessHours(
             tenant_id=self._tenant_id, weekday=weekday, opens_at=opens_at, closes_at=closes_at
         )
@@ -191,6 +218,7 @@ class CatalogService(ServiceBase):
     ) -> PaymentMethod:
         await self._enter()
         _check_commission(commission_bps)
+        _check_flows(for_income, for_expense)
         return await self._insert_unique(
             PaymentMethod(
                 tenant_id=self._tenant_id,
@@ -343,6 +371,7 @@ class CatalogService(ServiceBase):
         new_opens = hours.opens_at if opens_at is None else opens_at
         new_closes = hours.closes_at if closes_at is None else closes_at
         _check_hours(new_weekday, new_opens, new_closes)
+        await self._check_no_overlap(hours.id, new_weekday, new_opens, new_closes)
         hours.weekday, hours.opens_at, hours.closes_at = new_weekday, new_opens, new_closes
         await self._session.flush()
         return hours
@@ -382,6 +411,7 @@ class CatalogService(ServiceBase):
             method.for_income = for_income
         if for_expense is not None:
             method.for_expense = for_expense
+        _check_flows(method.for_income, method.for_expense)
         await self._session.flush()
         return method
 
