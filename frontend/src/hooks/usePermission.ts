@@ -21,6 +21,11 @@ export function useCan(): (permission: PermissionCode) => boolean {
   return (permission) => can(user, permissions, permission);
 }
 
+/** `true` cuando ya llegaron los permisos del servidor (tras recargar, antes no hay ninguno). */
+export function usePermissionsLoaded(): boolean {
+  return useAuthStore((s) => s.permissionsLoaded);
+}
+
 /** El dueño: único que configura el negocio y el equipo (Y5). */
 export function useIsOwner(): boolean {
   return useAuthStore((s) => s.user?.role === "OWNER");
