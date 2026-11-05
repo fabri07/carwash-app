@@ -27,7 +27,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import Table, insert, update
+from sqlalchemy import Table, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 import app.persistence.models  # noqa: F401  (registra todas las tablas en la metadata)
@@ -82,6 +82,9 @@ RECETAS: dict[str, Receta] = {
         "role": "OWNER",
     },
     "idempotency_keys": lambda c: {"key": f"clave-{c.tag}", "action": "poblar"},
+    # ── F4 · configuración ── 1:1 con el tenant: la crea `pg_tenant_factory` (como
+    # `provision_tenant`), así que `poblar` reusa la que ya existe en vez de insertar otra.
+    "tenant_settings": lambda c: {"address": f"Calle Falsa {c.tag}"},
     # ── 1.1 Catálogo ──
     "vehicle_sizes": lambda c: {"code": f"AUTO_{c.TAG}", "label": "Auto", "sort_order": 1},
     "services": lambda c: {
@@ -94,7 +97,6 @@ RECETAS: dict[str, Receta] = {
         "vehicle_size_id": c["vehicle_sizes"],
         "price_cents": PRECIO_CENTS,
         "duration_min": 60,
-        "deposit_bps": SENA_BPS,
     },
     "resources": lambda c: {"name": f"Puesto 1 {c.tag}", "sort_order": 1},
     "business_hours": lambda c: {
@@ -164,6 +166,7 @@ RECETAS: dict[str, Receta] = {
         "position": 0,
         "service_name_snapshot": "Lavado completo",
         "duration_min": 60,
+        "pricing_mode": "PRECIO_FIJO",
         "price_cents": PRECIO_CENTS,
         "deposit_bps": SENA_BPS,
     },
@@ -221,6 +224,7 @@ RECETAS: dict[str, Receta] = {
         "position": 0,
         "service_name_snapshot": "Lavado completo",
         "duration_min": 60,
+        "pricing_mode": "PRECIO_FIJO",
         "price_cents": PRECIO_CENTS,
     },
     "job_events": lambda c: {
@@ -344,6 +348,13 @@ async def poblar(
             if tabla.name == "users" and user_id is not None:
                 ctx.ids["users"] = user_id
                 continue
+            if tabla.name == "tenant_settings":
+                existente = await conn.scalar(
+                    select(tabla.c.id).where(tabla.c.tenant_id == tenant_id)
+                )
+                if existente is not None:
+                    ctx.ids["tenant_settings"] = existente
+                    continue
             valores = {"tenant_id": tenant_id, **RECETAS[tabla.name](ctx)}
             desconocidas = set(valores) - set(tabla.c.keys())
             if desconocidas:

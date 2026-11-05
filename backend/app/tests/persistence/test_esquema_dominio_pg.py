@@ -225,7 +225,7 @@ async def test_un_turno_que_no_bloquea_libera_el_puesto(pg_admin_engine, lavader
 
 @pytest.mark.parametrize(
     "estado",
-    [BookingStatus.PENDIENTE_SENA, BookingStatus.PENDIENTE_COTIZACION, BookingStatus.RECIBIDO],
+    [BookingStatus.PENDIENTE_SENA, BookingStatus.RECIBIDO],
     ids=lambda s: s.value,
 )
 async def test_los_estados_que_bloquean_bloquean(pg_admin_engine, lavaderos, estado):
@@ -236,6 +236,14 @@ async def test_los_estados_que_bloquean_bloquean(pg_admin_engine, lavaderos, est
         _turno(a, status=estado.value, hold_expires_at=DIEZ - timedelta(hours=1)),
     )
     await _rechaza(pg_admin_engine, "bookings", _turno(a), XC)
+
+
+async def test_un_turno_a_cotizar_no_bloquea_el_puesto(pg_admin_engine, lavaderos):
+    """D4-13 (migración 0005): `PENDIENTE_COTIZACION` salió del `WHERE` del `EXCLUDE`."""
+    a, _ = lavaderos
+    await _alta(pg_admin_engine, "bookings", _turno(a, status="PENDIENTE_COTIZACION"))
+    await _alta(pg_admin_engine, "bookings", _turno(a, status="PENDIENTE_COTIZACION"))
+    await _alta(pg_admin_engine, "bookings", _turno(a))  # un confirmado entra encima
 
 
 async def test_un_turno_anulado_no_bloquea(pg_admin_engine, lavaderos):
@@ -426,7 +434,8 @@ def _precio(lav: Lavadero, **over: Any) -> dict[str, Any]:
     } | over
 
 
-async def test_precio_mayor_a_cero_o_nulo(pg_admin_engine, lavaderos):
+async def test_precio_mayor_a_cero_y_nunca_nulo(pg_admin_engine, lavaderos):
+    """D4-6: todo servicio tiene precio base por tamaño, en las dos modalidades."""
     a, _ = lavaderos
     await _rechaza(
         pg_admin_engine,
@@ -434,28 +443,36 @@ async def test_precio_mayor_a_cero_o_nulo(pg_admin_engine, lavaderos):
         _precio(a, price_cents=0),
         "ck_service_prices_precio_positivo",
     )
-    await _alta(pg_admin_engine, "service_prices", _precio(a, price_cents=None))  # A_COTIZAR
+    await _rechaza(pg_admin_engine, "service_prices", _precio(a, price_cents=None), "price_cents")
 
 
-@pytest.mark.parametrize("bps", [-1, 10_001])
-async def test_sena_en_puntos_basicos_entre_0_y_10000(pg_admin_engine, lavaderos, bps):
+@pytest.mark.parametrize("bps", [0, -1, 10_001])
+async def test_sena_global_en_puntos_basicos_entre_1_y_10000(pg_admin_engine, lavaderos, bps):
+    """La seña es global (D4-4): vive en `tenant_settings`, con un único %."""
     a, _ = lavaderos
-    await _rechaza(
-        pg_admin_engine,
-        "service_prices",
-        _precio(a, deposit_bps=bps),
-        "ck_service_prices_sena_bps_rango",
-    )
+    with pytest.raises(IntegrityError, match="ck_tenant_settings_sena_bps_rango"):
+        async with pg_admin_engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE tenant_settings SET deposit_bps = :bps WHERE tenant_id = :t"),
+                {"bps": bps, "t": a.tenant},
+            )
 
 
-@pytest.mark.parametrize("estado", ["PENDIENTE_SEÑA", "PENDIENTE_COTIZACION"])
-async def test_un_turno_retenido_exige_vencimiento(pg_admin_engine, lavaderos, estado):
+async def test_un_turno_con_sena_pendiente_exige_vencimiento(pg_admin_engine, lavaderos):
     a, _ = lavaderos
     await _rechaza(
         pg_admin_engine,
         "bookings",
-        _turno(a, status=estado, hold_expires_at=None),
+        _turno(a, status="PENDIENTE_SEÑA", hold_expires_at=None),
         "ck_bookings_hold_obligatorio",
+    )
+
+
+async def test_un_turno_a_cotizar_no_tiene_hold(pg_admin_engine, lavaderos):
+    """D4-15: vence con su cotización, no con un hold: el CHECK ya no se lo exige."""
+    a, _ = lavaderos
+    await _alta(
+        pg_admin_engine, "bookings", _turno(a, status="PENDIENTE_COTIZACION", hold_expires_at=None)
     )
 
 

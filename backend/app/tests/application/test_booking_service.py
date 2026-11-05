@@ -33,9 +33,11 @@ from app.persistence.models.cancellation import DEFAULT_REASON
 from app.persistence.repositories.agenda import BookingItemRepository
 from app.tests.application._armado import (
     AHORA,
+    PRECIO_BASE_COTIZAR,
     PRECIO_CON_SENA,
     PRECIO_FIJO,
     SENA,
+    SENA_BPS,
     Lavadero,
     T,
     armar,
@@ -51,14 +53,15 @@ async def lav(db_session) -> Lavadero:
 
 
 async def _con_sena(lav: Lavadero, **kw):
-    return await lav.turno(servicio=lav.lavado_con_sena, hold=HOLD, **kw)
+    """Un turno con seña (30 %): la seña global se prende solo durante el alta."""
+    return await lav.turno_con_sena(**kw)
 
 
 # ── Alta ─────────────────────────────────────────────────────────────────────
 
 
 async def test_alta_sin_sena_nace_confirmada_con_snapshots(lav):
-    booking = await lav.turno(hold=HOLD)  # un hold en un confirmado se descarta
+    booking = await lav.turno()  # seña apagada (default): nace confirmado, sin hold
     assert booking.status == S.CONFIRMADO
     assert booking.hold_expires_at is None
     assert booking.price_cents == PRECIO_FIJO
@@ -75,12 +78,14 @@ async def test_alta_sin_sena_nace_confirmada_con_snapshots(lav):
 async def test_los_servicios_se_suman(lav):
     """Adenda C1 (respuesta 7 del dueño): duración, precio y seña son la suma de los ítems, y
     el turno ocupa el puesto por la duración total."""
-    booking = await lav.turno(servicios=[lav.lavado, lav.lavado_con_sena], hold=HOLD)
+    await lav.activar_sena()
+    booking = await lav.turno(servicios=[lav.lavado, lav.lavado_con_sena])
     assert booking.status == S.PENDIENTE_SENA  # alcanza con que un servicio pida seña
     assert booking.duration_min == 60 + 90
     assert booking.end_at == T + timedelta(minutes=150)
     assert booking.price_cents == PRECIO_FIJO + PRECIO_CON_SENA
-    assert booking.deposit_required_cents == SENA  # la seña es solo la del premium
+    # La seña es global (D4-4): el 30 % de CADA ítem, redondeado por ítem y sumado.
+    assert booking.deposit_required_cents == 600_000 + SENA
     items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
     assert [(i.position, i.service_id) for i in items] == [
         (0, lav.lavado),
@@ -94,29 +99,52 @@ async def test_servicios_vacios_repetidos_o_dos_a_cotizar_fallan(lav):
     with pytest.raises(GuardFailedError, match="twice"):
         await lav.turno(servicios=[lav.lavado, lav.lavado])
     otro = await lav.catalogo.create_service("Pulido", PricingMode.A_COTIZAR)
-    await lav.catalogo.set_price(otro.id, lav.auto, price_cents=None, duration_min=60)
+    await lav.catalogo.set_price(otro.id, lav.auto, price_cents=1_000_000, duration_min=60)
     with pytest.raises(GuardFailedError, match="at most one"):
-        await lav.turno(servicios=[lav.tapizado, otro.id], hold=HOLD)
+        await lav.turno(servicios=[lav.tapizado, otro.id])
 
 
-async def test_alta_con_sena_queda_pendiente_y_exige_hold(lav):
-    with pytest.raises(GuardFailedError):
-        await lav.turno(servicio=lav.lavado_con_sena)
+async def test_alta_con_sena_queda_pendiente_con_el_hold_del_negocio(lav):
     booking = await _con_sena(lav)
     assert booking.status == S.PENDIENTE_SENA
     assert booking.deposit_required_cents == SENA
+    # El hold sale de `tenant_settings.hold_min` (default 30), no de un parámetro del llamador.
     assert booking.hold_expires_at == HOLD
+    await lav.configurar(hold_min=45)
+    otro = await _con_sena(lav, puesto=lav.puesto_2)
+    assert otro.hold_expires_at == AHORA + timedelta(minutes=45)
+
+
+async def test_alta_respeta_la_anticipacion_minima_del_negocio(lav):
+    """D-002: reservar con menos de `min_advance_min` falla; justo en el borde, no."""
+    await lav.configurar(min_advance_min=60)
+    with pytest.raises(GuardFailedError, match="advance"):
+        await lav.turno(ahora=T - timedelta(minutes=59))
+    reservado = await lav.turno(ahora=T - timedelta(minutes=60))
+    assert reservado.status == S.CONFIRMADO
 
 
 async def test_alta_a_cotizar_crea_la_cotizacion_pendiente(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
+    booking = await lav.turno(servicio=lav.tapizado)
     assert booking.status == S.PENDIENTE_COTIZACION
-    assert booking.price_cents is None
+    # D4-6: el precio del turno es la suma de las bases; la cotización fija el final.
+    assert booking.price_cents == PRECIO_BASE_COTIZAR
     assert booking.deposit_required_cents == 0
+    # D4-13 y D4-15: sin hold; la vigencia es de la cotización (D4-16: 24 h por default).
+    assert booking.hold_expires_at is None
     quote = await lav.session.get(Quote, booking.quote_id)
     assert quote is not None
     assert (quote.status, quote.booking_id) == (QuoteStatus.PENDIENTE, booking.id)
-    assert quote.expires_at is not None and as_aware(quote.expires_at) == HOLD  # SQLite: sin zona
+    assert quote.expires_at is not None
+    assert as_aware(quote.expires_at) == AHORA + timedelta(hours=24)  # SQLite: sin zona
+
+
+async def test_la_vigencia_de_la_cotizacion_es_la_del_negocio(lav):
+    await lav.configurar(quote_validity_hours=48)
+    booking = await lav.turno(servicio=lav.tapizado)
+    quote = await lav.session.get(Quote, booking.quote_id)
+    assert quote is not None and quote.expires_at is not None
+    assert as_aware(quote.expires_at) == AHORA + timedelta(hours=48)
 
 
 async def test_alta_con_codigo_repetido_choca(lav):
@@ -136,10 +164,10 @@ async def test_alta_valida_catalogo_y_referencias(lav):
 
 
 async def test_expire_holds_vence_solo_los_vencidos_del_puesto(lav):
+    # Se reserva una hora después: su hold (`ahora + hold_min`) vence 1 h más tarde que el otro.
+    # Va primero para que reservar el `vencido` (a las AHORA) no lo venza de paso.
+    vigente = await _con_sena(lav, inicio=T + timedelta(hours=3), ahora=AHORA + timedelta(hours=1))
     vencido = await _con_sena(lav)
-    vigente = await lav.turno(
-        servicio=lav.lavado_con_sena, hold=HOLD + timedelta(hours=1), inicio=T + timedelta(hours=3)
-    )
     otro_puesto = await _con_sena(lav, puesto=lav.puesto_2)
     vencidos = await lav.turnos.expire_holds(lav.puesto, HOLD)  # `<=`: justo en el borde vence
     assert vencidos == [vencido]
@@ -166,6 +194,7 @@ async def test_bloqueo_de_agenda(lav):
 
 
 async def test_confirmar_la_sena_registra_el_pago_y_confirma(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     hecho = await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA, "s1"), now=AHORA)
     assert hecho.booking.status == S.CONFIRMADO
@@ -183,6 +212,7 @@ async def test_confirmar_la_sena_registra_el_pago_y_confirma(lav):
 
 
 async def test_la_clave_de_una_sena_es_de_su_turno(lav):
+    await lav.activar_sena()
     uno = await _con_sena(lav)
     dos = await _con_sena(lav, inicio=T + timedelta(hours=3))
     await lav.turnos.confirm_deposit(uno.id, lav.pago(SENA, "s1"), now=AHORA)
@@ -191,6 +221,7 @@ async def test_la_clave_de_una_sena_es_de_su_turno(lav):
 
 
 async def test_sena_con_el_hold_vencido_no_confirma_y_va_por_confirmacion_tardia(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     tarde = HOLD + timedelta(minutes=1)
     with pytest.raises(InvalidTransition):
@@ -206,6 +237,7 @@ async def test_sena_con_el_hold_vencido_no_confirma_y_va_por_confirmacion_tardia
 
 
 async def test_confirmacion_tardia_solo_desde_vencido(lav):
+    await lav.activar_sena()
     booking = await lav.turno()
     with pytest.raises(InvalidTransition):
         await lav.turnos.confirm_late(booking.id, now=AHORA)
@@ -219,6 +251,7 @@ async def test_confirmacion_tardia_solo_desde_vencido(lav):
 
 
 async def test_cancelacion_normal_con_sena_abre_devolucion_pendiente(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     c = await lav.turnos.cancel_by_client(booking.id, now=T - timedelta(hours=13))
@@ -245,6 +278,7 @@ async def test_cancelacion_tardia_sin_sena_queda_sin_pago(lav):
 
 
 async def test_cancelar_despues_de_la_hora_es_ausente_con_aviso(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     c = await lav.turnos.cancel_by_client(booking.id, now=T + timedelta(minutes=10))
@@ -274,6 +308,7 @@ async def test_no_se_cancela_desde_vencido_ni_con_motivo_largo(lav):
 
 
 async def test_cancelacion_operativa_exige_motivo_y_actor(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     with pytest.raises(GuardFailedError):
@@ -317,28 +352,40 @@ async def test_get_y_turno_ajeno(lav, db_session):
 async def test_precio_del_turno_es_snapshot(lav):
     booking = await _con_sena(lav)
     await lav.catalogo.set_price(
-        lav.lavado_con_sena, lav.auto, price_cents=9_999_900, duration_min=30, deposit_bps=0
+        lav.lavado_con_sena, lav.auto, price_cents=9_999_900, duration_min=30
     )
+    await lav.configurar(deposit_bps=5000)  # el negocio sube su seña al 50 %
     assert booking.price_cents == PRECIO_CON_SENA
     assert booking.duration_min == 90
+    assert booking.deposit_required_cents == SENA
+    # El % se guardó en el ítem al reservar (único snapshot de la seña): el cambio no lo toca.
+    (item,) = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
+    assert item.deposit_bps == SENA_BPS
 
 
 # ── Arreglos de T3 (revisor adversarial y /code-review) ─────────────────────
 
 
 async def test_f4_un_turno_a_cotizar_vencido_no_se_confirma_tarde(lav):
-    booking = await lav.turno(servicio=lav.tapizado, hold=HOLD)
-    await lav.turnos.expire_holds(lav.puesto, HOLD)
+    """D4-15: el turno a cotizar vence con su cotización; vencido no se confirma tarde, ni con
+    seña, aunque tenga precio base (D4-7: se vuelve a cotizar)."""
+    booking = await lav.turno(servicio=lav.tapizado)
+    # `expire_holds` ya no lo toca: no tiene hold, vence con su cotización.
+    await lav.turnos.expire_holds(lav.puesto, AHORA + timedelta(days=100))
+    assert booking.status == S.PENDIENTE_COTIZACION
+    vencimiento = AHORA + timedelta(hours=24)
+    await lav.cotizaciones.expire(booking.quote_id, now=vencimiento)
     assert booking.status == S.VENCIDO
-    with pytest.raises(GuardFailedError, match="price"):
-        await lav.turnos.confirm_late(booking.id, now=HOLD)
-    with pytest.raises(GuardFailedError, match="price"):
-        await lav.turnos.confirm_late(booking.id, now=HOLD, payment=lav.pago(SENA))
+    with pytest.raises(GuardFailedError, match="quote"):
+        await lav.turnos.confirm_late(booking.id, now=vencimiento)
+    with pytest.raises(GuardFailedError, match="quote"):
+        await lav.turnos.confirm_late(booking.id, now=vencimiento, payment=lav.pago(SENA))
     assert booking.status == S.VENCIDO
-    assert booking.price_cents is None
+    assert booking.price_cents == PRECIO_BASE_COTIZAR
 
 
 async def test_f4_la_confirmacion_tardia_exige_la_sena_si_el_turno_la_pide(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     await lav.turnos.expire_holds(lav.puesto, HOLD)
     with pytest.raises(GuardFailedError, match="deposit"):
@@ -349,6 +396,7 @@ async def test_f4_la_confirmacion_tardia_exige_la_sena_si_el_turno_la_pide(lav):
 
 
 async def test_f4_sin_sena_requerida_la_confirmacion_tardia_no_acepta_un_pago(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     await lav.turnos.expire_holds(lav.puesto, HOLD)
     booking.deposit_required_cents = 0  # defensa: hoy un PENDIENTE_SEÑA siempre pide seña
@@ -411,6 +459,7 @@ async def test_f5_la_sena_que_llega_despues_de_perder_el_horario_queda_registrad
 
 
 async def test_f5_solo_para_un_vencido_cuyo_horario_esta_tomado(lav):
+    await lav.activar_sena()
     confirmado = await lav.turno(inicio=T + timedelta(hours=5))
     with pytest.raises(InvalidTransition):
         await lav.turnos.record_deposit_after_slot_lost(confirmado.id, lav.pago(SENA), now=HOLD)
@@ -441,6 +490,7 @@ async def test_f5_la_clave_es_de_su_turno_y_un_segundo_pago_no_se_suma_en_silenc
 
 
 async def test_f7_cancel_by_client_toma_la_hora_del_server(lav):
+    await lav.activar_sena()
     booking = await _con_sena(lav)
     await lav.turnos.confirm_deposit(booking.id, lav.pago(SENA), now=AHORA)
     c = await lav.turnos.cancel_by_client(booking.id, now=T + timedelta(hours=2))

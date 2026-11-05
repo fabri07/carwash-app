@@ -348,3 +348,16 @@ def test_el_commit_sale_de_la_variable_que_fija_el_workflow(monkeypatch, variabl
     monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
     monkeypatch.setenv(variable, "abc123")
     assert Settings(_env_file=None).GIT_COMMIT == "abc123"
+
+
+@pytest.mark.parametrize("metodo", ["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def test_preflight_permite_los_metodos_de_la_api(client, metodo):
+    """El navegador pregunta con OPTIONS antes de un PUT/PATCH cross-origin: si el método no
+    está en `allow_methods`, la edición falla en el cliente sin que el servidor la vea."""
+    r = await client.options(
+        "/v1/settings",
+        headers={"Origin": ORIGEN_PERMITIDO, "Access-Control-Request-Method": metodo},
+    )
+    assert r.status_code == 200, r.text
+    assert metodo in r.headers["access-control-allow-methods"]
+    assert r.headers["access-control-allow-origin"] == ORIGEN_PERMITIDO

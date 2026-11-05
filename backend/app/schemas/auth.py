@@ -87,3 +87,5 @@ class MeResponse(BaseModel):
     tenant: TenantResponse
     permissions: list[Permission]
     must_change_password: bool
+    #: El wizard de alta terminó (`tenant_settings.onboarding_completed_at`, PR 4.6).
+    onboarding_completed: bool

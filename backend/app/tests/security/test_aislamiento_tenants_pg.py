@@ -275,8 +275,8 @@ async def test_tabla_tenants_tiene_rls_y_el_rol_de_runtime_solo_ve_y_edita_el_pr
             async with conn.begin():
                 await conn.execute(text(f"SET LOCAL app.tenant_id = '{a['tenant']}'"))
                 await conn.execute(
-                    text("INSERT INTO tenants (id, name) VALUES (:i, 'intruso')"),
-                    {"i": uuid.uuid4()},
+                    text("INSERT INTO tenants (id, name, slug) VALUES (:i, 'intruso', :s)"),
+                    {"i": uuid.uuid4(), "s": f"intruso-{uuid.uuid4().hex[:6]}"},
                 )
     async with pg_admin_engine.connect() as conn:
         assert (

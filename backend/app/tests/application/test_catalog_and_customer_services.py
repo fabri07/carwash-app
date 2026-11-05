@@ -30,33 +30,38 @@ async def lav(db_session) -> Lavadero:
 
 
 @pytest.mark.parametrize(
-    ("modo", "precio", "bps", "error"),
+    ("modo", "precio", "error"),
     [
-        (PricingMode.PRECIO_FIJO, 100, 0, None),
-        (PricingMode.PRECIO_FIJO, 100, 5000, None),
-        (PricingMode.PRECIO_FIJO, None, 0, CatalogIncoherentError),
-        (PricingMode.A_COTIZAR, None, 0, None),
-        (PricingMode.A_COTIZAR, 100, 0, CatalogIncoherentError),
-        (PricingMode.A_COTIZAR, None, 1000, CatalogIncoherentError),
-        (PricingMode.PRECIO_FIJO, 0, 0, InvalidAmountError),
-        (PricingMode.PRECIO_FIJO, 100, 10_001, InvalidAmountError),
+        (PricingMode.PRECIO_FIJO, 100, None),
+        # D4-6: un servicio a cotizar también lleva precio base ("desde $X").
+        (PricingMode.A_COTIZAR, 100, None),
+        # Nada se crea sin precio, sea cual sea la modalidad.
+        (PricingMode.PRECIO_FIJO, None, CatalogIncoherentError),
+        (PricingMode.A_COTIZAR, None, CatalogIncoherentError),
+        (PricingMode.PRECIO_FIJO, 0, InvalidAmountError),
+        (PricingMode.A_COTIZAR, -1, InvalidAmountError),
     ],
 )
-def test_coherencia_modalidad_precio(modo, precio, bps, error):
+def test_coherencia_modalidad_precio(modo, precio, error):
     if error is None:
-        check_price_coherence(modo, precio, bps)
+        check_price_coherence(modo, precio)
     else:
         with pytest.raises(error):
-            check_price_coherence(modo, precio, bps)
+            check_price_coherence(modo, precio)
 
 
 async def test_set_price_crea_o_actualiza_y_valida(lav):
     precio = await lav.catalogo.set_price(
-        lav.lavado, lav.auto, price_cents=2_500_000, duration_min=75, deposit_bps=1000
+        lav.lavado, lav.auto, price_cents=2_500_000, duration_min=75
     )
-    assert (precio.price_cents, precio.duration_min, precio.deposit_bps) == (2_500_000, 75, 1000)
-    with pytest.raises(CatalogIncoherentError):  # [corregir] R-T-002: borrar el precio no
-        await lav.catalogo.set_price(lav.lavado, lav.auto, price_cents=None, duration_min=60)
+    assert (precio.price_cents, precio.duration_min) == (2_500_000, 75)
+    with pytest.raises(CatalogIncoherentError):  # [corregir] R-T-002 + D4-6: nunca sin precio
+        await lav.catalogo.set_price(
+            lav.lavado,
+            lav.auto,
+            price_cents=None,
+            duration_min=60,
+        )
     with pytest.raises(InvalidAmountError):
         await lav.catalogo.set_price(lav.lavado, lav.auto, price_cents=1, duration_min=0)
     with pytest.raises(NotFoundError):
@@ -66,13 +71,14 @@ async def test_set_price_crea_o_actualiza_y_valida(lav):
 
 
 async def test_cambiar_la_modalidad_revalida_los_precios(lav):
-    with pytest.raises(CatalogIncoherentError):
-        await lav.catalogo.change_pricing_mode(lav.lavado, PricingMode.A_COTIZAR)
-    servicio = await lav.catalogo.create_service("Pulido", PricingMode.A_COTIZAR, notes="Consultar")
-    await lav.catalogo.set_price(servicio.id, lav.auto, price_cents=None, duration_min=240)
-    with pytest.raises(CatalogIncoherentError):
-        await lav.catalogo.change_pricing_mode(servicio.id, PricingMode.PRECIO_FIJO)
+    # Con precio base en todas las filas (D4-6), cambiar la modalidad es coherente en los dos
+    # sentidos: lo que importa es que todo precio vivo siga siendo > 0.
+    cambiado = await lav.catalogo.change_pricing_mode(lav.lavado, PricingMode.A_COTIZAR)
+    assert cambiado.pricing_mode == PricingMode.A_COTIZAR
     await lav.catalogo.check_service(lav.lavado)
+    vuelve = await lav.catalogo.change_pricing_mode(lav.lavado, PricingMode.PRECIO_FIJO)
+    assert vuelve.pricing_mode == PricingMode.PRECIO_FIJO
+    # Un servicio sin ninguna fila de precio todavía no tiene nada que revalidar.
     sin_precios = await lav.catalogo.create_service("Nuevo", PricingMode.A_COTIZAR)
     cambiado = await lav.catalogo.change_pricing_mode(sin_precios.id, PricingMode.PRECIO_FIJO)
     assert cambiado.pricing_mode == PricingMode.PRECIO_FIJO

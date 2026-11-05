@@ -100,6 +100,14 @@ async def _poblar_en_sesion(session: AsyncSession, tenant_id: uuid.UUID) -> Lava
     """Lo mismo que `_poblar_dominio.poblar`, sobre la sesión del test (SQLite, rollback)."""
     ctx = _Contexto(tenant_id)
     for tabla in tablas_tenant():
+        if tabla.name == "tenant_settings":
+            # 1:1 con el tenant: `make_tenant` ya la creó (como `provision_tenant`).
+            existente = await session.scalar(
+                select(tabla.c.id).where(tabla.c.tenant_id == tenant_id)
+            )
+            if existente is not None:
+                ctx.ids[tabla.name] = existente
+                continue
         fila_id = uuid.uuid4()
         valores = {"id": fila_id, "tenant_id": tenant_id, **RECETAS[tabla.name](ctx)}
         await session.execute(insert(tabla).values(**valores))

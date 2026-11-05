@@ -16,6 +16,7 @@ const session = {
   tenant: { id: "t1", name: "Lavadero" },
   permissions: [],
   must_change_password: false,
+  onboarding_completed: false,
 };
 
 describe("authStore", () => {
@@ -51,6 +52,7 @@ describe("authStore", () => {
       ...session,
       permissions: ["AGENDA_VER"],
       must_change_password: true,
+      onboarding_completed: false,
     });
     expect(useAuthStore.getState().permissions).toEqual(["AGENDA_VER"]);
     expect(useAuthStore.getState().mustChangePassword).toBe(true);

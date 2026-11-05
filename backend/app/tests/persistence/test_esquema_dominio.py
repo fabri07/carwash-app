@@ -123,6 +123,11 @@ def test_los_checks_solo_de_postgres_son_los_que_sqlite_no_entiende():
     }
     assert solo_pg == {
         "ck_tenants_currency_iso",
+        # F4 (0005): regex sobre el slug y sobre los textos de configuración.
+        "ck_tenants_slug_formato",
+        "ck_tenant_settings_whatsapp_e164",
+        "ck_tenant_settings_paleta_formato",
+        "ck_tenant_settings_fuente_formato",
         "ck_vehicle_sizes_code_formato",
         "ck_payment_methods_code_formato",
         "ck_customers_telefono_e164",
@@ -147,11 +152,11 @@ def test_el_exclude_solo_se_emite_en_postgres():
 
 
 def test_los_estados_que_bloquean_son_los_del_contrato():
-    # La migración 0003 los congela en el WHERE del EXCLUDE: si el dominio cambia, este test
-    # avisa que hace falta una migración nueva.
+    # Las migraciones 0003 y 0005 los congelan en el WHERE del EXCLUDE: si el dominio cambia, este
+    # test avisa que hace falta una migración nueva. Desde la 0005 un turno a cotizar no ocupa el
+    # puesto (D4-13), así que `PENDIENTE_COTIZACION` no está.
     assert {s.value for s in BLOCKING_STATUSES} == {
         "PENDIENTE_SEÑA",
-        "PENDIENTE_COTIZACION",
         "CONFIRMADO",
         "RECIBIDO",
     }
@@ -221,6 +226,7 @@ async def alta_por_orm(
             position=0,
             service_name_snapshot=service.name,
             duration_min=60,
+            pricing_mode=service.pricing_mode,
             price_cents=2_000_000,
         )
     )
@@ -277,6 +283,7 @@ async def alta_por_orm(
         position=0,
         service_name_snapshot=service.name,
         duration_min=60,
+        pricing_mode=service.pricing_mode,
         price_cents=2_000_000,
     )
     session.add_all([event, payment, item])

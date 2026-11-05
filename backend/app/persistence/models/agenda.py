@@ -22,9 +22,11 @@ from app.domain.enums import (
     BOOKING_SOURCE_ENUM,
     BOOKING_STATUS_ENUM,
     CHANNEL_ENUM,
+    PRICING_MODE_ENUM,
     BookingSource,
     BookingStatus,
     Channel,
+    PricingMode,
 )
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.models._constraints import (
@@ -48,9 +50,8 @@ BLOCKING_STATUSES: tuple[BookingStatus, ...] = tuple(
     s for s in BookingStatus if s in BLOCKING_BOOKING_STATUSES
 )
 _BLOCKING_SQL = ", ".join(f"'{s.value}'" for s in BLOCKING_STATUSES)
-_HOLD_STATUSES_SQL = f"'{BookingStatus.PENDIENTE_SENA.value}', " + (
-    f"'{BookingStatus.PENDIENTE_COTIZACION.value}'"
-)
+#: Solo `PENDIENTE_SEÑA` tiene hold (D4-15): `PENDIENTE_COTIZACION` vence con su cotización.
+_HOLD_STATUSES_SQL = f"'{BookingStatus.PENDIENTE_SENA.value}'"
 
 
 class Booking(TenantScopedModel):
@@ -77,7 +78,8 @@ class Booking(TenantScopedModel):
         # [corregir] R-T-020: el código de turno no tenía unicidad.
         unique_alive("bookings", "code"),
         check("end_at > start_at", "rango_valido"),
-        # [corregir] C-03: la cotización pendiente tapaba el horario para siempre.
+        # [corregir] C-03: la cotización pendiente tapaba el horario para siempre. Desde la F4
+        # (D4-13) ni siquiera lo ocupa: no está en el `WHERE` del EXCLUDE.
         check(
             f"status NOT IN ({_HOLD_STATUSES_SQL}) OR hold_expires_at IS NOT NULL",
             "hold_obligatorio",
@@ -112,7 +114,7 @@ class Booking(TenantScopedModel):
     resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    #: Vence la retención de un `PENDIENTE_SEÑA` o `PENDIENTE_COTIZACION`.
+    #: Vence la retención de un `PENDIENTE_SEÑA`. NULL en los demás estados (D4-15).
     hold_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Toda captura crea o resuelve cliente (R-C-012).
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -122,7 +124,8 @@ class Booking(TenantScopedModel):
     #: Total snapshot de los ítems (adenda C1): el bloqueo usa esta copia, no la duración
     #: actual del catálogo (R-T-012).
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
-    #: Total snapshot de los ítems; NULL mientras haya un ítem a cotizar.
+    #: Total snapshot de los ítems. Con un ítem a cotizar suma su precio **base** hasta que
+    #: se acepta la cotización (D4-6); el NULL solo queda en turnos anteriores a la F4.
     price_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     #: Suma de la seña de cada ítem.
     deposit_required_cents: Mapped[int] = mapped_column(
@@ -141,7 +144,8 @@ class Booking(TenantScopedModel):
 class BookingItem(TenantScopedModel):
     """Un servicio del turno (adenda C1): los servicios se suman. Snapshot del catálogo.
 
-    A lo sumo uno es a cotizar (`price_cents` NULL); lo valida `BookingService`.
+    A lo sumo uno es a cotizar (`pricing_mode = A_COTIZAR`); lo valida `BookingService`. Todo
+    ítem lleva precio: en el cotizado es el **base** y el final vive en la cotización (D4-6).
     """
 
     __tablename__ = "booking_items"
@@ -152,10 +156,8 @@ class BookingItem(TenantScopedModel):
         tenant_index("booking_items", "service_id"),
         unique_alive("booking_items", "booking_id", "service_id"),
         check("duration_min > 0", "duracion_positiva"),
-        check("price_cents IS NULL OR price_cents > 0", "precio_positivo"),
+        check("price_cents > 0", "precio_positivo"),
         check("deposit_bps BETWEEN 0 AND 10000", "sena_bps_rango"),
-        # [corregir] R-C-032: sin precio no hay seña.
-        check("price_cents IS NOT NULL OR deposit_bps = 0", "sin_precio_sin_sena"),
     )
 
     booking_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -164,8 +166,15 @@ class BookingItem(TenantScopedModel):
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     service_name_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
-    #: NULL mientras sea a cotizar.
-    price_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: Modalidad del servicio al reservar (snapshot): así se reconoce el ítem a cotizar sin
+    #: depender de que su precio sea NULL.
+    pricing_mode: Mapped[PricingMode] = mapped_column(
+        pg_enum(PricingMode, PRICING_MODE_ENUM), nullable=False
+    )
+    #: Precio base del catálogo (en un ítem cotizado es referencia: "desde $X").
+    price_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    #: ÚNICO snapshot de la seña: el % del negocio si la seña estaba activa al reservar, 0 si
+    #: no. El ítem cotizado lo guarda igual, pero su seña es 0 hasta aceptar la cotización.
     deposit_bps: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 

@@ -18,6 +18,7 @@ segunda). Es gratis y no se saca.
 
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +85,9 @@ class BaseRepository[ModelT: TenantScopedModel]:
         limit: int = 50,
         offset: int = 0,
         include_voided: bool = False,
+        order_by: tuple[ColumnElement[Any], ...] | None = None,
     ) -> Page[ModelT]:
+        """`order_by` reemplaza el orden por defecto (más nuevo primero); `id` desempata siempre."""
         scope = self._scope(tenant_id, include_voided)
         total = await self._session.scalar(
             select(func.count()).select_from(self.model).where(*scope)
@@ -93,7 +96,7 @@ class BaseRepository[ModelT: TenantScopedModel]:
             select(self.model)
             .where(*scope)
             # Orden determinista: uuid4 no es ordenable en el tiempo (ADR-0004).
-            .order_by(self.model.created_at.desc(), self.model.id.desc())
+            .order_by(*(order_by or (self.model.created_at.desc(),)), self.model.id.desc())
             .limit(limit)
             .offset(offset)
         )
