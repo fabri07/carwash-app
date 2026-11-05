@@ -5,7 +5,13 @@ import { toast as sonner } from "sonner";
 
 import { AuthHydrationBoundary } from "@/components/auth/AuthHydrationBoundary";
 import { Header, getInitials, getPageLabel } from "@/components/layout/Header";
-import { NAV_ITEMS, Sidebar, isActive, visibleNavItems } from "@/components/layout/Sidebar";
+import {
+  NAV_ITEMS,
+  Sidebar,
+  activeItem,
+  isActive,
+  visibleNavItems,
+} from "@/components/layout/Sidebar";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 import { ToastBridge } from "@/components/ToastBridge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -106,6 +112,23 @@ describe("EmptyState", () => {
   });
 });
 
+describe("activeItem", () => {
+  it("elige el ítem de href más largo: /configuracion/equipo no marca Negocio", () => {
+    expect(activeItem("/configuracion", NAV_ITEMS)?.label).toBe("Negocio");
+    expect(activeItem("/configuracion/equipo", NAV_ITEMS)?.label).toBe("Equipo");
+    expect(activeItem("/dashboard", NAV_ITEMS)?.label).toBe("Inicio");
+    expect(activeItem("/otra", NAV_ITEMS)).toBeUndefined();
+  });
+
+  it("Negocio lo ve el dueño o quien edita el catálogo", () => {
+    const labels = (role: "OWNER" | "STAFF", perms: Parameters<typeof visibleNavItems>[2]) =>
+      visibleNavItems(NAV_ITEMS, { role }, perms).map((i) => i.label);
+    expect(labels("OWNER", [])).toEqual(["Inicio", "Negocio", "Equipo"]);
+    expect(labels("STAFF", ["CATALOGO_EDITAR"])).toEqual(["Inicio", "Negocio"]);
+    expect(labels("STAFF", ["AGENDA_VER"])).toEqual(["Inicio"]);
+  });
+});
+
 describe("Sidebar", () => {
   it("marca el ítem activo y colapsa en escritorio", async () => {
     nav.pathname = "/dashboard";
@@ -162,6 +185,7 @@ describe("Sidebar", () => {
     ]);
     expect(visibleNavItems(items, { role: "OWNER" }, []).map((i) => i.label)).toEqual([
       "Inicio",
+      "Negocio",
       "Equipo",
       "Caja",
     ]);

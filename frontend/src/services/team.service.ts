@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { PageParams } from "@/services/pagination";
 import type {
   PaginatedResponse,
   PermissionProfile,
@@ -18,10 +19,7 @@ import type {
  * tras un timeout) no crea dos empleados. El replay vuelve con 409
  * `DUPLICATE_IDEMPOTENT`, que quien llama trata como "ya estaba hecho".
  */
-export interface PageParams {
-  limit: number;
-  offset: number;
-}
+export type { PageParams };
 
 function idempotencyHeaders(key?: string) {
   return key ? { headers: { "Idempotency-Key": key } } : undefined;

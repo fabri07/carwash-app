@@ -33,6 +33,7 @@ describe("authStore", () => {
       tenant: session.tenant,
       permissions: [],
       mustChangePassword: false,
+      permissionsLoaded: true,
     });
     expect(Sentry.setUser).toHaveBeenCalledWith({ id: "u1" });
     expect(Sentry.setTag).toHaveBeenCalledWith("tenant_id", "t1");
@@ -62,6 +63,15 @@ describe("authStore", () => {
     expect(useAuthStore.getState().mustChangePassword).toBe(false);
     useAuthStore.getState().clear();
     expect(useAuthStore.getState().permissions).toEqual([]);
+  });
+
+  it("permissionsLoaded marca que ya llegó la sesión y no se persiste", () => {
+    expect(useAuthStore.getState().permissionsLoaded).toBe(false);
+    useAuthStore.getState().setSession(session);
+    expect(useAuthStore.getState().permissionsLoaded).toBe(true);
+    expect(window.localStorage.getItem("carwash_auth")).not.toMatch(/permissionsLoaded/);
+    useAuthStore.getState().clear();
+    expect(useAuthStore.getState().permissionsLoaded).toBe(false);
   });
 
   it("clear limpia el estado y el contexto de Sentry", () => {

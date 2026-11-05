@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { NAV_ITEMS, isActive } from "@/components/layout/Sidebar";
+import { NAV_ITEMS, activeItem } from "@/components/layout/Sidebar";
 import { useLogout } from "@/features/auth/useLogout";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -21,7 +21,7 @@ import { useAuthStore } from "@/stores/authStore";
  * sacan notificaciones y el acceso a configuración. Targets de 44px.
  */
 export function getPageLabel(pathname: string): string {
-  return NAV_ITEMS.find((item) => isActive(pathname, item.href))?.label ?? "";
+  return activeItem(pathname, NAV_ITEMS)?.label ?? "";
 }
 
 export function getInitials(name: string): string {

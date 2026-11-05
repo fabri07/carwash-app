@@ -94,6 +94,39 @@ export function teamError(e: unknown): FieldError {
   return known ?? { field: null, message: genericMessage(e) };
 }
 
+/**
+ * Errores de la configuración del negocio y el catálogo: el 409 va al campo que
+ * lo causó; `IN_USE` queda en el diálogo de borrado.
+ */
+const CONFIG_ERRORS: Partial<Record<ApiErrorCode, FieldError>> = {
+  CODE_TAKEN: { field: "code", message: "Ya existe uno con ese código. Probá con otro." },
+  SLUG_TAKEN: { field: "slug", message: "Esa dirección ya la usa otro negocio. Probá con otra." },
+  SLUG_RESERVED: { field: "slug", message: "Esa dirección está reservada. Probá con otra." },
+  NAME_TAKEN: { field: "name", message: "Ya existe uno con ese nombre." },
+  IN_USE: {
+    field: null,
+    message:
+      "No se puede quitar porque todavía se usa: un tamaño con precios, un puesto con turnos próximos o el último medio de pago.",
+  },
+};
+
+export function configError(e: unknown): FieldError {
+  const code = apiErrorCode(e);
+  const known = code ? CONFIG_ERRORS[code] : undefined;
+  if (known) return known;
+  // 422 por franjas que se pisan: el backend no manda un código propio, solo el motivo.
+  if (code === "VALIDATION_ERROR" && axios.isAxiosError(e)) {
+    const message = (e.response?.data as Partial<ApiError> | undefined)?.detail?.message ?? "";
+    if (/overlaps/i.test(message)) {
+      return {
+        field: null,
+        message: "Esa franja se pisa con otra del mismo día. Ajustá las horas o editá la otra.",
+      };
+    }
+  }
+  return { field: null, message: genericMessage(e) };
+}
+
 /** Errores del cambio de clave propio (`POST /auth/change-password`). */
 export function changePasswordError(e: unknown): FieldError {
   const code = apiErrorCode(e);

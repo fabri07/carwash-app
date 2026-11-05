@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Droplets,
   LayoutDashboard,
+  Settings,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -42,6 +43,13 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Inicio", href: "/dashboard", icon: LayoutDashboard },
   {
+    label: "Negocio",
+    href: "/configuracion",
+    icon: Settings,
+    section: "Configuración",
+    permission: "CATALOGO_EDITAR",
+  },
+  {
     label: "Equipo",
     href: "/configuracion/equipo",
     icon: Users,
@@ -71,15 +79,31 @@ export function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/**
+ * El ítem que corresponde a la ruta: el de `href` más largo que coincide. Sin esto,
+ * `/configuracion/equipo` marcaría también "Negocio" (`/configuracion`).
+ */
+export function activeItem<T extends { href: string }>(
+  pathname: string,
+  items: T[],
+): T | undefined {
+  return items.reduce<T | undefined>(
+    (best, item) =>
+      isActive(pathname, item.href) && (!best || item.href.length > best.href.length) ? item : best,
+    undefined,
+  );
+}
+
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const permissions = useAuthStore((s) => s.permissions);
   const items = visibleNavItems(NAV_ITEMS, user, permissions);
+  const current = activeItem(pathname, items);
   return (
     <nav aria-label="Principal" className="flex flex-1 flex-col gap-1 p-2">
       {items.map(({ label, href, icon: Icon, section }, i) => {
-        const active = isActive(pathname, href);
+        const active = current?.href === href;
         const startsSection = section !== undefined && section !== items[i - 1]?.section;
         return (
           <div key={href} className="contents">

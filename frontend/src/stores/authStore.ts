@@ -24,6 +24,8 @@ interface AuthState {
   permissions: PermissionCode[];
   /** Mientras sea `true`, la única pantalla útil es `/cambiar-clave`. */
   mustChangePassword: boolean;
+  /** `true` cuando ya llegó una sesión del servidor: antes, `permissions` vacío no significa "sin permisos". */
+  permissionsLoaded: boolean;
   _hasHydrated: boolean;
   /** Guarda lo que devuelven login, registro, refresh y `/auth/me`. */
   setSession: (session: AuthResponse) => void;
@@ -53,16 +55,29 @@ export const useAuthStore = create<AuthState>()(
       tenant: null,
       permissions: [],
       mustChangePassword: false,
+      permissionsLoaded: false,
       _hasHydrated: false,
       setSession: ({ user, tenant, permissions, must_change_password }) => {
         syncSentryContext(user);
-        set({ user, tenant, permissions, mustChangePassword: must_change_password });
+        set({
+          user,
+          tenant,
+          permissions,
+          mustChangePassword: must_change_password,
+          permissionsLoaded: true,
+        });
       },
       setHasHydrated: (state) => set({ _hasHydrated: state }),
       setMustChangePassword: (value) => set({ mustChangePassword: value }),
       clear: () => {
         syncSentryContext(null);
-        set({ user: null, tenant: null, permissions: [], mustChangePassword: false });
+        set({
+          user: null,
+          tenant: null,
+          permissions: [],
+          mustChangePassword: false,
+          permissionsLoaded: false,
+        });
       },
     }),
     {

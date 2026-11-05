@@ -36,6 +36,22 @@ export type StaffCreatePayload = Schemas["StaffCreate"];
 export type StaffPatch = Schemas["StaffUpdate"];
 export type StaffPasswordPayload = Schemas["StaffPasswordReset"];
 
+// Configuración (PR 4.2): el negocio y el catálogo editable.
+export type BusinessSettings = Schemas["SettingsResponse"];
+export type BusinessSettingsPatch = Schemas["SettingsUpdate"];
+export type VehicleSize = Schemas["VehicleSizeResponse"];
+export type VehicleSizePayload = Schemas["VehicleSizeCreate"];
+export type VehicleSizePatch = Schemas["VehicleSizeUpdate"];
+export type Resource = Schemas["ResourceResponse"];
+export type ResourcePayload = Schemas["ResourceCreate"];
+export type ResourcePatch = Schemas["ResourceUpdate"];
+export type BusinessHours = Schemas["BusinessHoursResponse"];
+export type BusinessHoursPayload = Schemas["BusinessHoursCreate"];
+export type BusinessHoursPatch = Schemas["BusinessHoursUpdate"];
+export type PaymentMethod = Schemas["PaymentMethodResponse"];
+export type PaymentMethodPayload = Schemas["PaymentMethodCreate"];
+export type PaymentMethodPatch = Schemas["PaymentMethodUpdate"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];
