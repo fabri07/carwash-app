@@ -117,14 +117,16 @@ describe("activeItem", () => {
     expect(activeItem("/configuracion", NAV_ITEMS)?.label).toBe("Negocio");
     expect(activeItem("/configuracion/equipo", NAV_ITEMS)?.label).toBe("Equipo");
     expect(activeItem("/dashboard", NAV_ITEMS)?.label).toBe("Inicio");
+    expect(activeItem("/catalogo", NAV_ITEMS)?.label).toBe("Catálogo");
     expect(activeItem("/otra", NAV_ITEMS)).toBeUndefined();
   });
 
-  it("Negocio lo ve el dueño o quien edita el catálogo", () => {
+  it("Catálogo y Negocio los ve el dueño o quien edita el catálogo", () => {
     const labels = (role: "OWNER" | "STAFF", perms: Parameters<typeof visibleNavItems>[2]) =>
       visibleNavItems(NAV_ITEMS, { role }, perms).map((i) => i.label);
-    expect(labels("OWNER", [])).toEqual(["Inicio", "Negocio", "Equipo"]);
-    expect(labels("STAFF", ["CATALOGO_EDITAR"])).toEqual(["Inicio", "Negocio"]);
+    expect(labels("OWNER", [])).toEqual(["Inicio", "Catálogo", "Negocio", "Equipo"]);
+    expect(labels("STAFF", ["CATALOGO_EDITAR"])).toEqual(["Inicio", "Catálogo", "Negocio"]);
+    expect(labels("STAFF", ["PRECIOS_EDITAR"])).toEqual(["Inicio", "Catálogo"]);
     expect(labels("STAFF", ["AGENDA_VER"])).toEqual(["Inicio"]);
   });
 });
@@ -185,6 +187,7 @@ describe("Sidebar", () => {
     ]);
     expect(visibleNavItems(items, { role: "OWNER" }, []).map((i) => i.label)).toEqual([
       "Inicio",
+      "Catálogo",
       "Negocio",
       "Equipo",
       "Caja",
@@ -201,6 +204,7 @@ describe("Sidebar", () => {
 describe("Header", () => {
   it("helpers", () => {
     expect(getPageLabel("/dashboard")).toBe("Inicio");
+    expect(getPageLabel("/catalogo")).toBe("Catálogo");
     expect(getPageLabel("/otra")).toBe("");
     expect(getPageLabel("/configuracion/equipo")).toBe("Equipo");
     expect(getInitials("Sola CleanCars")).toBe("SC");

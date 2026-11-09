@@ -47,7 +47,7 @@ export interface CrudApi<R, C, U> {
   remove: (id: string) => Promise<void>;
 }
 
-function crud<R, C, U>(path: string): CrudApi<R, C, U> {
+export function crud<R, C, U>(path: string): CrudApi<R, C, U> {
   return {
     async list(params) {
       const res = await api.get<PaginatedResponse<R>>(path, { params });

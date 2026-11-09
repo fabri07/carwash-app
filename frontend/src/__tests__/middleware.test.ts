@@ -74,7 +74,7 @@ describe("middleware (ADR-0009)", () => {
   });
 
   it("protege configuración, onboarding y el cambio de clave (FASE 4)", () => {
-    for (const p of ["/configuracion/equipo", "/onboarding", "/cambiar-clave"]) {
+    for (const p of ["/configuracion/equipo", "/catalogo", "/onboarding", "/cambiar-clave"]) {
       const res = middleware(req(p));
       expect(res.status).toBe(307);
       expect(res.headers.get("location")).toBe(`${APP}/login?next=${encodeURIComponent(p)}`);
