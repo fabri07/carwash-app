@@ -59,13 +59,15 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 
 from app.application.services import (  # noqa: E402
     BookingService,
-    CatalogService,
     CustomerService,
     DepositResolutionService,
     JobService,
     PaymentInput,
     QuoteService,
     VehicleService,
+)
+from app.application.services.service_catalog_service import (  # noqa: E402
+    ServiceCatalogService,
 )
 from app.application.services.tenant_provisioning import provision_tenant  # noqa: E402
 from app.domain.enums import (  # noqa: E402
@@ -203,7 +205,7 @@ async def _seed_domain(
     if ya:
         return False
 
-    catalogo = CatalogService(session, tenant_id, owner_id)
+    catalogo = ServiceCatalogService(session, tenant_id, owner_id)
     auto = await catalogo.create_vehicle_size("AUTO", "Auto")
     suv = await catalogo.create_vehicle_size("SUV", "SUV", sort_order=1)
     lavado = await catalogo.create_service("Lavado completo", PricingMode.PRECIO_FIJO)
@@ -212,6 +214,17 @@ async def _seed_domain(
     tapizado = await catalogo.create_service(
         "Limpieza de tapizados", PricingMode.A_COTIZAR, notes="Se cotiza al ver el auto"
     )
+    # F4.3: las categorías del negocio (las del glosario: una por sección).
+    cat_lavado = await catalogo.create_category("Lavado", sort_order=1)
+    cat_interior = await catalogo.create_category("Interior", sort_order=2)
+    for servicio, categoria in (
+        (lavado, cat_lavado),
+        (premium, cat_lavado),
+        (motor, cat_lavado),
+        (tapizado, cat_interior),
+    ):
+        servicio.category_id = categoria.id
+    await session.flush()
     for size, extra in ((auto, 0), (suv, 500_000)):
         await catalogo.set_price(lavado.id, size.id, price_cents=2_000_000 + extra, duration_min=60)
         await catalogo.set_price(motor.id, size.id, price_cents=800_000 + extra, duration_min=30)

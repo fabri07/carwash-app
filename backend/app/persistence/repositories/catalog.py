@@ -13,6 +13,7 @@ from app.persistence.models.catalog import (
     PaymentMethod,
     Resource,
     Service,
+    ServiceCategory,
     ServicePrice,
     VehicleSize,
 )
@@ -25,6 +26,10 @@ class VehicleSizeRepository(BaseRepository[VehicleSize]):
 
 class ServiceRepository(BaseRepository[Service]):
     model = Service
+
+
+class ServiceCategoryRepository(BaseRepository[ServiceCategory]):
+    model = ServiceCategory
 
 
 class ServicePriceRepository(BaseRepository[ServicePrice]):

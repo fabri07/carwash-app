@@ -34,6 +34,10 @@ class AlreadyExistsError(DomainError):
     """Choque con un único "entre vivos" (código, nombre, patente, teléfono)."""
 
 
+class GlossaryCodeTakenError(AlreadyExistsError):
+    """Ya hay un servicio vivo del negocio con ese `glossary_code` (la plantilla no duplica)."""
+
+
 class InUseError(DomainError):
     """La fila que se quiere anular todavía la usan otras (turnos futuros, precios vivos, último
     medio de pago). La API la traduce a 409 `IN_USE`."""

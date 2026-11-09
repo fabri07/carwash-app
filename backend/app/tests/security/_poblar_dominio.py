@@ -87,8 +87,14 @@ RECETAS: dict[str, Receta] = {
     "tenant_settings": lambda c: {"address": f"Calle Falsa {c.tag}"},
     # ── 1.1 Catálogo ──
     "vehicle_sizes": lambda c: {"code": f"AUTO_{c.TAG}", "label": "Auto", "sort_order": 1},
+    # ── F4 · servicios ── la categoría va antes que el servicio (FK compuesta).
+    "service_categories": lambda c: {"name": f"Lavado {c.tag}", "sort_order": 1},
     "services": lambda c: {
         "name": f"Lavado completo {c.tag}",
+        "category_id": c["service_categories"],
+        # `glossary_code` único entre vivos: lleva el tag del tenant, como los demás únicos.
+        "glossary_code": f"lavado_completo_{c.tag}",
+        "search_key": f"lavado completo {c.tag}",
         "pricing_mode": "PRECIO_FIJO",
         "notes": "sintético",
     },

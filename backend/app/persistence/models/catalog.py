@@ -9,9 +9,11 @@ from datetime import time
 
 from sqlalchemy import BigInteger, Boolean, Integer, SmallInteger, Text, Time, text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.engine.default import DefaultExecutionContext
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.enums import PRICING_MODE_ENUM, PricingMode
+from app.domain.search import normalize
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.models._constraints import (
     check,
@@ -43,16 +45,58 @@ class VehicleSize(TenantScopedModel):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
+#: Largo máximo del nombre de una categoría (CHECK `nombre_largo`).
+CATEGORY_NAME_MAX = 60
+
+
+class ServiceCategory(TenantScopedModel):
+    """Categoría de servicios del negocio (FASE-4-CONTRATO §3.3): "Lavado", "Interior"…
+
+    Las propone la plantilla (una por sección del glosario) pero son del tenant: se crean,
+    renombran y anulan como cualquier otra. Anular una con servicios vivos es 409 `IN_USE`.
+    """
+
+    __tablename__ = "service_categories"
+    __table_args__ = voidable_table_args(
+        parent_key(),
+        unique_alive("service_categories", "name"),
+        check(f"length(name) BETWEEN 1 AND {CATEGORY_NAME_MAX}", "nombre_largo"),
+    )
+
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+def _search_key_of_name(context: DefaultExecutionContext) -> str:
+    """Default de Python de `services.search_key`: `normalize(name)` de la misma fila.
+
+    Sirve al ORM y a un `insert()` de Core (el poblador de tests); el servicio igual lo fija a
+    mano al crear y renombrar, para que el valor no dependa de este default.
+    """
+    params = context.get_current_parameters()  # type: ignore[no-untyped-call]
+    return normalize(str(params["name"]))
+
+
 class Service(TenantScopedModel):
     """D-006. La modalidad es explícita: borrar el precio NO lo vuelve "a cotizar" (R-T-002)."""
 
     __tablename__ = "services"
     __table_args__ = voidable_table_args(
         parent_key(),
+        tenant_fk("category_id", "service_categories"),
+        tenant_index("services", "category_id"),
         unique_alive("services", "name"),
+        # Un servicio vivo por término del glosario: lo que hace idempotente a la plantilla (Y6).
+        # Los NULL no chocan entre sí, así que los servicios propios no se ven afectados.
+        unique_alive("services", "glossary_code"),
     )
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    #: Código del término en `app/data/glosario.json` (`None` = servicio propio del negocio).
+    glossary_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: `normalize(name)`: lo que lee la búsqueda (Y8). La base no lo calcula.
+    search_key: Mapped[str] = mapped_column(Text, nullable=False, default=_search_key_of_name)
     pricing_mode: Mapped[PricingMode] = mapped_column(
         pg_enum(PricingMode, PRICING_MODE_ENUM), nullable=False
     )

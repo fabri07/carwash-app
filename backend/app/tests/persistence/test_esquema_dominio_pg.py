@@ -84,7 +84,12 @@ async def _sembrar(engine: AsyncEngine, tenant: uuid.UUID, user: uuid.UUID) -> L
             user=user,
             size=await _insert(conn, "vehicle_sizes", **t, code="AUTO", label="Auto"),
             service=await _insert(
-                conn, "services", **t, name="Lavado completo", pricing_mode="PRECIO_FIJO"
+                conn,
+                "services",
+                **t,
+                name="Lavado completo",
+                search_key="lavado completo",
+                pricing_mode="PRECIO_FIJO",
             ),
             resource=await _insert(conn, "resources", **t, name="Puesto 1"),
             resource_2=await _insert(conn, "resources", **t, name="Puesto 2"),
