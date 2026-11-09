@@ -7,27 +7,15 @@ Recurso ajeno o inexistente → el mismo 404.
 """
 
 import uuid
-from collections.abc import Coroutine
-from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Response, status
 
-from app.api.v1.deps import AuthenticatedUser, DbSession, require_permission
-from app.api.v1.errors import (
-    ERROR_RESPONSES,
-    IDEMPOTENT_RESPONSES,
-    ApiError,
-    IdempotencyKeyHeader,
-    duplicate_idempotent,
-    not_found,
-)
+from app.api.v1._shared import EditorUser, guard, once, taken
+from app.api.v1.deps import AuthenticatedUser, DbSession
+from app.api.v1.errors import ERROR_RESPONSES, IDEMPOTENT_RESPONSES, IdempotencyKeyHeader
 from app.api.v1.pagination import Paginacion
-from app.application.idempotency import claim_idempotency_key
 from app.application.services.catalog_service import CatalogService
-from app.application.services.errors import AlreadyExistsError, InUseError, NotFoundError
 from app.domain.errors import ErrorCode
-from app.domain.exceptions import InvalidAmountError
-from app.domain.permissions import Permission
 from app.persistence.models.catalog import BusinessHours, PaymentMethod, Resource, VehicleSize
 from app.persistence.models.user import User
 from app.schemas.catalog import (
@@ -46,41 +34,9 @@ from app.schemas.catalog import (
 )
 from app.schemas.common import PaginatedResponse
 
-#: Escritura del catálogo. Las lecturas usan `AuthenticatedUser`.
-EditorUser = Annotated[User, Depends(require_permission(Permission.CATALOGO_EDITAR))]
-
 
 def _service(session: DbSession, user: User) -> CatalogService:
     return CatalogService(session, user.tenant_id, user.id)
-
-
-def _invalid(exc: InvalidAmountError) -> ApiError:
-    return ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, ErrorCode.VALIDATION_ERROR, str(exc))
-
-
-def _taken(code: ErrorCode, what: str) -> ApiError:
-    return ApiError(status.HTTP_409_CONFLICT, code, f"{what} already exists.")
-
-
-async def _once(session: DbSession, user: User, key: str | None, scope: str) -> None:
-    if key is not None and not await claim_idempotency_key(session, user.tenant_id, key, scope):
-        raise duplicate_idempotent()
-
-
-async def _guard[T](call: Coroutine[Any, Any, T], on_taken: ApiError | None = None) -> T:
-    """Traduce los errores de servicio comunes a la API: 404 uniforme, 409 y 422."""
-    try:
-        return await call
-    except NotFoundError as exc:
-        raise not_found() from exc
-    except AlreadyExistsError as exc:
-        if on_taken is None:  # pragma: no cover  # toda ruta con único pasa su error
-            raise
-        raise on_taken from exc
-    except InUseError as exc:
-        raise ApiError(status.HTTP_409_CONFLICT, ErrorCode.IN_USE, str(exc)) from exc
-    except InvalidAmountError as exc:
-        raise _invalid(exc) from exc
 
 
 # ── /vehicle-sizes ───────────────────────────────────────────────────────────
@@ -115,10 +71,10 @@ async def create_vehicle_size(
     user: EditorUser,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> VehicleSize:
-    await _once(session, user, idempotency_key, "vehicle_sizes.create")
-    return await _guard(
+    await once(session, user, idempotency_key, "vehicle_sizes.create")
+    return await guard(
         _service(session, user).create_vehicle_size(body.code, body.label, body.sort_order),
-        _taken(ErrorCode.CODE_TAKEN, "A size with that code"),
+        taken(ErrorCode.CODE_TAKEN, "A size with that code"),
     )
 
 
@@ -126,7 +82,7 @@ async def create_vehicle_size(
 async def get_vehicle_size(
     id: uuid.UUID, user: AuthenticatedUser, session: DbSession
 ) -> VehicleSize:
-    return await _guard(_service(session, user).get_vehicle_size(id))
+    return await guard(_service(session, user).get_vehicle_size(id))
 
 
 @vehicle_sizes.patch("/{id}", response_model=VehicleSizeResponse, responses=IDEMPOTENT_RESPONSES)
@@ -136,7 +92,7 @@ async def update_vehicle_size(
     session: DbSession,
     user: EditorUser,
 ) -> VehicleSize:
-    return await _guard(
+    return await guard(
         _service(session, user).update_vehicle_size(
             id, label=body.label, sort_order=body.sort_order
         )
@@ -147,7 +103,7 @@ async def update_vehicle_size(
     "/{id}", status_code=status.HTTP_204_NO_CONTENT, responses=IDEMPOTENT_RESPONSES
 )
 async def delete_vehicle_size(id: uuid.UUID, session: DbSession, user: EditorUser) -> Response:
-    await _guard(_service(session, user).void_vehicle_size(id))
+    await guard(_service(session, user).void_vehicle_size(id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -181,16 +137,16 @@ async def create_resource(
     user: EditorUser,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> Resource:
-    await _once(session, user, idempotency_key, "resources.create")
-    return await _guard(
+    await once(session, user, idempotency_key, "resources.create")
+    return await guard(
         _service(session, user).create_resource(body.name, body.sort_order),
-        _taken(ErrorCode.NAME_TAKEN, "A station with that name"),
+        taken(ErrorCode.NAME_TAKEN, "A station with that name"),
     )
 
 
 @resources.get("/{id}", response_model=ResourceResponse, responses=ERROR_RESPONSES)
 async def get_resource(id: uuid.UUID, user: AuthenticatedUser, session: DbSession) -> Resource:
-    return await _guard(_service(session, user).get_resource(id))
+    return await guard(_service(session, user).get_resource(id))
 
 
 @resources.patch("/{id}", response_model=ResourceResponse, responses=IDEMPOTENT_RESPONSES)
@@ -200,15 +156,15 @@ async def update_resource(
     session: DbSession,
     user: EditorUser,
 ) -> Resource:
-    return await _guard(
+    return await guard(
         _service(session, user).update_resource(id, name=body.name, sort_order=body.sort_order),
-        _taken(ErrorCode.NAME_TAKEN, "A station with that name"),
+        taken(ErrorCode.NAME_TAKEN, "A station with that name"),
     )
 
 
 @resources.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, responses=IDEMPOTENT_RESPONSES)
 async def delete_resource(id: uuid.UUID, session: DbSession, user: EditorUser) -> Response:
-    await _guard(_service(session, user).void_resource(id))
+    await guard(_service(session, user).void_resource(id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -244,8 +200,8 @@ async def create_business_hours(
     user: EditorUser,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> BusinessHours:
-    await _once(session, user, idempotency_key, "business_hours.create")
-    return await _guard(
+    await once(session, user, idempotency_key, "business_hours.create")
+    return await guard(
         _service(session, user).add_business_hours(body.weekday, body.opens_at, body.closes_at)
     )
 
@@ -254,7 +210,7 @@ async def create_business_hours(
 async def get_business_hours(
     id: uuid.UUID, user: AuthenticatedUser, session: DbSession
 ) -> BusinessHours:
-    return await _guard(_service(session, user).get_business_hours(id))
+    return await guard(_service(session, user).get_business_hours(id))
 
 
 @business_hours.patch("/{id}", response_model=BusinessHoursResponse, responses=IDEMPOTENT_RESPONSES)
@@ -264,7 +220,7 @@ async def update_business_hours(
     session: DbSession,
     user: EditorUser,
 ) -> BusinessHours:
-    return await _guard(
+    return await guard(
         _service(session, user).update_business_hours(
             id, weekday=body.weekday, opens_at=body.opens_at, closes_at=body.closes_at
         )
@@ -275,7 +231,7 @@ async def update_business_hours(
     "/{id}", status_code=status.HTTP_204_NO_CONTENT, responses=IDEMPOTENT_RESPONSES
 )
 async def delete_business_hours(id: uuid.UUID, session: DbSession, user: EditorUser) -> Response:
-    await _guard(_service(session, user).void_business_hours(id))
+    await guard(_service(session, user).void_business_hours(id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -313,8 +269,8 @@ async def create_payment_method(
     user: EditorUser,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> PaymentMethod:
-    await _once(session, user, idempotency_key, "payment_methods.create")
-    return await _guard(
+    await once(session, user, idempotency_key, "payment_methods.create")
+    return await guard(
         _service(session, user).create_payment_method(
             body.code,
             body.label,
@@ -323,7 +279,7 @@ async def create_payment_method(
             for_income=body.for_income,
             for_expense=body.for_expense,
         ),
-        _taken(ErrorCode.CODE_TAKEN, "A payment method with that code"),
+        taken(ErrorCode.CODE_TAKEN, "A payment method with that code"),
     )
 
 
@@ -331,7 +287,7 @@ async def create_payment_method(
 async def get_payment_method(
     id: uuid.UUID, user: AuthenticatedUser, session: DbSession
 ) -> PaymentMethod:
-    return await _guard(_service(session, user).get_payment_method(id))
+    return await guard(_service(session, user).get_payment_method(id))
 
 
 @payment_methods.patch(
@@ -343,7 +299,7 @@ async def update_payment_method(
     session: DbSession,
     user: EditorUser,
 ) -> PaymentMethod:
-    return await _guard(
+    return await guard(
         _service(session, user).update_payment_method(
             id,
             label=body.label,
@@ -362,5 +318,5 @@ async def update_payment_method(
     "/{id}", status_code=status.HTTP_204_NO_CONTENT, responses=IDEMPOTENT_RESPONSES
 )
 async def delete_payment_method(id: uuid.UUID, session: DbSession, user: EditorUser) -> Response:
-    await _guard(_service(session, user).void_payment_method(id))
+    await guard(_service(session, user).void_payment_method(id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

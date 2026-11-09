@@ -1,0 +1,2212 @@
+{
+  "source": "docs/GLOSARIO-RUBRO.md",
+  "terms": [
+    {
+      "code": "lavado_exterior",
+      "term": "Lavado exterior",
+      "type": "servicio",
+      "english": "Exterior wash",
+      "synonyms": [
+        "lavado simple",
+        "lavado básico",
+        "lavado por fuera"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_rapido",
+      "term": "Lavado rápido",
+      "type": "servicio",
+      "english": "Express wash",
+      "synonyms": [
+        "lavado express",
+        "lavadito",
+        "lavado económico"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_completo",
+      "term": "Lavado completo",
+      "type": "servicio",
+      "english": "Full wash",
+      "synonyms": [
+        "lavado full",
+        "lavado interior y exterior"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_premium",
+      "term": "Lavado premium",
+      "type": "servicio",
+      "english": "Premium wash",
+      "synonyms": [
+        "lavado con cera",
+        "lavado especial"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_a_mano",
+      "term": "Lavado a mano",
+      "type": "tecnica",
+      "english": "Hand wash",
+      "synonyms": [
+        "a mano",
+        "lavado manual"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "prelavado_espuma_activa",
+      "term": "Prelavado / espuma activa",
+      "type": "tecnica",
+      "english": "Snow foam, pre-wash",
+      "synonyms": [
+        "espuma",
+        "prewash",
+        "foam"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_de_dos_baldes",
+      "term": "Lavado de dos baldes",
+      "type": "tecnica",
+      "english": "Two bucket method",
+      "synonyms": [
+        "dos baldes"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "hidrolavado",
+      "term": "Hidrolavado",
+      "type": "tecnica",
+      "english": "Pressure washing",
+      "synonyms": [
+        "hidrolavadora",
+        "agua a presión",
+        "karcher"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_sin_agua",
+      "term": "Lavado sin agua",
+      "type": "servicio",
+      "english": "Waterless wash",
+      "synonyms": [
+        "lavado ecológico",
+        "lavado en seco"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_de_chasis",
+      "term": "Lavado de chasis",
+      "type": "adicional",
+      "english": "Undercarriage wash",
+      "synonyms": [
+        "lavado de bajos",
+        "chasis",
+        "bajos"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_de_motor",
+      "term": "Lavado de motor",
+      "type": "adicional",
+      "english": "Engine bay cleaning",
+      "synonyms": [
+        "motor",
+        "limpieza de motor",
+        "engine"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_de_llantas",
+      "term": "Lavado de llantas",
+      "type": "adicional",
+      "english": "Wheel cleaning",
+      "synonyms": [
+        "llantas",
+        "rines",
+        "ruedas"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "desmontaje_de_ruedas",
+      "term": "Desmontaje de ruedas",
+      "type": "adicional",
+      "english": "Wheels off",
+      "synonyms": [
+        "ruedas afuera",
+        "sacar las ruedas"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "limpieza_de_pasaruedas",
+      "term": "Limpieza de pasaruedas",
+      "type": "adicional",
+      "english": "Wheel well cleaning",
+      "synonyms": [
+        "guardabarros",
+        "pasarruedas",
+        "paso de rueda"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "limpieza_de_pinzas_de_freno",
+      "term": "Limpieza de pinzas de freno",
+      "type": "adicional",
+      "english": "Caliper cleaning",
+      "synonyms": [
+        "calipers",
+        "pinzas",
+        "cálipers"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "remocion_de_insectos",
+      "term": "Remoción de insectos",
+      "type": "adicional",
+      "english": "Bug removal",
+      "synonyms": [
+        "insectos",
+        "bichos",
+        "frente",
+        "mosquitos"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "remocion_de_alquitran",
+      "term": "Remoción de alquitrán",
+      "type": "adicional",
+      "english": "Tar removal",
+      "synonyms": [
+        "brea",
+        "alquitrán",
+        "chapopote"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "acondicionado_de_cubiertas",
+      "term": "Acondicionado de cubiertas",
+      "type": "adicional",
+      "english": "Tire dressing",
+      "synonyms": [
+        "brillo de cubiertas",
+        "renovador de neumáticos",
+        "silicona de ruedas"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "abrillantado_de_llantas",
+      "term": "Abrillantado de llantas",
+      "type": "adicional",
+      "english": "Wheel polish",
+      "synonyms": [
+        "brillo de llantas",
+        "pulido de llantas"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "secado",
+      "term": "Secado",
+      "type": "tecnica",
+      "english": "Drying",
+      "synonyms": [
+        "secado con microfibra",
+        "secado con aire",
+        "soplado"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "limpieza_de_baul",
+      "term": "Limpieza de baúl",
+      "type": "adicional",
+      "english": "Trunk cleaning",
+      "synonyms": [
+        "baul",
+        "maletero",
+        "baúl"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "lavado_de_capota_de_lona",
+      "term": "Lavado de capota de lona",
+      "type": "servicio",
+      "english": "Convertible top cleaning",
+      "synonyms": [
+        "capota",
+        "lona",
+        "descapotable"
+      ],
+      "section": 1,
+      "section_title": "Lavado"
+    },
+    {
+      "code": "aspirado",
+      "term": "Aspirado",
+      "type": "servicio",
+      "english": "Vacuum",
+      "synonyms": [
+        "aspirada",
+        "aspirado completo"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_interior",
+      "term": "Limpieza de interior",
+      "type": "servicio",
+      "english": "Interior detailing",
+      "synonyms": [
+        "detailing interior",
+        "interior",
+        "interior completo"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_tapizados",
+      "term": "Limpieza de tapizados",
+      "type": "servicio",
+      "english": "Upholstery cleaning",
+      "synonyms": [
+        "tapizados",
+        "tapicería",
+        "limpieza de asientos",
+        "shampoo de asientos"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "inyeccion_y_extraccion",
+      "term": "Inyección y extracción",
+      "type": "tecnica",
+      "english": "Hot water extraction",
+      "synonyms": [
+        "extractora",
+        "inyección extracción",
+        "lavado con extractora"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_a_vapor",
+      "term": "Limpieza a vapor",
+      "type": "tecnica",
+      "english": "Steam cleaning",
+      "synonyms": [
+        "vapor",
+        "vaporeta"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_cueros",
+      "term": "Limpieza de cueros",
+      "type": "servicio",
+      "english": "Leather cleaning",
+      "synonyms": [
+        "cuero",
+        "asientos de cuero",
+        "cuerina"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "hidratacion_de_cueros",
+      "term": "Hidratación de cueros",
+      "type": "adicional",
+      "english": "Leather conditioning",
+      "synonyms": [
+        "acondicionado de cuero",
+        "nutrición de cuero"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_alfombras",
+      "term": "Limpieza de alfombras",
+      "type": "adicional",
+      "english": "Carpet shampoo",
+      "synonyms": [
+        "alfombras",
+        "moquetas",
+        "alfombritas"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_techo",
+      "term": "Limpieza de techo",
+      "type": "adicional",
+      "english": "Headliner cleaning",
+      "synonyms": [
+        "techo interior",
+        "cielorraso",
+        "techo de tela"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_cinturones",
+      "term": "Limpieza de cinturones",
+      "type": "adicional",
+      "english": "Seat belt cleaning",
+      "synonyms": [
+        "cinturones",
+        "correas"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_rejillas_y_conductos",
+      "term": "Limpieza de rejillas y conductos",
+      "type": "adicional",
+      "english": "Vent cleaning",
+      "synonyms": [
+        "rejillas",
+        "salidas de aire",
+        "ventilación"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "limpieza_de_vidrios_interiores",
+      "term": "Limpieza de vidrios interiores",
+      "type": "adicional",
+      "english": "Interior glass",
+      "synonyms": [
+        "vidrios por dentro",
+        "parabrisas interior",
+        "empañado"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "acondicionado_de_plasticos",
+      "term": "Acondicionado de plásticos",
+      "type": "adicional",
+      "english": "Interior dressing",
+      "synonyms": [
+        "silicona de tablero",
+        "renovador de plásticos",
+        "tablero"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "ozonizado",
+      "term": "Ozonizado",
+      "type": "adicional",
+      "english": "Ozone treatment",
+      "synonyms": [
+        "ozono",
+        "desodorizado",
+        "sacar olor"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "sanitizado",
+      "term": "Sanitizado",
+      "type": "adicional",
+      "english": "Sanitizing",
+      "synonyms": [
+        "desinfección",
+        "sanitización"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "pelos_de_mascota",
+      "term": "Pelos de mascota",
+      "type": "adicional",
+      "english": "Pet hair removal",
+      "synonyms": [
+        "pelos de perro",
+        "mascotas",
+        "pelos"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "remocion_de_manchas_puntuales",
+      "term": "Remoción de manchas puntuales",
+      "type": "adicional",
+      "english": "Spot treatment",
+      "synonyms": [
+        "manchas",
+        "mancha de café",
+        "quitamanchas"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "impermeabilizado_de_tapizados",
+      "term": "Impermeabilizado de tapizados",
+      "type": "adicional",
+      "english": "Fabric protection",
+      "synonyms": [
+        "antimanchas",
+        "impermeabilizante de tela",
+        "scotchgard"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "ceramico_de_interior",
+      "term": "Cerámico de interior",
+      "type": "adicional",
+      "english": "Interior coating",
+      "synonyms": [
+        "cerámico de tapizados",
+        "coating interior"
+      ],
+      "section": 2,
+      "section_title": "Interior"
+    },
+    {
+      "code": "descontaminado",
+      "term": "Descontaminado",
+      "type": "servicio",
+      "english": "Decontamination",
+      "synonyms": [
+        "descontaminación",
+        "deco"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "descontaminado_quimico",
+      "term": "Descontaminado químico",
+      "type": "tecnica",
+      "english": "Iron removal, fallout remover",
+      "synonyms": [
+        "removedor de hierro",
+        "iron",
+        "antiférrico"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "clay_bar_arcilla",
+      "term": "Clay bar / arcilla",
+      "type": "tecnica",
+      "english": "Clay bar",
+      "synonyms": [
+        "arcilla",
+        "clay",
+        "barra de arcilla"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "pulido",
+      "term": "Pulido",
+      "type": "servicio",
+      "english": "Polish",
+      "synonyms": [
+        "pulida",
+        "abrillantado",
+        "brillado",
+        "lustrado"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "correccion_de_pintura",
+      "term": "Corrección de pintura",
+      "type": "servicio",
+      "english": "Paint correction",
+      "synonyms": [
+        "corrección",
+        "corrección en una etapa / dos etapas"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "corte",
+      "term": "Corte",
+      "type": "tecnica",
+      "english": "Compounding, cut",
+      "synonyms": [
+        "compuesto",
+        "pulido de corte"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "terminacion",
+      "term": "Terminación",
+      "type": "tecnica",
+      "english": "Finishing",
+      "synonyms": [
+        "acabado",
+        "refinado"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "lijado_en_humedo",
+      "term": "Lijado en húmedo",
+      "type": "tecnica",
+      "english": "Wetsanding",
+      "synonyms": [
+        "lijado",
+        "lija al agua"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "medicion_de_espesor",
+      "term": "Medición de espesor",
+      "type": "tecnica",
+      "english": "Paint depth gauge",
+      "synonyms": [
+        "medidor de pintura",
+        "micrones",
+        "espesor"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "restauracion_de_opticas",
+      "term": "Restauración de ópticas",
+      "type": "servicio",
+      "english": "Headlight restoration",
+      "synonyms": [
+        "faros",
+        "ópticas",
+        "pulido de faros",
+        "faros amarillos"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "restauracion_de_plasticos_exteriores",
+      "term": "Restauración de plásticos exteriores",
+      "type": "servicio",
+      "english": "Trim restoration",
+      "synonyms": [
+        "plásticos",
+        "molduras",
+        "renovador de plásticos",
+        "burletes"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "abrillantado_de_cromos_y_escapes",
+      "term": "Abrillantado de cromos y escapes",
+      "type": "adicional",
+      "english": "Metal polishing",
+      "synonyms": [
+        "cromos",
+        "escape",
+        "acero",
+        "aluminio pulido"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "tratamiento_de_vidrios",
+      "term": "Tratamiento de vidrios",
+      "type": "adicional",
+      "english": "Rain repellent",
+      "synonyms": [
+        "repelente de lluvia",
+        "hidrofóbico de vidrios",
+        "antilluvia"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "remocion_de_calcareo",
+      "term": "Remoción de calcáreo",
+      "type": "adicional",
+      "english": "Water spot removal",
+      "synonyms": [
+        "manchas de agua",
+        "sarro",
+        "calcáreo",
+        "agua dura"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "remocion_de_overspray",
+      "term": "Remoción de overspray",
+      "type": "adicional",
+      "english": "Overspray removal",
+      "synonyms": [
+        "pintura salpicada",
+        "overspray",
+        "salpicaduras de obra"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "retoque_de_pintura",
+      "term": "Retoque de pintura",
+      "type": "adicional",
+      "english": "Touch up",
+      "synonyms": [
+        "retoque",
+        "pincel",
+        "tapar rayón"
+      ],
+      "section": 3,
+      "section_title": "Detailing exterior y corrección de pintura"
+    },
+    {
+      "code": "encerado",
+      "term": "Encerado",
+      "type": "servicio",
+      "english": "Wax",
+      "synonyms": [
+        "cera",
+        "cera de carnauba",
+        "encerado a mano"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "sellador",
+      "term": "Sellador",
+      "type": "servicio",
+      "english": "Sealant",
+      "synonyms": [
+        "sellador sintético",
+        "paint sealant"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "tratamiento_ceramico",
+      "term": "Tratamiento cerámico",
+      "type": "servicio",
+      "english": "Ceramic coating",
+      "synonyms": [
+        "cerámico",
+        "ceramico",
+        "coating",
+        "nano cerámico"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "grafeno",
+      "term": "Grafeno",
+      "type": "servicio",
+      "english": "Graphene coating",
+      "synonyms": [
+        "grafeno",
+        "coating de grafeno"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "ceramico_de_llantas",
+      "term": "Cerámico de llantas",
+      "type": "adicional",
+      "english": "Wheel coating",
+      "synonyms": [
+        "cerámico de ruedas",
+        "coating de llantas"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "ceramico_de_vidrios",
+      "term": "Cerámico de vidrios",
+      "type": "adicional",
+      "english": "Glass coating",
+      "synonyms": [
+        "coating de parabrisas",
+        "cerámico de vidrios"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "mantenimiento_del_ceramico",
+      "term": "Mantenimiento del cerámico",
+      "type": "servicio",
+      "english": "Coating maintenance",
+      "synonyms": [
+        "mantenimiento",
+        "refuerzo",
+        "top coat",
+        "service de cerámico"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "capa_sacrificial",
+      "term": "Capa sacrificial",
+      "type": "adicional",
+      "english": "Topper, sacrificial layer",
+      "synonyms": [
+        "topper",
+        "capa de sacrificio"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "film_de_proteccion_de_pintura",
+      "term": "Film de protección de pintura",
+      "type": "servicio",
+      "english": "Paint protection film (PPF)",
+      "synonyms": [
+        "ppf",
+        "film",
+        "film protector",
+        "lámina protectora",
+        "antigravilla"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "polarizado",
+      "term": "Polarizado",
+      "type": "servicio",
+      "english": "Window tint",
+      "synonyms": [
+        "polarizado",
+        "láminas de vidrios",
+        "tint"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "vinilo_ploteo",
+      "term": "Vinilo / ploteo",
+      "type": "servicio",
+      "english": "Vinyl wrap",
+      "synonyms": [
+        "ploteo",
+        "wrap",
+        "cambio de color"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "hidrofobico",
+      "term": "Hidrofóbico",
+      "type": "tecnica",
+      "english": "Hydrophobic",
+      "synonyms": [
+        "efecto perla",
+        "repelente"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "curado",
+      "term": "Curado",
+      "type": "modificador",
+      "english": "Curing",
+      "synonyms": [
+        "tiempo de curado",
+        "fragua"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "garantia_de_recubrimiento",
+      "term": "Garantía de recubrimiento",
+      "type": "entidad",
+      "english": "Coating warranty",
+      "synonyms": [
+        "garantía",
+        "años de garantía"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "inspeccion_de_garantia",
+      "term": "Inspección de garantía",
+      "type": "servicio",
+      "english": "Warranty inspection",
+      "synonyms": [
+        "revisión de garantía",
+        "control anual"
+      ],
+      "section": 4,
+      "section_title": "Protección"
+    },
+    {
+      "code": "swirls_telaranas",
+      "term": "Swirls / telarañas",
+      "type": "defecto",
+      "english": "Swirl marks",
+      "synonyms": [
+        "telarañas",
+        "marcas circulares",
+        "micro rayas",
+        "rayitas"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "hologramas",
+      "term": "Hologramas",
+      "type": "defecto",
+      "english": "Holograms",
+      "synonyms": [
+        "buffer trails",
+        "marcas de pulidora"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "rayon_profundo",
+      "term": "Rayón profundo",
+      "type": "defecto",
+      "english": "Deep scratch",
+      "synonyms": [
+        "rayón",
+        "rayon",
+        "raya profunda",
+        "arañazo"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "oxidacion_de_pintura",
+      "term": "Oxidación de pintura",
+      "type": "defecto",
+      "english": "Oxidation",
+      "synonyms": [
+        "pintura opaca",
+        "despintado",
+        "quemado por sol"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "cascara_de_naranja",
+      "term": "Cáscara de naranja",
+      "type": "defecto",
+      "english": "Orange peel",
+      "synonyms": [
+        "piel de naranja",
+        "textura de pintura"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "manchas_de_agua",
+      "term": "Manchas de agua",
+      "type": "defecto",
+      "english": "Water spots",
+      "synonyms": [
+        "calcáreo",
+        "sarro",
+        "marcas de agua",
+        "agua dura"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "excremento_de_pajaro",
+      "term": "Excremento de pájaro",
+      "type": "defecto",
+      "english": "Bird dropping etching",
+      "synonyms": [
+        "caca de pájaro",
+        "marca de pájaro"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "resina_de_arbol",
+      "term": "Resina de árbol",
+      "type": "defecto",
+      "english": "Tree sap",
+      "synonyms": [
+        "savia",
+        "resina",
+        "pegote de árbol"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "contaminacion_ferrosa",
+      "term": "Contaminación ferrosa",
+      "type": "defecto",
+      "english": "Iron fallout",
+      "synonyms": [
+        "puntitos naranjas",
+        "óxido en la pintura"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "faros_amarillos",
+      "term": "Faros amarillos",
+      "type": "defecto",
+      "english": "Yellowed headlights",
+      "synonyms": [
+        "faros opacos",
+        "ópticas amarillas"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "plasticos_grises",
+      "term": "Plásticos grises",
+      "type": "defecto",
+      "english": "Faded trim",
+      "synonyms": [
+        "plásticos descoloridos",
+        "molduras blancas"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "olor_persistente",
+      "term": "Olor persistente",
+      "type": "defecto",
+      "english": "Odor",
+      "synonyms": [
+        "olor a humedad",
+        "olor a cigarrillo",
+        "huele feo"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "moho_humedad",
+      "term": "Moho / humedad",
+      "type": "defecto",
+      "english": "Mold",
+      "synonyms": [
+        "hongos",
+        "humedad en los asientos"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "barro_de_obra",
+      "term": "Barro de obra",
+      "type": "defecto",
+      "english": "Heavy soil",
+      "synonyms": [
+        "muy sucio",
+        "embarrado",
+        "de obra"
+      ],
+      "section": 5,
+      "section_title": "Defectos y problemas (lo que el cliente quiere sacar)"
+    },
+    {
+      "code": "aromatizante",
+      "term": "Aromatizante",
+      "type": "producto",
+      "english": "Air freshener",
+      "synonyms": [
+        "perfume",
+        "aromatizador",
+        "olorcito",
+        "arbolito"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "shampoo_para_autos",
+      "term": "Shampoo para autos",
+      "type": "producto",
+      "english": "Car shampoo",
+      "synonyms": [
+        "shampoo neutro",
+        "champú",
+        "shampoo siliconado"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "cera_en_spray",
+      "term": "Cera en spray",
+      "type": "producto",
+      "english": "Spray wax",
+      "synonyms": [
+        "cera rápida",
+        "quick wax"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "quick_detailer",
+      "term": "Quick detailer",
+      "type": "producto",
+      "english": "Quick detailer",
+      "synonyms": [
+        "detallador rápido",
+        "QD"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "pano_de_microfibra",
+      "term": "Paño de microfibra",
+      "type": "producto",
+      "english": "Microfiber towel",
+      "synonyms": [
+        "microfibra",
+        "franela",
+        "trapo"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "toalla_de_secado",
+      "term": "Toalla de secado",
+      "type": "producto",
+      "english": "Drying towel",
+      "synonyms": [
+        "toalla de secado",
+        "paño de secado"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "renovador_de_cubiertas",
+      "term": "Renovador de cubiertas",
+      "type": "producto",
+      "english": "Tire shine",
+      "synonyms": [
+        "brillo de cubiertas",
+        "silicona de ruedas"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "limpiador_de_interiores",
+      "term": "Limpiador de interiores",
+      "type": "producto",
+      "english": "Interior cleaner",
+      "synonyms": [
+        "APC",
+        "multiuso",
+        "limpiatodo"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "kit_de_mantenimiento",
+      "term": "Kit de mantenimiento",
+      "type": "producto",
+      "english": "Maintenance kit",
+      "synonyms": [
+        "kit de lavado",
+        "kit cerámico"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "guante_de_microfibra",
+      "term": "Guante de microfibra",
+      "type": "producto",
+      "english": "Wash mitt",
+      "synonyms": [
+        "manopla",
+        "guante de lavado"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "gift_card",
+      "term": "Gift card",
+      "type": "producto",
+      "english": "Gift card",
+      "synonyms": [
+        "tarjeta de regalo",
+        "voucher",
+        "regalo"
+      ],
+      "section": 6,
+      "section_title": "Productos que se venden (F9)"
+    },
+    {
+      "code": "antiferrico",
+      "term": "Antiférrico",
+      "type": "insumo",
+      "english": "Iron remover",
+      "synonyms": [
+        "removedor de hierro",
+        "descontaminante"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "desengrasante",
+      "term": "Desengrasante",
+      "type": "insumo",
+      "english": "Degreaser",
+      "synonyms": [
+        "desengrasante",
+        "degreaser"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "apc",
+      "term": "APC",
+      "type": "insumo",
+      "english": "All purpose cleaner",
+      "synonyms": [
+        "multiuso",
+        "limpiador multipropósito"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "compuesto_de_corte",
+      "term": "Compuesto de corte",
+      "type": "insumo",
+      "english": "Compound",
+      "synonyms": [
+        "pulimento de corte",
+        "compuesto"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "pulimento_de_terminacion",
+      "term": "Pulimento de terminación",
+      "type": "insumo",
+      "english": "Polish",
+      "synonyms": [
+        "pulimento",
+        "refinador"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "boina",
+      "term": "Boina",
+      "type": "insumo",
+      "english": "Pad",
+      "synonyms": [
+        "pad",
+        "boina de lana",
+        "boina de espuma"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "pulidora_orbital",
+      "term": "Pulidora orbital",
+      "type": "insumo",
+      "english": "DA polisher",
+      "synonyms": [
+        "orbital",
+        "DA",
+        "pulidora"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "pulidora_rotativa",
+      "term": "Pulidora rotativa",
+      "type": "insumo",
+      "english": "Rotary polisher",
+      "synonyms": [
+        "rotativa"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "extractora",
+      "term": "Extractora",
+      "type": "insumo",
+      "english": "Extractor",
+      "synonyms": [
+        "inyectora extractora",
+        "karcher de tapizados"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "generador_de_ozono",
+      "term": "Generador de ozono",
+      "type": "insumo",
+      "english": "Ozone generator",
+      "synonyms": [
+        "ozonizador",
+        "máquina de ozono"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "hidrolavadora",
+      "term": "Hidrolavadora",
+      "type": "insumo",
+      "english": "Pressure washer",
+      "synonyms": [
+        "karcher",
+        "máquina de presión"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "soplador",
+      "term": "Soplador",
+      "type": "insumo",
+      "english": "Air blower",
+      "synonyms": [
+        "sopladora",
+        "aire a presión"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "balde_con_grid",
+      "term": "Balde con grid",
+      "type": "insumo",
+      "english": "Grit guard bucket",
+      "synonyms": [
+        "balde con rejilla",
+        "grit guard"
+      ],
+      "section": 7,
+      "section_title": "Insumos y herramientas (no se venden)"
+    },
+    {
+      "code": "segmento_de_vehiculo",
+      "term": "Segmento de vehículo",
+      "type": "entidad",
+      "english": "Vehicle size tier",
+      "synonyms": [
+        "tamaño",
+        "categoría",
+        "porte"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "auto",
+      "term": "Auto",
+      "type": "entidad",
+      "english": "Sedan, hatchback",
+      "synonyms": [
+        "sedán",
+        "chico",
+        "compacto",
+        "auto común"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "suv",
+      "term": "SUV",
+      "type": "entidad",
+      "english": "SUV, crossover",
+      "synonyms": [
+        "camioneta chica",
+        "crossover",
+        "suv"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "utilitario",
+      "term": "Utilitario",
+      "type": "entidad",
+      "english": "Van, cargo van",
+      "synonyms": [
+        "furgón",
+        "furgoneta",
+        "utilitario"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "pick_up",
+      "term": "Pick-up",
+      "type": "entidad",
+      "english": "Pickup truck",
+      "synonyms": [
+        "camioneta",
+        "pick up",
+        "pickup",
+        "doble cabina"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "4x4_grande",
+      "term": "4x4 grande",
+      "type": "entidad",
+      "english": "Full-size SUV",
+      "synonyms": [
+        "camionetón",
+        "4x4",
+        "todoterreno"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "moto",
+      "term": "Moto",
+      "type": "entidad",
+      "english": "Motorcycle",
+      "synonyms": [
+        "moto",
+        "motos"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "vehiculo_de_flota",
+      "term": "Vehículo de flota",
+      "type": "entidad",
+      "english": "Fleet vehicle",
+      "synonyms": [
+        "flota",
+        "empresa",
+        "cuenta corriente"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "patente",
+      "term": "Patente",
+      "type": "entidad",
+      "english": "License plate",
+      "synonyms": [
+        "patente",
+        "dominio",
+        "chapa"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "ficha_del_vehiculo",
+      "term": "Ficha del vehículo",
+      "type": "entidad",
+      "english": "Vehicle profile",
+      "synonyms": [
+        "historial del auto",
+        "ficha"
+      ],
+      "section": 8,
+      "section_title": "Vehículos y segmentación"
+    },
+    {
+      "code": "recargo_por_tamano",
+      "term": "Recargo por tamaño",
+      "type": "modificador",
+      "english": "Size surcharge",
+      "synonyms": [
+        "recargo por camioneta",
+        "diferencia por tamaño"
+      ],
+      "section": 9,
+      "section_title": "Modificadores de precio y duración"
+    },
+    {
+      "code": "recargo_por_estado",
+      "term": "Recargo por estado",
+      "type": "modificador",
+      "english": "Condition surcharge",
+      "synonyms": [
+        "muy sucio",
+        "recargo por suciedad",
+        "extra por barro"
+      ],
+      "section": 9,
+      "section_title": "Modificadores de precio y duración"
+    },
+    {
+      "code": "recargo_por_pelo_de_mascota",
+      "term": "Recargo por pelo de mascota",
+      "type": "modificador",
+      "english": "Pet hair surcharge",
+      "synonyms": [
+        "extra por pelos"
+      ],
+      "section": 9,
+      "section_title": "Modificadores de precio y duración"
+    },
+    {
+      "code": "recargo_por_color",
+      "term": "Recargo por color",
+      "type": "modificador",
+      "english": "Paint color factor",
+      "synonyms": [
+        "negro",
+        "color oscuro"
+      ],
+      "section": 9,
+      "section_title": "Modificadores de precio y duración"
+    },
+    {
+      "code": "tiempo_de_curado",
+      "term": "Tiempo de curado",
+      "type": "modificador",
+      "english": "Cure time",
+      "synonyms": [
+        "curado",
+        "fragua"
+      ],
+      "section": 9,
+      "section_title": "Modificadores de precio y duración"
+    },
+    {
+      "code": "servicio_a_cotizar",
+      "term": "Servicio a cotizar",
+      "type": "modificador",
+      "english": "Quote-only",
+      "synonyms": [
+        "a cotizar",
+        "presupuestar",
+        "previa revisión"
+      ],
+      "section": 9,
+      "section_title": "Modificadores de precio y duración"
+    },
+    {
+      "code": "abono_suscripcion",
+      "term": "Abono / suscripción",
+      "type": "entidad",
+      "english": "Subscription plan",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "credito_de_lavado",
+      "term": "Crédito de lavado",
+      "type": "entidad",
+      "english": "Service credit",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "paquete_combo",
+      "term": "Paquete / combo",
+      "type": "entidad",
+      "english": "Package, bundle",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "adicional_upsell",
+      "term": "Adicional / upsell",
+      "type": "entidad",
+      "english": "Add-on",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "cupon",
+      "term": "Cupón",
+      "type": "entidad",
+      "english": "Coupon",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "referido",
+      "term": "Referido",
+      "type": "entidad",
+      "english": "Referral",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "resena",
+      "term": "Reseña",
+      "type": "entidad",
+      "english": "Review",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "cliente_recurrente",
+      "term": "Cliente recurrente",
+      "type": "entidad",
+      "english": "Returning customer",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "frecuencia_de_retorno",
+      "term": "Frecuencia de retorno",
+      "type": "entidad",
+      "english": "Visit frequency",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "recordatorio_de_mantenimiento",
+      "term": "Recordatorio de mantenimiento",
+      "type": "entidad",
+      "english": "Maintenance reminder",
+      "synonyms": [],
+      "section": 10,
+      "section_title": "Comercial, abonos y fidelización"
+    },
+    {
+      "code": "turno",
+      "term": "Turno",
+      "type": "entidad",
+      "english": "Booking, appointment",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "orden_de_trabajo_job",
+      "term": "Orden de trabajo / job",
+      "type": "entidad",
+      "english": "Work order, job",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "estadia",
+      "term": "Estadía",
+      "type": "entidad",
+      "english": "Vehicle stay",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "sena",
+      "term": "Seña",
+      "type": "entidad",
+      "english": "Deposit",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "puesto_box",
+      "term": "Puesto / box",
+      "type": "entidad",
+      "english": "Bay",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "operario_detailer",
+      "term": "Operario / detailer",
+      "type": "entidad",
+      "english": "Detailer, technician",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "capacidad_simultanea",
+      "term": "Capacidad simultánea",
+      "type": "entidad",
+      "english": "Concurrent capacity",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "buffer",
+      "term": "Buffer",
+      "type": "entidad",
+      "english": "Buffer time",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "sobreturno",
+      "term": "Sobreturno",
+      "type": "entidad",
+      "english": "Overbooking",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "lista_de_espera",
+      "term": "Lista de espera",
+      "type": "entidad",
+      "english": "Waitlist",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "reprogramacion",
+      "term": "Reprogramación",
+      "type": "entidad",
+      "english": "Reschedule",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "no_show",
+      "term": "No-show",
+      "type": "entidad",
+      "english": "No-show",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "cancelacion_tardia",
+      "term": "Cancelación tardía",
+      "type": "entidad",
+      "english": "Late cancellation",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "cierre_por_lluvia",
+      "term": "Cierre por lluvia",
+      "type": "entidad",
+      "english": "Weather closure",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "ingreso_recepcion",
+      "term": "Ingreso / recepción",
+      "type": "entidad",
+      "english": "Check-in",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "inspeccion_estado_del_auto",
+      "term": "Inspección / estado del auto",
+      "type": "entidad",
+      "english": "Vehicle inspection",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "objetos_de_valor",
+      "term": "Objetos de valor",
+      "type": "entidad",
+      "english": "Valuables",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "llaves",
+      "term": "Llaves",
+      "type": "entidad",
+      "english": "Key handling",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "foto_de_antes_y_despues",
+      "term": "Foto de antes y después",
+      "type": "entidad",
+      "english": "Before/after photo",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "control_de_calidad",
+      "term": "Control de calidad",
+      "type": "entidad",
+      "english": "Quality check",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "retrabajo",
+      "term": "Retrabajo",
+      "type": "entidad",
+      "english": "Rework",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "retiro",
+      "term": "Retiro",
+      "type": "entidad",
+      "english": "Pick-up",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "cotizacion_presupuesto",
+      "term": "Cotización / presupuesto",
+      "type": "entidad",
+      "english": "Quote",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "al_paso_sin_turno",
+      "term": "Al paso / sin turno",
+      "type": "entidad",
+      "english": "Walk-in",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "tiempo_de_ciclo",
+      "term": "Tiempo de ciclo",
+      "type": "entidad",
+      "english": "Cycle time",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "ocupacion_de_box",
+      "term": "Ocupación de box",
+      "type": "entidad",
+      "english": "Bay utilization",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    },
+    {
+      "code": "lavado_a_domicilio",
+      "term": "Lavado a domicilio",
+      "type": "entidad",
+      "english": "Mobile detailing",
+      "synonyms": [],
+      "section": 11,
+      "section_title": "Operación"
+    }
+  ],
+  "defects": [
+    {
+      "code": "swirls_telaranas",
+      "services": [
+        "correccion_de_pintura",
+        "pulido"
+      ]
+    },
+    {
+      "code": "hologramas",
+      "services": [
+        "correccion_de_pintura"
+      ]
+    },
+    {
+      "code": "rayon_profundo",
+      "services": [
+        "retoque_de_pintura",
+        "correccion_de_pintura"
+      ]
+    },
+    {
+      "code": "oxidacion_de_pintura",
+      "services": [
+        "correccion_de_pintura"
+      ]
+    },
+    {
+      "code": "cascara_de_naranja",
+      "services": [
+        "correccion_de_pintura"
+      ]
+    },
+    {
+      "code": "manchas_de_agua",
+      "services": [
+        "remocion_de_calcareo"
+      ]
+    },
+    {
+      "code": "excremento_de_pajaro",
+      "services": [
+        "correccion_de_pintura",
+        "descontaminado"
+      ]
+    },
+    {
+      "code": "resina_de_arbol",
+      "services": [
+        "descontaminado"
+      ]
+    },
+    {
+      "code": "contaminacion_ferrosa",
+      "services": [
+        "descontaminado"
+      ]
+    },
+    {
+      "code": "faros_amarillos",
+      "services": [
+        "restauracion_de_opticas"
+      ]
+    },
+    {
+      "code": "plasticos_grises",
+      "services": [
+        "restauracion_de_plasticos_exteriores"
+      ]
+    },
+    {
+      "code": "olor_persistente",
+      "services": [
+        "ozonizado",
+        "limpieza_de_tapizados"
+      ]
+    },
+    {
+      "code": "moho_humedad",
+      "services": [
+        "limpieza_de_tapizados",
+        "sanitizado"
+      ]
+    },
+    {
+      "code": "barro_de_obra",
+      "services": [
+        "lavado_completo"
+      ]
+    }
+  ],
+  "phrases": [
+    {
+      "text": "un lavadito",
+      "services": [
+        "lavado_rapido"
+      ]
+    },
+    {
+      "text": "una lavadita",
+      "services": [
+        "lavado_rapido"
+      ]
+    },
+    {
+      "text": "el completo",
+      "services": [
+        "lavado_completo"
+      ]
+    },
+    {
+      "text": "hacele el completo",
+      "services": [
+        "lavado_completo"
+      ]
+    },
+    {
+      "text": "dejalo como nuevo",
+      "services": []
+    },
+    {
+      "text": "ponelo impecable",
+      "services": []
+    },
+    {
+      "text": "sacarle las rayas",
+      "services": [
+        "correccion_de_pintura"
+      ]
+    },
+    {
+      "text": "está todo opaco",
+      "services": [
+        "pulido",
+        "correccion_de_pintura"
+      ]
+    },
+    {
+      "text": "una pulida",
+      "services": [
+        "pulido"
+      ]
+    },
+    {
+      "text": "lo quiero para vender",
+      "services": [
+        "lavado_completo",
+        "pulido",
+        "limpieza_de_interior"
+      ]
+    },
+    {
+      "text": "le hago el cerámico",
+      "services": [
+        "tratamiento_ceramico"
+      ]
+    },
+    {
+      "text": "viene de la obra",
+      "services": []
+    },
+    {
+      "text": "está hecho un desastre",
+      "services": []
+    },
+    {
+      "text": "huele a perro",
+      "services": [
+        "ozonizado",
+        "pelos_de_mascota"
+      ]
+    },
+    {
+      "text": "se me volcó el café",
+      "services": [
+        "remocion_de_manchas_puntuales"
+      ]
+    },
+    {
+      "text": "cuánto me sale",
+      "services": []
+    }
+  ],
+  "templates": {
+    "lavadero": [
+      "lavado_exterior",
+      "lavado_rapido",
+      "lavado_completo",
+      "lavado_premium",
+      "lavado_sin_agua",
+      "lavado_de_chasis",
+      "lavado_de_motor",
+      "lavado_de_llantas",
+      "desmontaje_de_ruedas",
+      "limpieza_de_pasaruedas",
+      "limpieza_de_pinzas_de_freno",
+      "remocion_de_insectos",
+      "remocion_de_alquitran",
+      "acondicionado_de_cubiertas",
+      "abrillantado_de_llantas",
+      "limpieza_de_baul",
+      "lavado_de_capota_de_lona",
+      "aspirado",
+      "limpieza_de_interior",
+      "limpieza_de_tapizados",
+      "limpieza_de_cueros",
+      "hidratacion_de_cueros",
+      "limpieza_de_alfombras",
+      "limpieza_de_techo",
+      "limpieza_de_cinturones",
+      "limpieza_de_rejillas_y_conductos",
+      "limpieza_de_vidrios_interiores",
+      "acondicionado_de_plasticos",
+      "ozonizado",
+      "sanitizado",
+      "pelos_de_mascota",
+      "remocion_de_manchas_puntuales",
+      "impermeabilizado_de_tapizados",
+      "ceramico_de_interior"
+    ],
+    "detailing": [
+      "lavado_exterior",
+      "lavado_rapido",
+      "lavado_completo",
+      "lavado_premium",
+      "lavado_sin_agua",
+      "lavado_de_chasis",
+      "lavado_de_motor",
+      "lavado_de_llantas",
+      "desmontaje_de_ruedas",
+      "limpieza_de_pasaruedas",
+      "limpieza_de_pinzas_de_freno",
+      "remocion_de_insectos",
+      "remocion_de_alquitran",
+      "acondicionado_de_cubiertas",
+      "abrillantado_de_llantas",
+      "limpieza_de_baul",
+      "lavado_de_capota_de_lona",
+      "aspirado",
+      "limpieza_de_interior",
+      "limpieza_de_tapizados",
+      "limpieza_de_cueros",
+      "hidratacion_de_cueros",
+      "limpieza_de_alfombras",
+      "limpieza_de_techo",
+      "limpieza_de_cinturones",
+      "limpieza_de_rejillas_y_conductos",
+      "limpieza_de_vidrios_interiores",
+      "acondicionado_de_plasticos",
+      "ozonizado",
+      "sanitizado",
+      "pelos_de_mascota",
+      "remocion_de_manchas_puntuales",
+      "impermeabilizado_de_tapizados",
+      "ceramico_de_interior",
+      "descontaminado",
+      "pulido",
+      "correccion_de_pintura",
+      "restauracion_de_opticas",
+      "restauracion_de_plasticos_exteriores",
+      "abrillantado_de_cromos_y_escapes",
+      "tratamiento_de_vidrios",
+      "remocion_de_calcareo",
+      "remocion_de_overspray",
+      "retoque_de_pintura",
+      "encerado",
+      "sellador",
+      "tratamiento_ceramico",
+      "grafeno",
+      "ceramico_de_llantas",
+      "ceramico_de_vidrios",
+      "mantenimiento_del_ceramico",
+      "capa_sacrificial",
+      "film_de_proteccion_de_pintura",
+      "polarizado",
+      "vinilo_ploteo",
+      "inspeccion_de_garantia"
+    ]
+  }
+}

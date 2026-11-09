@@ -10,7 +10,7 @@ Pura: sin base, sin reloj.
 
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 _NO_ALFANUM = re.compile(r"[^a-z0-9]+")
 
@@ -64,6 +64,11 @@ def _word_matches(word: str, key_words: list[str]) -> bool:
     return False
 
 
+def _key_matches(words: list[str], key: str) -> bool:
+    key_words = key.split()
+    return bool(key_words) and all(_word_matches(w, key_words) for w in words)
+
+
 def matches(query: str, search_key: str, *, aliases: Iterable[str] = ()) -> bool:
     """¿`query` encuentra la fila cuya clave es `search_key`?
 
@@ -74,8 +79,35 @@ def matches(query: str, search_key: str, *, aliases: Iterable[str] = ()) -> bool
     words = normalize(query).split()
     if not words:
         return False
-    for key in (search_key, *(normalize(a) for a in aliases)):
-        key_words = key.split()
-        if key_words and all(_word_matches(w, key_words) for w in words):
-            return True
-    return False
+    return any(_key_matches(words, key) for key in (search_key, *(normalize(a) for a in aliases)))
+
+
+#: Calidad de una coincidencia, de mejor a peor (`match_tier`).
+TIER_EXACT_KEY = 0
+TIER_EXACT_ALIAS = 1
+TIER_KEY = 2
+TIER_ALIAS = 3
+
+
+def match_tier(wanted: str, search_key: str, *, aliases: Sequence[str] = ()) -> int | None:
+    """Qué tan bien encuentra la consulta a la fila, o `None` si no la encuentra.
+
+    **`wanted`, `search_key` y `aliases` ya vienen normalizados** (`normalize`): el llamador
+    normaliza la consulta una vez y los alias los guarda normalizados el glosario, así recorrer
+    un catálogo no renormaliza por fila. Sirve para ordenar: "ceramico" matchea *Tratamiento
+    cerámico* y también *Cerámico de llantas*, pero el primero tiene "ceramico" como sinónimo
+    exacto y va antes. Orden: clave idéntica, sinónimo idéntico, coincidencia con la clave,
+    coincidencia con un sinónimo.
+    """
+    words = wanted.split()
+    if not words:
+        return None
+    if wanted == search_key:
+        return TIER_EXACT_KEY
+    if wanted in aliases:
+        return TIER_EXACT_ALIAS
+    if _key_matches(words, search_key):
+        return TIER_KEY
+    if any(_key_matches(words, alias) for alias in aliases):
+        return TIER_ALIAS
+    return None

@@ -398,3 +398,46 @@ una vez que `0005` corrió en staging.
 - **Diferido**: anular un puesto, un tamaño o un medio de pago **no** revisa si está en uso (turnos futuros,
   precios vivos). Es soft-delete y no rompe datos, pero un puesto anulado con turnos futuros los deja sin puesto
   visible. Se resuelve con el 409 `IN_USE` cuando el 4.3 (precios por tamaño) y la agenda (F5) lo necesiten.
+
+---
+
+## 11.5 Adenda del PR 4.3 — servicios, glosario y plantillas (2026-11-05)
+
+Backend del 4.3 (el front, `features/catalogo/`, va aparte). Completa §3.3 y §4; donde choque, manda esta
+subsección.
+
+### Qué plantilla es cada término
+
+Regla única, fijada en `scripts/build_glosario.py` (`TEMPLATE_SECTIONS`) y probada en
+`tests/meta/test_glosario.py`:
+
+| Plantilla | Qué trae |
+|---|---|
+| `lavadero` | términos de tipo **`servicio` y `adicional`** de las secciones **1 (Lavado) y 2 (Interior)** del glosario |
+| `detailing` | términos de tipo **`servicio` y `adicional`** de las secciones **1 a 4** (Lavado, Interior, Detailing exterior y corrección de pintura, Protección) |
+
+Las **`tecnica`, `defecto`, `producto`, `insumo`, `modificador` y `entidad` nunca son plantilla**: solo
+alimentan la búsqueda (sinónimos, defecto → servicio) o, en el caso de `producto`/`insumo`, F9. La plantilla
+`lavadero` es un subconjunto de `detailing`. Cada sección del glosario es una **categoría** propuesta
+(nombre = título de la sección, `sort_order` = número de sección); se crean solo si hace falta.
+
+### Decisiones tomadas al construir
+
+| # | Decisión |
+|---|---|
+| Y6a | **`glossary_code` = slug del término normalizado con guiones bajos** (`"Tratamiento cerámico"` → `tratamiento_ceramico`). Lo genera el script, es único (el script falla si dos términos colisionan) y estable mientras no se renombre el término. Renombrar un término del `.md` cambia su código: los servicios ya creados conservan el viejo y dejan de heredar sus sinónimos. |
+| Y6b | **El `.json` incluye todos los términos del `.md`** (también técnicas, productos, etc.), más el mapeo `defects` (§5) y las `phrases` (§12). Una *técnica* que un defecto nombra (`Descontaminado químico`, `Lijado en húmedo`) se reemplaza por el servicio del que es parte (`TECHNIQUE_PARENT`: *Descontaminado*, *Corrección de pintura*): quien busca un defecto quiere algo vendible. |
+| 4.3-1 | **Un servicio vivo por `glossary_code`** (índice único parcial `ux_services_tenant_id_glossary_code`, entre vivos; los `NULL` no chocan). Es lo que hace idempotente a la plantilla incluso ante dos pestañas del wizard a la vez. El único también cubre la carrera de dos `apply` simultáneos (el perdedor informa `skipped`). |
+| 4.3-2 | **`glossary_code` no entra por `POST /services`**: solo lo fija la plantilla (`POST /templates/apply`). Un servicio creado a mano es siempre propio (`glossary_code` `null`); si el body trae el campo, se ignora. El código no se edita por `PATCH`. |
+| 4.3-3 | **`pricing_mode` se cambia por `PUT /services/{id}/prices`**, no por `PATCH` (la modalidad es parte del precio, §2.3: exige `PRECIOS_EDITAR`). Es opcional en el cuerpo. |
+| 4.3-4 | **Cobertura de precios (A8):** crear un servicio y `PUT .../prices` exigen **un precio válido (> 0, sin NULL) para cada tamaño vivo**, sin repetir ni traer tamaños ajenos o inexistentes: si falta alguno, **422 `VALIDATION_ERROR`** con los códigos de los que faltan. Sin tamaños vivos no se puede crear un servicio (el wizard carga los tamaños antes, §6). Tope de precio: $ 100.000.000; duración máx. 14 días. |
+| 4.3-5 | **Anular un servicio** (`DELETE`) exige `CATALOGO_EDITAR` **y** `PRECIOS_EDITAR` (anula también sus precios vivos, §2.3) y da **409 `IN_USE`** si lo usan turnos que no cerraron (`PENDIENTE_SEÑA`, `PENDIENTE_COTIZACION`, `CONFIRMADO`, `RECIBIDO`), cotizaciones sin resolver (`PENDIENTE`, `COTIZADO`) o jobs sin retirar (`PRESENTE`, `EN_PROCESO`, `FINALIZADO`, `COBRADO`), como un puesto con turnos futuros. Anular los precios es necesario; si no, `void_vehicle_size` (que cuenta precios vivos) impediría anular el tamaño para siempre. Anular una categoría con servicios vivos → 409 `IN_USE`. |
+| 4.3-6 | **Búsqueda** (`GET /services/search?q=` y `GET /services?q=`, misma lógica): `domain/search.match_tier` sobre `search_key` y los alias del glosario si el servicio tiene `glossary_code` (sinónimos, nombre en inglés, frases del cliente de la §12, y el nombre y sinónimos de cada defecto que el servicio resuelve). Orden: clave idéntica, sinónimo idéntico, coincide con la clave, coincide con un sinónimo. Se filtra y ordena en Python sobre los servicios vivos del tenant (Y8). El nombre original del término sigue siendo alias aunque el negocio renombre el servicio. |
+| 4.3-7 | **`POST /templates/apply`** va con `kind` en el cuerpo y no lleva `Idempotency-Key`: ya es idempotente por `glossary_code` (reaplicar devuelve `skipped`, no 409). Todo en una transacción. Solo valida y crea los ítems que **todavía no existen**; los que ya existen se informan como `skipped` (`GLOSSARY_CODE`) sin tocar sus precios ni exigir los del tamaño nuevo, así el cuerpo viejo de un reintento sigue valiendo. Un servicio **propio** con el mismo nombre (misma `search_key`) se respeta: `skipped` con motivo `NAME`, no se vincula al término y su sección no genera categoría si nada más se crea en ella. Un ítem fuera de la plantilla pedida, repetido o sin precios → 422 y no se crea nada. |
+| 4.3-8 | **`GET /templates/{kind}`** devuelve las categorías con sus términos, sin precios, y `already_added` por término (para reanudar el wizard, §6): verdadero si hay un servicio vivo del término **o** con el mismo nombre (`search_key`). `kind` fuera de `lavadero`/`detailing` → 422. Solo `OWNER`, como `apply`. |
+| 4.3-9 | **`search_key`** nace con un default de Python (`normalize(name)` de la misma fila) además de fijarlo el servicio; la `0006` rellena los servicios existentes con una copia congelada de `normalize` y un test la compara con la viva. La base no lo calcula (Y8): un `INSERT` crudo debe traerlo. |
+| 4.3-10 | **`0006_servicios_categorias`**: idempotente; relleno con `NO FORCE`/`FORCE`; **el downgrade corta** (diciendo por qué) si hay alguna categoría o algún servicio con categoría o `glossary_code`, en vez de perderlos en silencio. |
+| 4.3-11 | **`missing_price_size_ids`** en la respuesta de un servicio (alta, lectura, listado, búsqueda): los tamaños vivos sin precio vivo. Crear un tamaño **no** se bloquea (§6): el servicio queda marcado hasta cargar el precio con `PUT .../prices`. |
+| 4.3-12 | **`GET /services?q=`** admite vacío o sin nada que buscar (`normalize(q)` vacío): se trata como sin filtro y lista todo. `GET /services/search` sigue exigiendo `q` no vacío. |
+| 4.3-13 | **Búsqueda sin renormalizar:** los alias del glosario se guardan ya normalizados y `match_tier(wanted, search_key, aliases=…)` recibe todo normalizado; la consulta se normaliza una vez por request. |
+| 4.3-14 | **Pocas consultas en `apply`:** tamaños y servicios vivos se leen una vez por lote y los precios de cada servicio nuevo se insertan juntos; 56 ítems × 4 tamaños son 7 `SELECT` (un test fija el tope). `PUT .../prices` lee los precios existentes en una consulta. |

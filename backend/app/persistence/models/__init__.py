@@ -7,6 +7,7 @@ from app.persistence.models.catalog import (
     PaymentMethod,
     Resource,
     Service,
+    ServiceCategory,
     ServicePrice,
     VehicleSize,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "Resource",
     "ScheduleBlock",
     "Service",
+    "ServiceCategory",
     "ServicePrice",
     "Tenant",
     "TenantSettings",

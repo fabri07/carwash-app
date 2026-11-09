@@ -12,6 +12,8 @@ from typing import Annotated
 from fastapi import Depends, Query
 
 MAX_LIMIT = 200
+#: Tope de `offset`: sin él, un valor >= 2**63 desborda el entero de la base y da 500.
+MAX_OFFSET = 10_000_000
 DEFAULT_LIMIT = 50
 
 
@@ -23,7 +25,7 @@ class PaginationParams:
 
 def pagination_params(
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=MAX_OFFSET)] = 0,
 ) -> PaginationParams:
     return PaginationParams(limit=limit, offset=offset)
 

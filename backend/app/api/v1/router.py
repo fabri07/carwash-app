@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, catalog, permission_profiles, settings, staff
+from app.api.v1 import auth, catalog, permission_profiles, services, settings, staff
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -17,3 +17,6 @@ api_router.include_router(catalog.business_hours, prefix="/business-hours", tags
 api_router.include_router(
     catalog.payment_methods, prefix="/payment-methods", tags=["Configuración"]
 )
+api_router.include_router(services.categories, prefix="/service-categories", tags=["Servicios"])
+api_router.include_router(services.services, prefix="/services", tags=["Servicios"])
+api_router.include_router(services.templates, prefix="/templates", tags=["Servicios"])
