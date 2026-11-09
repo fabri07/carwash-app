@@ -106,7 +106,7 @@ const CONFIG_ERRORS: Partial<Record<ApiErrorCode, FieldError>> = {
   IN_USE: {
     field: null,
     message:
-      "No se puede quitar porque todavía se usa: un tamaño con precios, un puesto con turnos próximos o el último medio de pago.",
+      "No se puede quitar porque todavía se usa: un tamaño con precios, un puesto con turnos próximos, una categoría con servicios o el último medio de pago.",
   },
 };
 
@@ -125,6 +125,33 @@ export function configError(e: unknown): FieldError {
     }
   }
   return { field: null, message: genericMessage(e) };
+}
+
+/**
+ * Errores de servicios y plantillas. `IN_USE` al anular un servicio dice qué lo retiene (§4.3-5).
+ * Con `context: "prices"` (alta, `PUT /prices` y plantillas) cualquier 422 `VALIDATION_ERROR` se explica en
+ * español: casi siempre alguien cambió los tamaños mientras se cargaba el formulario. El texto del
+ * backend viene en inglés, así que no se interpreta: solo se agrega como detalle.
+ */
+export function serviceError(e: unknown, context?: "prices"): FieldError {
+  const code = apiErrorCode(e);
+  if (code === "IN_USE") {
+    return {
+      field: null,
+      message:
+        "No se puede anular: hay turnos, cotizaciones o trabajos sin cerrar con este servicio. Esperá a que terminen y probá de nuevo.",
+    };
+  }
+  if (context === "prices" && code === "VALIDATION_ERROR" && axios.isAxiosError(e)) {
+    const detail = (e.response?.data as Partial<ApiError> | undefined)?.detail?.message;
+    return {
+      field: null,
+      message:
+        "Los precios no se pudieron guardar: tiene que haber un precio y una duración para cada tamaño de vehículo, y puede que los tamaños hayan cambiado. Recargá la página y volvé a cargarlos." +
+        (detail ? ` Detalle del servidor: ${detail}` : ""),
+    };
+  }
+  return configError(e);
 }
 
 /** Errores del cambio de clave propio (`POST /auth/change-password`). */

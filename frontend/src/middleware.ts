@@ -33,7 +33,13 @@ export function cookieNames(prefix = process.env.NEXT_PUBLIC_COOKIE_NAME_PREFIX 
 // Toda ruta de la app con sesión. `/cambiar-clave` también: sin sesión no hay
 // clave que cambiar. Una ruta nueva bajo `(protected)` se suma acá (lo cuida
 // `middleware.test.ts`, que recorre las carpetas de `app/(protected)`).
-export const PROTECTED_PREFIXES = ["/dashboard", "/configuracion", "/onboarding", "/cambiar-clave"];
+export const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/catalogo",
+  "/configuracion",
+  "/onboarding",
+  "/cambiar-clave",
+];
 const AUTH_PAGES = ["/login", "/register"];
 
 function matches(pathname: string, prefixes: string[]): boolean {
