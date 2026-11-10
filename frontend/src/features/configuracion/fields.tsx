@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -52,6 +54,72 @@ export function TextField<T extends FieldValues>({
             ) : (
               <Input disabled={disabled} autoComplete="off" {...input} {...field} />
             )}
+          </FormControl>
+          {hint && <FormDescription>{hint}</FormDescription>}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** Importe en pesos: el valor del formulario son centavos enteros (`number`), nunca texto. */
+export function MoneyField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  disabled,
+}: BaseProps<T>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <MoneyInput
+              name={field.name}
+              ref={field.ref}
+              disabled={disabled}
+              value={field.value as number | null | undefined}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+            />
+          </FormControl>
+          {hint && <FormDescription>{hint}</FormDescription>}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** Lista desplegable nativa (en el celular abre el selector del sistema). */
+export function SelectField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  disabled,
+  options,
+}: BaseProps<T> & { options: { value: string; label: string }[] }) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <NativeSelect disabled={disabled} {...field}>
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
           </FormControl>
           {hint && <FormDescription>{hint}</FormDescription>}
           <FormMessage />

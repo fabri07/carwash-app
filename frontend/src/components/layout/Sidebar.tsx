@@ -9,6 +9,7 @@ import {
   Droplets,
   LayoutDashboard,
   Settings,
+  Tags,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -35,6 +36,8 @@ export interface NavItem {
   section?: string;
   /** Se muestra solo a quien tiene este permiso (el OWNER los tiene todos). */
   permission?: PermissionCode;
+  /** Se muestra a quien tiene al menos uno de estos permisos (el OWNER los tiene todos). */
+  anyPermission?: PermissionCode[];
   /** Solo el dueño (configuración del negocio y del equipo, Y5). */
   ownerOnly?: boolean;
 }
@@ -42,6 +45,12 @@ export interface NavItem {
 // Cada fase agrega acá sus pantallas, con el permiso que las habilita.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Inicio", href: "/dashboard", icon: LayoutDashboard },
+  {
+    label: "Catálogo",
+    href: "/catalogo",
+    icon: Tags,
+    anyPermission: ["CATALOGO_EDITAR", "PRECIOS_EDITAR"],
+  },
   {
     label: "Negocio",
     href: "/configuracion",
@@ -71,6 +80,9 @@ export function visibleNavItems(
   return items.filter((item) => {
     if (item.ownerOnly && user?.role !== "OWNER") return false;
     if (item.permission && !can(user, permissions, item.permission)) return false;
+    if (item.anyPermission && !item.anyPermission.some((p) => can(user, permissions, p))) {
+      return false;
+    }
     return true;
   });
 }

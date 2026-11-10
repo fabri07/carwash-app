@@ -52,6 +52,28 @@ export type PaymentMethod = Schemas["PaymentMethodResponse"];
 export type PaymentMethodPayload = Schemas["PaymentMethodCreate"];
 export type PaymentMethodPatch = Schemas["PaymentMethodUpdate"];
 
+// Catálogo de servicios (PR 4.3): categorías, servicios con precio por tamaño y plantillas.
+export type ServiceCategory = Schemas["ServiceCategoryResponse"];
+export type ServiceCategoryPayload = Schemas["ServiceCategoryCreate"];
+export type ServiceCategoryPatch = Schemas["ServiceCategoryUpdate"];
+export type Service = Schemas["ServiceResponse"];
+export type ServicePayload = Schemas["ServiceCreate"];
+export type ServicePatch = Schemas["ServiceUpdate"];
+export type ServicePrice = Schemas["ServicePriceResponse"];
+export type ServicePriceItem = Schemas["ServicePriceInput"];
+export type ServicePricesPayload = Schemas["ServicePricesPut"];
+/** `PricingMode` es el nombre del schema. */
+export type PricingModeCode = Schemas["PricingMode"];
+/** `TemplateKind` es el nombre del schema. */
+export type TemplateKindCode = Schemas["TemplateKind"];
+export type Template = Schemas["TemplateResponse"];
+export type TemplateGroup = Schemas["TemplateCategoryResponse"];
+export type TemplateTerm = Schemas["TemplateTermResponse"];
+export type TemplateApplyPayload = Schemas["TemplateApply"];
+export type TemplateApplyItemPayload = Schemas["TemplateApplyItem"];
+export type TemplateApplyResult = Schemas["TemplateApplyResponse"];
+export type TemplateSkipped = Schemas["TemplateSkippedResponse"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];
