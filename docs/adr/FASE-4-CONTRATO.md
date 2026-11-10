@@ -454,8 +454,10 @@ El dueño revisó lo que la planilla de Sola sumó desde F1 (ver `docs/ROADMAP.m
 | D4-18 | **Anticipación mínima: 5 minutos.** Ya es el default de `tenant_settings.min_advance_min`; no cambia código. El 15 que aparece en textos de ayuda de la planilla está desactualizado. |
 
 **PR 4.3c** (antes de 4.4 y 4.5, chico): migración `0007` con `services.deposit_bps` (idempotente; el
-downgrade corta si algún servicio tiene % propio, como la `0006`); `POST /services` y `PATCH /services/{id}`
-aceptan `deposit_bps` (exige `PRECIOS_EDITAR`, porque cambia lo que paga el cliente) y lo devuelven;
+downgrade corta si algún servicio tiene % propio, como la `0006`); `POST /services` y
+`PUT /services/{id}/prices` aceptan `deposit_bps` (los dos exigen `PRECIOS_EDITAR`, porque cambia lo que
+paga el cliente; en el `PUT`, `null` explícito vuelve a la general y ausente no lo toca); el `PATCH` lo
+ignora, como a los precios (§2.3). Todas las respuestas de servicio lo devuelven;
 `catalog_items` toma el % del servicio; front: campo opcional "Seña propia (%)" en el formulario de
 servicio. Aceptación: servicio con y sin % propio, seña apagada con % propio (cobra 0), bordes 0 y 10001
 (422), aislamiento del campo entre tenants.
