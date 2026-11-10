@@ -231,6 +231,29 @@ def test_settings_y_catalogo_tienen_la_autorizacion_del_contrato():
     )  # settings GET/PATCH + 4 recursos x (lista, alta, ver, editar, anular)
 
 
+def test_el_catalogo_de_vehiculos_tiene_la_autorizacion_del_contrato():
+    """§4 (PR 4.4): lectura para todo usuario autenticado; alta, edición y `PUT
+    /body-type-sizes` con `CATALOGO_EDITAR`."""
+    app = create_app()
+    prefijos = ("/v1/vehicle-makes", "/v1/vehicle-models", "/v1/vehicle-colors")
+    vistas = 0
+    for ruta in app.routes:
+        if not (
+            isinstance(ruta, APIRoute)
+            and (ruta.path.startswith(prefijos) or ruta.path == "/v1/body-type-sizes")
+        ):
+            continue
+        esperada = (
+            {("authenticated", frozenset())}
+            if ruta.methods == {"GET"}
+            else {("permission", frozenset({Permission.CATALOGO_EDITAR}))}
+        )
+        assert _autorizaciones(ruta.dependant) == esperada, (ruta.methods, ruta.path)
+        vistas += 1
+    # 3 recursos x (lista, alta, ver, editar) + carrocerías (ver, reemplazar)
+    assert vistas == 3 * 4 + 2
+
+
 def _mini_app(*dependencias: Callable[..., Any]) -> FastAPI:
     router = APIRouter()
 

@@ -6,7 +6,8 @@ etapa completa los tenants que ya existen:
 
 - 4.1: tenant, `OWNER` y los perfiles de permisos por defecto;
 - 4.2: `slug` y `tenant_settings`;
-- 4.4: la copia de la base de vehículos.
+- 4.4: la copia de la base de vehículos (marcas, modelos y colores; `body_type_sizes` nace vacía
+  porque el negocio todavía no tiene tamaños: la carga el wizard, FASE-4-CONTRATO §11.7).
 
 Como los servicios de F3: `flush`, nunca `commit`; la transacción es del llamador.
 """
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.errors import AlreadyExistsError, SlugUnavailableError
+from app.application.services.vehicle_catalog_service import BaseCopy, copy_vehicle_base
 from app.domain.permissions import DEFAULT_PROFILES, sorted_permissions
 from app.domain.roles import Role
 from app.domain.slug import candidate_slug
@@ -47,6 +49,7 @@ class ProvisionedTenant:
     owner: User
     profiles: dict[str, PermissionProfile]
     settings: TenantSettings
+    vehicle_base: BaseCopy
 
 
 async def provision_tenant(
@@ -95,7 +98,14 @@ async def provision_tenant(
     settings = TenantSettings(tenant_id=tenant_id)
     session.add(settings)
     await session.flush()
-    return ProvisionedTenant(tenant=tenant, owner=owner, profiles=profiles, settings=settings)
+    vehicle_base = await copy_vehicle_base(session, tenant_id)
+    return ProvisionedTenant(
+        tenant=tenant,
+        owner=owner,
+        profiles=profiles,
+        settings=settings,
+        vehicle_base=vehicle_base,
+    )
 
 
 async def _add_tenant(session: AsyncSession, tenant_id: uuid.UUID, name: str) -> Tenant:

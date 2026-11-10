@@ -118,6 +118,23 @@ RECETAS: dict[str, Receta] = {
         "for_income": True,
         "for_expense": True,
     },
+    # ── F4 · vehículos ── el catálogo va antes que `vehicles` (FKs compuestas). Nombres con el tag
+    # del tenant: los únicos son por `search_key`, como los demás únicos derivados.
+    "vehicle_makes": lambda c: {
+        "name": f"Marca {c.tag}",
+        "search_key": f"marca {c.tag}",
+        "is_custom": True,
+    },
+    "vehicle_models": lambda c: {
+        "make_id": c["vehicle_makes"],
+        "name": f"Modelo {c.tag}",
+        "body_type": "PICKUP",
+        "search_key": f"modelo {c.tag}",
+        "is_custom": True,
+        "hidden_at": INICIO_TURNO,
+    },
+    "vehicle_colors": lambda c: {"name": f"Gris {c.tag}", "search_key": f"gris {c.tag}"},
+    "body_type_sizes": lambda c: {"body_type": "PICKUP", "vehicle_size_id": c["vehicle_sizes"]},
     # ── 1.2 Clientes y vehículos ──
     "customers": lambda c: {
         "name": f"Cliente {c.tag}",
@@ -133,6 +150,9 @@ RECETAS: dict[str, Receta] = {
         "plate_normalized": f"AB{c.digitos[-3:]}CD",
         "plate_format": "MERCOSUR",
         "vehicle_size_id": c["vehicle_sizes"],
+        "make_id": c["vehicle_makes"],
+        "model_id": c["vehicle_models"],
+        "color_id": c["vehicle_colors"],
         "brand_model": "Fiat Cronos",
         "color": "Gris",
         "notes": "sintético",

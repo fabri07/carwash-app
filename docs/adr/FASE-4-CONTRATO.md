@@ -441,3 +441,47 @@ alimentan la búsqueda (sinónimos, defecto → servicio) o, en el caso de `prod
 | 4.3-12 | **`GET /services?q=`** admite vacío o sin nada que buscar (`normalize(q)` vacío): se trata como sin filtro y lista todo. `GET /services/search` sigue exigiendo `q` no vacío. |
 | 4.3-13 | **Búsqueda sin renormalizar:** los alias del glosario se guardan ya normalizados y `match_tier(wanted, search_key, aliases=…)` recibe todo normalizado; la consulta se normaliza una vez por request. |
 | 4.3-14 | **Pocas consultas en `apply`:** tamaños y servicios vivos se leen una vez por lote y los precios de cada servicio nuevo se insertan juntos; 56 ítems × 4 tamaños son 7 `SELECT` (un test fija el tope). `PUT .../prices` lee los precios existentes en una consulta. |
+
+---
+
+## 11.7 Adenda del PR 4.4 — catálogo de vehículos (2026-11-10)
+
+Backend y front del 4.4 (`features/vehiculos/`, pestaña "Vehículos" de Configuración). Completa §3.4 y
+§4; donde choque, manda esta subsección. Migración `0008_catalogo_vehiculos` (sale de
+`0007_sena_por_servicio`; si el 4.5 mergea antes con migración propia, se rebasa, Y2).
+
+### La base
+
+`backend/app/data/vehiculos_ar.json`: **38 marcas, 396 modelos y 16 colores** del mercado argentino
+(autos de los últimos ~20 años, utilitarios, furgones y motos comunes), cada modelo con su carrocería.
+Datos públicos, sin PII (§8). La forma del archivo es fija (`makes[].name/models[].name/body_type`,
+`colors[]`) y `tests/domain/test_base_de_vehiculos.py` verifica que no haya duplicados por
+`search_key` (marcas entre sí, modelos dentro de su marca, colores), que todo nombre entre en los
+CHECK de largo y que la `0008` congele el mismo enum y la misma `normalize`.
+
+### Decisiones tomadas al construir
+
+| # | Decisión |
+|---|---|
+| 4.4-1 | **`VehicleBodyType` vive en `domain/vehicle_catalog.py`**, no en `domain/enums.py`: aquel es el vocabulario congelado de la F3 (`0003`) y un test exige que cada `*_ENUM` de ese archivo esté en la `0003`. La `0008` congela sus valores (`BODY_TYPES`) y un test los compara con el enum vivo. |
+| 4.4-2 | **Ocultar no es anular.** `hidden_at` saca la fila de los selectores y se deshace con `PATCH {"hidden": false}`; la fila sigue viva y **conserva su nombre en el único** (crear "Alfa Romeo" con la marca oculta es 409). No hay `DELETE` (§4 solo pide `POST`/`PATCH`): un vehículo cargado en F6 puede apuntar a la fila. Un modelo de una marca oculta tampoco sale en los selectores. |
+| 4.4-3 | **Únicos entre vivos por `search_key`** (`normalize(name)`, Y8): "Citroen" y "Citroën" son la misma marca, "HILUX" choca con "Hilux" en Toyota pero no en Ford. Colores también únicos por clave (§3.4 no lo decía; sin eso se repetirían "Gris" y "gris"). Repetido → 409 `NAME_TAKEN`, como servicios y categorías. `search_key` con default de Python y fijado por el servicio, como en 4.3-9. |
+| 4.4-4 | **Lectura** (`GET` de las tres listas y de cada fila, `GET /body-type-sizes`): cualquier usuario autenticado (`require_authenticated()`). **`?include_hidden=true`** trae las ocultas (la pantalla de administración); cualquiera puede pedirlo, no es un dato sensible. `?q=` vacío o sin nada buscable = sin filtro (como 4.3-12). `GET /vehicle-models` acepta **`make_id` opcional**: sin marca busca en todas, y la consulta también matchea "marca modelo" ("toyota hilux"). Un `make_id` ajeno o inexistente es **404** (no una lista vacía), idéntico byte a byte. |
+| 4.4-5 | **Escritura** (`POST`/`PATCH` de marcas, modelos y colores; `PUT /body-type-sizes`): `CATALOGO_EDITAR`. Lo creado por la API es siempre `is_custom = true` (el campo del cuerpo se ignora). El `PATCH` de un modelo cambia nombre, carrocería u ocultamiento, **no la marca** (se crea el modelo en la marca correcta y se oculta el otro). `POST` con `Idempotency-Key` opcional; el `PUT` es idempotente y no la lleva. |
+| 4.4-6 | **A10 como campo, no como endpoint:** cada modelo devuelve `suggested_vehicle_size_id` (y `make_name`, para listar sin marca). Sale de `body_type_sizes` unida a los tamaños **vivos**: un tamaño anulado deja de sugerirse aunque la fila siga apuntándolo (no se tocó `void_vehicle_size`). |
+| 4.4-7 | **`PUT /body-type-sizes` reemplaza el mapa entero** (`{"items": [{body_type, vehicle_size_id \| null}]}`): una carrocería ausente o con `null` deja de sugerir (su fila se anula). Carrocería repetida o tamaño que no es un tamaño vivo del negocio (ajeno, anulado o inexistente: el mismo mensaje) → 422 `VALIDATION_ERROR`. `GET` y `PUT` devuelven **siempre las 9 carrocerías** en el orden del enum, con `PaginatedResponse` (ADR-0006). |
+| 4.4-8 | **`body_type_sizes` nace vacía** en `provision_tenant` y en la `0008`: al registrarse el negocio no tiene tamaños, y adivinar por código (`AUTO`, `SUV`…) en los existentes dejaría filas que nadie eligió. La carga el negocio en Configuración → Vehículos → "Carrocería y tamaño", y el paso "tamaños y carrocerías" del wizard (4.6). |
+| 4.4-9 | **Copia de la base:** `provision_tenant` llama a `copy_vehicle_base` (tres `INSERT` en lote, ~450 filas; `ProvisionedTenant.vehicle_base` informa los conteos). La `0008` copia la base a **cada tenant que todavía no tiene marcas**; uno que ya tiene no se toca, así re-aplicar no duplica ni "resucita" lo renombrado. La base se lee **del archivo** (no se congela en la migración: son ~400 modelos); si la base cambia, los negocios existentes se completan con una migración de datos nueva. |
+| 4.4-10 | **`vehicles.make_id/model_id/color_id`**: FKs compuestas `(tenant_id, x_id)` como todas (X4; el meta-test no admite otra forma). Que el modelo sea de la marca **lo valida la aplicación en F6**, que es quien crea vehículos; este PR no tiene endpoint de vehículos. Los existentes quedan en `NULL` con su texto libre. |
+| 4.4-11 | **Downgrade de la `0008` corta** (diciendo qué y cuántas) si perdería algo que hizo el negocio: marcas, modelos o colores propios, ocultos o **editados respecto de la base** (nombre, clave o carrocería distintos de los del archivo; los modelos de una marca renombrada también cuentan), filas de `body_type_sizes`, o vehículos con marca, modelo o color del catálogo. La copia intacta de la base se borra sin preguntar. Corre con `NO FORCE`/`FORCE`, como 0006 y 0007. |
+| 4.4-12 | **Front:** `features/vehiculos/` (tabla genérica `VehicleCatalogTable` con búsqueda, "mostrar ocultas", alta, renombre y ocultar/mostrar; `BodyTypeSizesForm`; `VehiclePicker`, el selector marca → modelo → color con tamaño sugerido que usará F6, solo con filas visibles y que borra el modelo al cambiar de marca). Pestaña "Vehículos" en `/configuracion` para quien tiene `CATALOGO_EDITAR`. No importa nada de `features/catalogo/` (los tamaños los lee con la misma clave de query `["config", "vehicle-sizes", …]`). |
+
+### Verificación sin Docker
+
+`make test-pg` no corrió en la máquina del implementador (Docker apagado): lo corre el CI. Los tests
+`postgres` nuevos (`test_migracion_0008_pg.py`, `test_aislamiento_vehiculos_pg.py`, el conteo de
+políticas de `test_migraciones_idempotentes_pg.py`) se escribieron igual. Además se probó la `0008`
+contra un Postgres 16 real embebido (sin `btree_gist`, con un esquema mínimo de `tenants`,
+`vehicle_sizes` y `vehicles` con RLS forzado y dueño no superusuario): upgrade, re-upgrade, RLS del rol
+de runtime, los cortes del downgrade, downgrade limpio y vuelta a subir; y `copy_vehicle_base` más
+`VehicleCatalogService` con el rol de runtime.

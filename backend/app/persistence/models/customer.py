@@ -55,13 +55,25 @@ class Customer(TenantScopedModel):
 
 
 class Vehicle(TenantScopedModel):
-    """Corregir la patente no cambia el `id` (**[corregir]** R-C-008)."""
+    """Corregir la patente no cambia el `id` (**[corregir]** R-C-008).
+
+    Marca, modelo y color apuntan al catálogo del negocio (FASE-4-CONTRATO §3.4); `brand_model` y
+    `color` quedan como texto libre de respaldo (lo que no está en el catálogo, o lo cargado antes
+    de la F4). Que el modelo sea de la marca lo valida la aplicación (F6): la FK compuesta es
+    `(tenant_id, x_id)`, como todas (X4).
+    """
 
     __tablename__ = "vehicles"
     __table_args__ = voidable_table_args(
         parent_key(),
         tenant_fk("vehicle_size_id", "vehicle_sizes"),
         tenant_index("vehicles", "vehicle_size_id"),
+        tenant_fk("make_id", "vehicle_makes"),
+        tenant_index("vehicles", "make_id"),
+        tenant_fk("model_id", "vehicle_models"),
+        tenant_index("vehicles", "model_id"),
+        tenant_fk("color_id", "vehicle_colors"),
+        tenant_index("vehicles", "color_id"),
         pg_check("plate_normalized ~ '^[A-Z0-9]{1,10}$'", "patente_normalizada"),
         check("length(brand_model) <= 40", "marca_modelo_largo"),
         unique_alive("vehicles", "plate_normalized", where="plate_normalized IS NOT NULL"),
@@ -77,6 +89,10 @@ class Vehicle(TenantScopedModel):
     )
     #: Tamaño habitual; el del trabajo va en el job.
     vehicle_size_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    #: Catálogo del negocio (PR 4.4). Nullable: el texto libre de abajo es el respaldo.
+    make_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    color_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     brand_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -11,13 +11,14 @@ import {
   VehicleSizesTab,
 } from "@/features/configuracion/CatalogTabs";
 import { BusinessTab, DepositTab } from "@/features/configuracion/SettingsTabs";
+import { VehicleCatalogPanel } from "@/features/vehiculos/VehicleCatalogPanel";
 import { useCan, useIsOwner, usePermissionsLoaded } from "@/hooks/usePermission";
 
 /**
  * `/configuracion` (FASE-4-CONTRATO §7, PR 4.2b): una página con pestañas.
  *
  * Negocio y Seña y reservas son del dueño (`PATCH /settings`). Horarios, puestos,
- * medios de pago y tamaños los edita quien tiene `CATALOGO_EDITAR`. Ocultar no es
+ * medios de pago, tamaños y vehículos (PR 4.4) los edita quien tiene `CATALOGO_EDITAR`. Ocultar no es
  * autorizar: el backend responde 403 igual si alguien llega por URL.
  */
 export function ConfigPageClient() {
@@ -67,6 +68,7 @@ export function ConfigPageClient() {
           {canCatalog && <TabsTrigger value="puestos">Puestos</TabsTrigger>}
           {canCatalog && <TabsTrigger value="medios">Medios de pago</TabsTrigger>}
           {canCatalog && <TabsTrigger value="tamanos">Tamaños</TabsTrigger>}
+          {canCatalog && <TabsTrigger value="vehiculos">Vehículos</TabsTrigger>}
         </TabsList>
         {isOwner && (
           <TabsContent value="negocio">
@@ -96,6 +98,11 @@ export function ConfigPageClient() {
         {canCatalog && (
           <TabsContent value="tamanos">
             <VehicleSizesTab />
+          </TabsContent>
+        )}
+        {canCatalog && (
+          <TabsContent value="vehiculos">
+            <VehicleCatalogPanel />
           </TabsContent>
         )}
       </Tabs>
