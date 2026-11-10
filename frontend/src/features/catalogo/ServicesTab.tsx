@@ -17,7 +17,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { durationSummary, MODE_LABELS, priceSummary } from "@/features/catalogo/format";
+import {
+  depositLabel,
+  durationSummary,
+  MODE_LABELS,
+  priceSummary,
+} from "@/features/catalogo/format";
 import {
   catalogKeys,
   useAllCategories,
@@ -34,6 +39,7 @@ import { servicesApi } from "@/services/catalog.service";
 import { toast } from "@/stores/toastStore";
 import type { Service } from "@/types/api";
 import {
+  toDepositBps,
   toPriceItems,
   type ServiceCreateInput,
   type ServiceEditInput,
@@ -132,6 +138,12 @@ export function ServicesTab() {
       cell: (s) => durationSummary(s),
       csvValue: (s) => durationSummary(s),
     },
+    {
+      key: "deposit",
+      header: "Seña",
+      cell: (s) => depositLabel(s),
+      csvValue: (s) => depositLabel(s),
+    },
     { key: "notes", header: "Notas", defaultVisible: false },
   ];
 
@@ -149,6 +161,7 @@ export function ServicesTab() {
           pricing_mode: values.pricing_mode,
           notes: values.notes === "" ? null : values.notes,
           category_id: values.category_id === "" ? null : values.category_id,
+          deposit_bps: toDepositBps(values.deposit_percent),
           prices: toPriceItems(values.prices),
         },
         idempotencyKey,
@@ -183,6 +196,8 @@ export function ServicesTab() {
     try {
       await servicesApi.replacePrices(item.id, {
         pricing_mode: values.pricing_mode,
+        // Siempre se manda: vacío (`null`) vuelve a la seña general del negocio.
+        deposit_bps: toDepositBps(values.deposit_percent),
         prices: toPriceItems(values.prices),
       });
     } catch (e) {

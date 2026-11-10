@@ -9,6 +9,7 @@ import {
   isSearchable,
   priceRowSchema,
   serviceCreateSchema,
+  toDepositBps,
   toPriceItems,
 } from "@/validation/services";
 
@@ -105,8 +106,33 @@ describe("validation/services", () => {
     expect(priceRowSchema.safeParse({ ...ok, duration_min: "20160" }).success).toBe(true);
   });
 
+  it("seña propia: vacía usa la general; si no, un % entre 0,01 y 100 (D4-17)", () => {
+    const row = { vehicle_size_id: "s", price_cents: 100, duration_min: "30" };
+    const base = {
+      name: "Lavado",
+      category_id: "",
+      notes: "",
+      pricing_mode: "PRECIO_FIJO",
+      prices: [row],
+    };
+    const ok = (v: string) =>
+      serviceCreateSchema.safeParse({ ...base, deposit_percent: v }).success;
+    expect(["", "30", "12,5", "0,01", "100"].every(ok)).toBe(true);
+    expect(["0", "100,01", "abc", "-5", "1,234"].some(ok)).toBe(false);
+    expect(toDepositBps("")).toBeNull();
+    expect(toDepositBps("  ")).toBeNull();
+    expect(toDepositBps("30")).toBe(3000);
+    expect(toDepositBps("12,5")).toBe(1250);
+  });
+
   it("el alta pide al menos un tamaño y un nombre dentro del largo", () => {
-    const base = { name: "Lavado", category_id: "", notes: "", pricing_mode: "PRECIO_FIJO" };
+    const base = {
+      name: "Lavado",
+      category_id: "",
+      notes: "",
+      pricing_mode: "PRECIO_FIJO",
+      deposit_percent: "",
+    };
     expect(serviceCreateSchema.safeParse({ ...base, prices: [] }).success).toBe(false);
     const row = { vehicle_size_id: "s", price_cents: 100, duration_min: "30" };
     expect(serviceCreateSchema.safeParse({ ...base, prices: [row] }).success).toBe(true);

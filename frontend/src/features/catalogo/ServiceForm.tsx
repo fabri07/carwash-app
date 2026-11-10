@@ -30,6 +30,7 @@ export function ServiceForm({ sizes, categories, onSubmit, onCancel }: ServiceFo
       category_id: "",
       notes: "",
       pricing_mode: "PRECIO_FIJO",
+      deposit_percent: "",
       prices: sizes.map((s) => ({
         vehicle_size_id: s.id,
         price_cents: undefined,
@@ -59,6 +60,14 @@ export function ServiceForm({ sizes, categories, onSubmit, onCancel }: ServiceFo
           label="Notas (opcional)"
           multiline
           hint="Qué incluye, aclaraciones para el equipo."
+        />
+        <TextField
+          control={form.control}
+          name="deposit_percent"
+          label="Seña propia (%) (opcional)"
+          inputMode="decimal"
+          placeholder="Usa la general"
+          hint="Vacío: usa el % de seña del negocio. Solo se cobra si la seña está activa en Configuración."
         />
         <PriceFields sizes={sizes} />
         <DialogFormFooter

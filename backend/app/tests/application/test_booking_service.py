@@ -28,7 +28,7 @@ from app.domain.enums import (
     QuoteStatus,
 )
 from app.domain.exceptions import GuardFailedError, InvalidTransition
-from app.persistence.models import CashMovement, Payment, Quote
+from app.persistence.models import CashMovement, Payment, Quote, Service
 from app.persistence.models.cancellation import DEFAULT_REASON
 from app.persistence.repositories.agenda import BookingItemRepository
 from app.tests.application._armado import (
@@ -91,6 +91,34 @@ async def test_los_servicios_se_suman(lav):
         (0, lav.lavado),
         (1, lav.lavado_con_sena),
     ]
+
+
+async def _sena_propia(lav: Lavadero, service_id: uuid.UUID, bps: int | None) -> None:
+    servicio = await lav.session.get(Service, service_id)
+    assert servicio is not None
+    servicio.deposit_bps = bps
+    await lav.session.flush()
+
+
+async def test_la_sena_propia_del_servicio_pisa_a_la_del_negocio(lav):
+    """D4-17: el servicio con % propio (50 %) lo usa; el otro, el del negocio (30 %). Cada ítem
+    guarda el % que usó."""
+    await lav.activar_sena()
+    await _sena_propia(lav, lav.lavado, 5000)
+    booking = await lav.turno(servicios=[lav.lavado, lav.lavado_con_sena])
+    assert booking.deposit_required_cents == PRECIO_FIJO // 2 + SENA
+    items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
+    assert [i.deposit_bps for i in items] == [5000, SENA_BPS]
+
+
+async def test_con_la_sena_apagada_el_porcentaje_propio_no_cobra(lav):
+    """El interruptor es del negocio (D4-17): apagado, ningún servicio pide seña."""
+    await _sena_propia(lav, lav.lavado, 5000)
+    booking = await lav.turno()
+    assert booking.status == S.CONFIRMADO
+    assert booking.deposit_required_cents == 0
+    items = await BookingItemRepository(lav.session).list_for_booking(booking.id, lav.tenant_id)
+    assert [i.deposit_bps for i in items] == [0]
 
 
 async def test_servicios_vacios_repetidos_o_dos_a_cotizar_fallan(lav):

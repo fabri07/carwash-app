@@ -3,7 +3,7 @@
 `extra="ignore"`: el `tenant_id` de un cuerpo se descarta. El `PATCH` de un servicio **no**
 declara campos de precio ni de modalidad (§2.3): `extra="ignore"` los descartaría en silencio, y
 el contrato lo deja en un test. `glossary_code` tampoco entra por el `POST`: solo lo fija la
-plantilla. Los precios entran por `POST /services` y `PUT .../prices`.
+plantilla. Los precios y la seña propia (D4-17) entran por `POST /services` y `PUT .../prices`.
 """
 
 import uuid
@@ -44,6 +44,9 @@ Notes = Annotated[str, BeforeValidator(_sin_nul), Field(max_length=500)]
 GlossaryCode = Annotated[str, Field(pattern="^[a-z0-9_]{1,80}$")]
 #: Tope de plata: $ 100.000.000,00 en centavos. Evita desbordes y typos de ceros.
 MAX_PRICE_CENTS = 10_000_000_000
+#: % de seña propio en puntos básicos (D4-17): mismo rango que el del negocio. `StrictInt` por lo
+#: mismo que el precio.
+DepositBps = Annotated[StrictInt, Field(ge=1, le=10000)]
 MAX_DURATION_MIN = 24 * 60 * 14  # 14 días: el detailing con curado puede dejar el auto un tiempo
 
 
@@ -92,6 +95,8 @@ class ServiceCreate(_Body):
     pricing_mode: PricingMode
     notes: Notes | None = None
     category_id: uuid.UUID | None = None
+    #: % de seña propio (D4-17). Ausente o `null`: usa el del negocio.
+    deposit_bps: DepositBps | None = None
     prices: Annotated[list[ServicePriceInput], Field(min_length=1)]
 
 
@@ -110,9 +115,14 @@ class ServiceUpdate(_Body):
 
 
 class ServicePricesPut(_Body):
-    """Los precios de **todos** los tamaños vivos; `pricing_mode` opcional cambia la modalidad."""
+    """Los precios de **todos** los tamaños vivos; `pricing_mode` opcional cambia la modalidad.
+
+    `deposit_bps` opcional: si viene, fija el % de seña propio; `null` explícito lo borra (vuelve al
+    del negocio); ausente no lo toca (D4-17).
+    """
 
     pricing_mode: PricingMode | None = None
+    deposit_bps: DepositBps | None = None
     prices: Annotated[list[ServicePriceInput], Field(min_length=1)]
 
 
@@ -126,6 +136,8 @@ class ServiceResponse(CamelModel):
     notes: str | None
     category_id: uuid.UUID | None
     glossary_code: str | None
+    #: % de seña propio (D4-17); `null` = usa el del negocio.
+    deposit_bps: int | None
     prices: list[ServicePriceResponse]
     #: Tamaños vivos sin precio vivo: la UI los marca (§6). Vacío si el servicio está completo.
     missing_price_size_ids: list[uuid.UUID]

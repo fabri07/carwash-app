@@ -643,3 +643,68 @@ async def test_precio_y_duracion_son_enteros_estrictos(client, cookies_a):
         cuerpo["prices"][0][campo] = valor
         r = await client.post("/v1/services", json=cuerpo, cookies=cookies_a)
         assert r.status_code == 422, (campo, valor)
+
+
+# ── Seña propia por servicio (D4-17, FASE-4-CONTRATO §11.6) ─────────────────
+
+
+async def test_sena_propia_en_el_alta_y_por_defecto_nula(client, cookies_a):
+    tamanos = await crear_tamanos(client, cookies_a)
+    general = await crear_servicio(client, cookies_a, tamanos, "Lavado exterior")
+    assert general["deposit_bps"] is None  # usa la del negocio
+    camion = await crear_servicio(client, cookies_a, tamanos, "Lavado camión", deposit_bps=3000)
+    assert camion["deposit_bps"] == 3000
+    leido = await client.get(f"/v1/services/{camion['id']}", cookies=cookies_a)
+    assert leido.json()["deposit_bps"] == 3000
+
+
+async def test_put_de_precios_fija_borra_o_conserva_la_sena_propia(client, cookies_a):
+    tamanos = await crear_tamanos(client, cookies_a)
+    s = await crear_servicio(client, cookies_a, tamanos, "Lavado camión")
+    url = f"/v1/services/{s['id']}/prices"
+    r = await client.put(
+        url, json={"prices": precios(tamanos), "deposit_bps": 3000}, cookies=cookies_a
+    )
+    assert r.status_code == 200 and r.json()["deposit_bps"] == 3000
+    # Ausente: no la toca.
+    r = await client.put(url, json={"prices": precios(tamanos)}, cookies=cookies_a)
+    assert r.json()["deposit_bps"] == 3000
+    # `null` explícito: vuelve a la del negocio.
+    r = await client.put(
+        url, json={"prices": precios(tamanos), "deposit_bps": None}, cookies=cookies_a
+    )
+    assert r.status_code == 200 and r.json()["deposit_bps"] is None
+
+
+@pytest.mark.parametrize("valor", [0, 10001, -1, True, "30", 25.5])
+async def test_sena_propia_fuera_de_rango_o_de_tipo_es_422(client, cookies_a, valor):
+    tamanos = await crear_tamanos(client, cookies_a)
+    r = await client.post(
+        "/v1/services", json=cuerpo_servicio(tamanos, deposit_bps=valor), cookies=cookies_a
+    )
+    assert r.status_code == 422, r.text
+    s = await crear_servicio(client, cookies_a, tamanos, "Otro")
+    r = await client.put(
+        f"/v1/services/{s['id']}/prices",
+        json={"prices": precios(tamanos), "deposit_bps": valor},
+        cookies=cookies_a,
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.parametrize("valor", [1, 10000])
+async def test_sena_propia_en_los_bordes_es_valida(client, cookies_a, valor):
+    tamanos = await crear_tamanos(client, cookies_a)
+    s = await crear_servicio(client, cookies_a, tamanos, "Borde", deposit_bps=valor)
+    assert s["deposit_bps"] == valor
+
+
+async def test_el_patch_no_cambia_la_sena_propia(client, cookies_a):
+    """La seña cambia lo que paga el cliente: va con `PRECIOS_EDITAR` (`PUT .../prices`), no
+    por el `PATCH` de `CATALOGO_EDITAR` (§2.3). El campo se ignora."""
+    tamanos = await crear_tamanos(client, cookies_a)
+    s = await crear_servicio(client, cookies_a, tamanos, "Lavado camión", deposit_bps=3000)
+    r = await client.patch(
+        f"/v1/services/{s['id']}", json={"name": "Camión", "deposit_bps": 9000}, cookies=cookies_a
+    )
+    assert r.status_code == 200 and r.json()["deposit_bps"] == 3000

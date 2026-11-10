@@ -98,6 +98,7 @@ function service(over: Partial<Service> = {}): Service {
     notes: "Incluye aspirado",
     category_id: "c1",
     glossary_code: null,
+    deposit_bps: null,
     prices: [
       { id: "p1", vehicle_size_id: "s1", price_cents: 2_000_000, duration_min: 60 },
       { id: "p2", vehicle_size_id: "s2", price_cents: 3_000_000, duration_min: 90 },
@@ -369,6 +370,7 @@ describe("Servicios — alta, edición y baja", () => {
       pricing_mode: "PRECIO_FIJO",
       notes: "Con cera",
       category_id: "c1",
+      deposit_bps: null,
       prices: [
         { vehicle_size_id: "s1", price_cents: 2_000_000, duration_min: 60 },
         { vehicle_size_id: "s2", price_cents: 3_050_050, duration_min: 90 },
@@ -544,11 +546,58 @@ describe("Servicios — alta, edición y baja", () => {
     await waitFor(() => expect(servicesApi.replacePrices).toHaveBeenCalledTimes(1));
     expect(servicesApi.replacePrices).toHaveBeenCalledWith("sv1", {
       pricing_mode: "A_COTIZAR",
+      deposit_bps: null,
       prices: [
         { vehicle_size_id: "s1", price_cents: 2_500_000, duration_min: 60 },
         { vehicle_size_id: "s2", price_cents: 3_000_000, duration_min: 90 },
       ],
     });
+  });
+
+  it("seña propia: el alta manda los puntos básicos", async () => {
+    (servicesApi.create as jest.Mock).mockResolvedValueOnce(service({ deposit_bps: 1250 }));
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /nuevo servicio/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Nuevo servicio" });
+    await userEvent.type(await within(dialog).findByLabelText("Nombre"), "Lavado camión");
+    await userEvent.type(within(dialog).getByLabelText("Seña propia (%) (opcional)"), "12,5");
+    await fillPrices(dialog, ["20.000", "30.000"], ["60", "90"]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+    await waitFor(() => expect(servicesApi.create).toHaveBeenCalledTimes(1));
+    expect((servicesApi.create as jest.Mock).mock.calls[0]![0]).toMatchObject({
+      deposit_bps: 1250,
+    });
+  });
+
+  it("seña propia: se ve en la tabla y vaciarla vuelve a la general", async () => {
+    (servicesApi.list as jest.Mock).mockResolvedValue(page([service({ deposit_bps: 3000 })]));
+    (servicesApi.replacePrices as jest.Mock).mockResolvedValueOnce(service());
+    renderPage();
+    expect(await screen.findByText("30 %")).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Precios de Lavado completo" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Precios de Lavado completo" });
+    const propia = within(dialog).getByLabelText("Seña propia (%) (opcional)");
+    expect(propia).toHaveValue("30");
+    await userEvent.clear(propia);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Guardar precios" }));
+    await waitFor(() => expect(servicesApi.replacePrices).toHaveBeenCalledTimes(1));
+    expect((servicesApi.replacePrices as jest.Mock).mock.calls[0]![1]).toMatchObject({
+      deposit_bps: null,
+    });
+  });
+
+  it("seña propia inválida no se manda", async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: /nuevo servicio/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Nuevo servicio" });
+    await userEvent.type(await within(dialog).findByLabelText("Nombre"), "Lavado camión");
+    await userEvent.type(within(dialog).getByLabelText("Seña propia (%) (opcional)"), "150");
+    await fillPrices(dialog, ["20.000", "30.000"], ["60", "90"]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear servicio" }));
+    expect(await within(dialog).findByText("Entre 0,01 % y 100 %")).toBeInTheDocument();
+    expect(servicesApi.create).not.toHaveBeenCalled();
   });
 
   it("un tamaño sin precio arranca vacío y hay que completarlo", async () => {

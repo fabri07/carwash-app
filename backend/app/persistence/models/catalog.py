@@ -89,6 +89,7 @@ class Service(TenantScopedModel):
         # Un servicio vivo por término del glosario: lo que hace idempotente a la plantilla (Y6).
         # Los NULL no chocan entre sí, así que los servicios propios no se ven afectados.
         unique_alive("services", "glossary_code"),
+        check("deposit_bps IS NULL OR deposit_bps BETWEEN 1 AND 10000", "sena_bps_rango"),
     )
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -102,13 +103,16 @@ class Service(TenantScopedModel):
     )
     #: La prosa de `Regla_horaria`. La regla estructurada es F5.
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: % de seña propio en puntos básicos (D4-17). `None` = usa el del negocio
+    #: (`tenant_settings.deposit_bps`). El interruptor `deposit_enabled` sigue siendo del negocio.
+    deposit_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ServicePrice(TenantScopedModel):
     """Servicio × tamaño. La coherencia con la modalidad la valida `CatalogService` (cruza tablas).
 
     Todo servicio tiene precio base por tamaño (D4-6): en `A_COTIZAR` es la referencia "desde $X".
-    La seña ya no vive acá: es global, del negocio (`tenant_settings`, D4-4).
+    La seña no vive acá: es del negocio (`tenant_settings`, D4-4) o del servicio (D4-17).
     """
 
     __tablename__ = "service_prices"

@@ -358,8 +358,11 @@ class ServiceCatalogService(CatalogService):
         *,
         notes: str | None = None,
         category_id: uuid.UUID | None = None,
+        deposit_bps: int | None = None,
     ) -> ServiceView:
         """Alta con precio para cada tamaño vivo (D4-6): todo o nada, en la transacción.
+
+        `deposit_bps`: % de seña propio (D4-17); `None` usa el del negocio.
 
         El `glossary_code` no entra por acá: solo lo fija la plantilla (`TemplateService`).
         """
@@ -376,6 +379,7 @@ class ServiceCatalogService(CatalogService):
                 pricing_mode=pricing_mode,
                 notes=notes,
                 category_id=category_id,
+                deposit_bps=deposit_bps,
             ),
             self.sorted_by_size(prices, live),
         )
@@ -418,8 +422,14 @@ class ServiceCatalogService(CatalogService):
         prices: Sequence[PriceInput],
         *,
         pricing_mode: PricingMode | None = None,
+        deposit_bps: int | None = None,
+        set_deposit: bool = False,
     ) -> ServiceView:
         """Fija el precio de **todos** los tamaños vivos de una vez (y, si viene, la modalidad).
+
+        Con `set_deposit`, también el % de seña propio (D4-17): `deposit_bps=None` lo borra y el
+        servicio vuelve a usar el del negocio. Afecta solo a los turnos nuevos: los existentes
+        conservan el % que guardaron al reservar.
 
         Lee los precios existentes en una sola consulta y actualiza o agrega según corresponda; el
         servicio queda bloqueado (`FOR UPDATE`), así que no compite con otro `PUT`.
@@ -449,6 +459,8 @@ class ServiceCatalogService(CatalogService):
             else:
                 row.price_cents = price.price_cents
                 row.duration_min = price.duration_min
+        if set_deposit:
+            service.deposit_bps = deposit_bps
         await self._session.flush()
         if pricing_mode is not None and pricing_mode != service.pricing_mode:
             await self.change_pricing_mode(id, pricing_mode)

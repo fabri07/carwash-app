@@ -10,10 +10,11 @@ walk-in de `JobService.receive`, para que las reglas se escriban una vez:
 Todo servicio tiene precio base por tamaño (D4-6, FASE-4-CONTRATO): en `A_COTIZAR` es la
 referencia "desde $X" y la cotización fija el final.
 
-La seña es **global** (D4-4): el % del negocio, si la seña está activa, se guarda en cada ítem al
-reservar (`deposit_bps`, único snapshot). Se calcula **por ítem** (`round_half_up(precio × bps)`) y
-se suma: así el total no depende de en qué orden se redondea. El ítem a cotizar guarda el % pero
-**su seña es 0 hasta que se acepta la cotización** (D4-7: se calcula sobre el precio acordado).
+La seña la activa el negocio (D4-4). Si está activa, cada ítem guarda al reservar el % propio del
+servicio o, si no tiene, el del negocio (D4-17; `deposit_bps`, único snapshot). Se calcula **por
+ítem** (`round_half_up(precio × bps)`) y se suma: así el total no depende de en qué orden se
+redondea. El ítem a cotizar guarda el % pero **su seña es 0 hasta que se acepta la cotización**
+(D4-7: se calcula sobre el precio acordado).
 """
 
 import uuid
@@ -34,6 +35,14 @@ from app.persistence.repositories.catalog import ServicePriceRepository, Service
 def deposit_bps_snapshot(settings: TenantSettings) -> int:
     """El % de seña que se guarda al reservar: el del negocio si la seña está activa, 0 si no."""
     return settings.deposit_bps if settings.deposit_enabled else 0
+
+
+def item_deposit_bps(business_bps: int, service_bps: int | None) -> int:
+    """El % de un ítem: 0 con la seña apagada (`business_bps` 0); si no, el propio del servicio o
+    el del negocio (D4-17)."""
+    if business_bps == 0 or service_bps is None:
+        return business_bps
+    return service_bps
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +97,8 @@ async def catalog_items(
 ) -> list[CatalogItem]:
     """Los servicios pedidos, en el mismo orden, con precio base y duración del catálogo.
 
-    `deposit_bps` es el snapshot de seña del negocio (`deposit_bps_snapshot`). Todo servicio exige
+    `deposit_bps` es el snapshot de seña del negocio (`deposit_bps_snapshot`): 0 si la seña está
+    apagada. Si está activa, un servicio con % propio lo pisa (D4-17). Todo servicio exige
     su fila de precio para el tamaño, en las dos modalidades. Más de un `A_COTIZAR` es
     `GuardFailedError`.
 
@@ -117,7 +127,7 @@ async def catalog_items(
                 pricing_mode=service.pricing_mode,
                 duration_min=duration_min,
                 price_cents=price_cents,
-                deposit_bps=deposit_bps,
+                deposit_bps=item_deposit_bps(deposit_bps, service.deposit_bps),
             )
         )
     if sum(1 for item in items if item.quoted) > 1:
