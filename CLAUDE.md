@@ -47,11 +47,13 @@ Cuando dos fuentes se contradicen, gana la de más arriba:
 
 1. **`docs/spec/05-decisiones-producto.md`** — decisiones del dueño. Mandan sobre todo lo demás.
 2. **`docs/spec/02*-reglas-*.md`** — lo que el código legacy hace hoy, citado a función y offset.
-3. **`docs/legacy/appsscript/turnero_publico/`** — la fuente canónica (10 archivos, ~179 KB).
+3. **`docs/legacy/appsscript/turnero_publico/`** — la fuente canónica: 15 archivos copiados de las celdas
+   `TURNERO_PUBLICO!B14..B37` (export del 2026-11-10, redactado). `CELDAS.txt` dice qué celda es cada uno.
 4. Textos de ayuda y notas dentro de la planilla — **frecuentemente desactualizados**, no son autoridad.
 
-Las copias sueltas en `docs/legacy/appsscript/*.gs` son una versión **anterior y parcial**. No las uses
-como referencia; ver `docs/spec/00-fuente-canonica.md` para el veredicto y su evidencia.
+El código desplegado **no coincide del todo** con el de las celdas y falta exportar el proyecto real de
+Apps Script: ver `docs/spec/00-fuente-canonica.md`. El `docs/spec/` de F1 se perdió al mover el repo
+(2026-11-10) y se reconstruyó; qué se perdió está en `docs/spec/README.md`.
 
 > ⚠️ `Code.gs`, `CodeParte2.gs` y `Admin.gs` están **minificados en una sola línea**. Citalos por
 > **nombre de función + offset de carácter**, nunca por número de línea.
