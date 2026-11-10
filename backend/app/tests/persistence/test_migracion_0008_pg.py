@@ -30,7 +30,6 @@ from app.tests.persistence.test_migracion_0006_pg import _tenant
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 
 ANTERIOR = "0007_sena_por_servicio"
-ESTA = "0008_catalogo_vehiculos"
 TABLAS = ("vehicle_makes", "vehicle_models", "vehicle_colors", "body_type_sizes")
 BASE = load_vehicle_base()
 
@@ -210,7 +209,8 @@ async def test_el_downgrade_corta_si_perderia_datos_del_negocio(
             await _ejecutar(pg_admin_engine, sentencia, t=tenant)
         with pytest.raises(Exception, match=motivo):
             _alembic("downgrade", ANTERIOR)
-        assert await _version(pg_admin_engine) == ESTA
+        # el downgrade que corta se deshace entero: queda en el head (0009 encima de 0008)
+        assert await _version(pg_admin_engine) == head_de_alembic()
     finally:
         async with pg_admin_engine.begin() as conn:
             await conn.execute(text("TRUNCATE tenants CASCADE"))

@@ -10,13 +10,13 @@ tamaño anulado no suma ni falta.
 """
 
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import ColumnElement, Exists, exists, select
 
 from app.application.services._base import ServiceBase, as_aware
+from app.application.services.service_catalog_service import ServiceCatalogService
 from app.domain.branding import DEFAULT_FONT, DEFAULT_PALETTE
 from app.domain.exceptions import GuardFailedError
 from app.domain.onboarding import (
@@ -28,14 +28,7 @@ from app.domain.onboarding import (
 )
 from app.domain.roles import Role
 from app.persistence.db.base import TenantScopedModel
-from app.persistence.models.catalog import (
-    BusinessHours,
-    PaymentMethod,
-    Resource,
-    Service,
-    ServicePrice,
-    VehicleSize,
-)
+from app.persistence.models.catalog import BusinessHours, PaymentMethod, Resource
 from app.persistence.models.tenant import TenantSettings
 from app.persistence.models.user import User
 from app.utils.datetime_utils import utcnow
@@ -108,50 +101,45 @@ class OnboardingService(ServiceBase):
 
     # ── Lo que hay cargado ───────────────────────────────────────────────────
 
+    def _any(self, model: type[TenantScopedModel], *where: ColumnElement[bool]) -> Exists:
+        """`EXISTS` de una fila viva del negocio que cumple `where` (se juntan en un SELECT)."""
+        return exists().where(model.tenant_id == self._tenant_id, model.voided_at.is_(None), *where)
+
     async def _status(self, settings: TenantSettings) -> OnboardingStatus:
-        missing: list[MissingRequirement] = []
-
-        size_ids = await self._live_ids(VehicleSize)
-        if not size_ids:
-            missing.append(MissingRequirement(OnboardingRequirement.VEHICLE_SIZE))
-
-        service_ids = await self._live_ids(Service)
-        if not service_ids:
-            missing.append(MissingRequirement(OnboardingRequirement.SERVICE))
-        unpriced = await self._services_without_full_prices(service_ids, size_ids)
-        if unpriced:
-            missing.append(
-                MissingRequirement(OnboardingRequirement.SERVICE_PRICES, service_ids=unpriced)
-            )
-
-        has_resource = await self._any(Resource)
-        if not has_resource:
-            missing.append(MissingRequirement(OnboardingRequirement.RESOURCE))
-        has_hours = await self._any(BusinessHours)
-        if not has_hours:
-            missing.append(MissingRequirement(OnboardingRequirement.BUSINESS_HOURS))
-
-        has_payment = await self._session.scalar(
-            select(
-                exists().where(
-                    PaymentMethod.tenant_id == self._tenant_id,
-                    PaymentMethod.voided_at.is_(None),
-                    PaymentMethod.for_income.is_(True),
+        # Precios: la misma regla que `missing_price_size_ids` (tres consultas).
+        coverage = await ServiceCatalogService(
+            self._session, self._tenant_id, self._actor_user_id
+        ).price_coverage()
+        # Lo demás, en un solo SELECT de booleanos.
+        row = (
+            await self._session.execute(
+                select(
+                    self._any(Resource).label("resource"),
+                    self._any(BusinessHours).label("hours"),
+                    self._any(PaymentMethod, PaymentMethod.for_income.is_(True)).label("payment"),
+                    self._any(User, User.role == Role.STAFF).label("staff"),
                 )
             )
-        )
-        if not has_payment:
-            missing.append(MissingRequirement(OnboardingRequirement.PAYMENT_METHOD))
+        ).one()
 
-        has_staff = await self._session.scalar(
-            select(func.count())
-            .select_from(User)
-            .where(
-                User.tenant_id == self._tenant_id,
-                User.voided_at.is_(None),
-                User.role == Role.STAFF,
+        missing: list[MissingRequirement] = []
+        if not coverage.size_ids:
+            missing.append(MissingRequirement(OnboardingRequirement.VEHICLE_SIZE))
+        if not coverage.service_ids:
+            missing.append(MissingRequirement(OnboardingRequirement.SERVICE))
+        if coverage.unpriced_service_ids:
+            missing.append(
+                MissingRequirement(
+                    OnboardingRequirement.SERVICE_PRICES,
+                    service_ids=coverage.unpriced_service_ids,
+                )
             )
-        )
+        if not row.resource:
+            missing.append(MissingRequirement(OnboardingRequirement.RESOURCE))
+        if not row.hours:
+            missing.append(MissingRequirement(OnboardingRequirement.BUSINESS_HOURS))
+        if not row.payment:
+            missing.append(MissingRequirement(OnboardingRequirement.PAYMENT_METHOD))
 
         has_data = {
             OnboardingStep.BUSINESS: any(
@@ -169,12 +157,12 @@ class OnboardingService(ServiceBase):
                 or settings.font != DEFAULT_FONT
                 or settings.logo_key is not None
             ),
-            OnboardingStep.SIZES: bool(size_ids),
-            OnboardingStep.SERVICES: bool(service_ids),
-            OnboardingStep.SCHEDULE: bool(has_resource or has_hours),
-            OnboardingStep.PAYMENTS: bool(has_payment),
+            OnboardingStep.SIZES: bool(coverage.size_ids),
+            OnboardingStep.SERVICES: bool(coverage.service_ids),
+            OnboardingStep.SCHEDULE: bool(row.resource or row.hours),
+            OnboardingStep.PAYMENTS: bool(row.payment),
             OnboardingStep.DEPOSIT: settings.deposit_enabled,
-            OnboardingStep.STAFF: bool(has_staff),
+            OnboardingStep.STAFF: bool(row.staff),
         }
         done = steps_done(has_data, {m.requirement for m in missing})
         completed_at = settings.onboarding_completed_at
@@ -183,38 +171,3 @@ class OnboardingService(ServiceBase):
             done=done,
             missing=tuple(missing),
         )
-
-    async def _live_ids(self, model: type[TenantScopedModel]) -> list[uuid.UUID]:
-        rows = await self._session.scalars(
-            select(model.id)
-            .where(model.tenant_id == self._tenant_id, model.voided_at.is_(None))
-            .order_by(model.id)
-        )
-        return list(rows)
-
-    async def _any(self, model: type[TenantScopedModel]) -> bool:
-        return bool(
-            await self._session.scalar(
-                select(
-                    exists().where(model.tenant_id == self._tenant_id, model.voided_at.is_(None))
-                )
-            )
-        )
-
-    async def _services_without_full_prices(
-        self, service_ids: list[uuid.UUID], size_ids: list[uuid.UUID]
-    ) -> tuple[uuid.UUID, ...]:
-        """Servicios vivos sin precio vivo para algún tamaño vivo (A8), ordenados por id."""
-        if not service_ids or not size_ids:
-            return ()
-        rows = await self._session.execute(
-            select(ServicePrice.service_id, ServicePrice.vehicle_size_id).where(
-                ServicePrice.tenant_id == self._tenant_id,
-                ServicePrice.voided_at.is_(None),
-            )
-        )
-        priced: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
-        for service_id, size_id in rows:
-            priced[service_id].add(size_id)
-        sizes = set(size_ids)
-        return tuple(sid for sid in service_ids if not sizes <= priced[sid])

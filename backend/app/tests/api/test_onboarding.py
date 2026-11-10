@@ -289,3 +289,29 @@ async def test_solo_el_dueño(client, staff_cookies, cookies_a):
     client.cookies.clear()
     assert (await client.get(STATUS)).status_code == 401
     assert (await client.post(COMPLETE)).status_code == 401
+
+
+async def test_el_estado_lee_con_pocas_consultas(client, cookies_a, db_session):
+    """Los requisitos sin precio van en un solo SELECT de `EXISTS`; los precios, con la misma
+    lectura por lote que `missing_price_size_ids` (tamaños, servicios, precios). Con más servicios
+    la cuenta no crece."""
+    from sqlalchemy import event  # noqa: PLC0415
+
+    tamanos = await crear_tamanos(client, cookies_a, "AUTO", "SUV")
+    for n in range(6):
+        await crear_servicio(client, cookies_a, tamanos, f"Servicio {n}")
+
+    sentencias: list[str] = []
+    motor = db_session.bind.sync_engine
+
+    def contar(conn, cursor, statement, parameters, context, executemany):
+        sentencias.append(statement.split(None, 1)[0].upper())
+
+    event.listen(motor, "before_cursor_execute", contar)
+    try:
+        r = await client.get(STATUS, cookies=cookies_a)
+    finally:
+        event.remove(motor, "before_cursor_execute", contar)
+    assert r.status_code == 200, r.text
+    # usuario de la sesión, configuración, tamaños, servicios, precios y un SELECT de EXISTS
+    assert sentencias.count("SELECT") <= 6, sentencias

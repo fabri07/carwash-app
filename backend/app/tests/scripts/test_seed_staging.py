@@ -64,6 +64,20 @@ async def _hashes(admin) -> dict[str, str]:
     return {f.email: f.password_hash for f in filas}
 
 
+async def _altas(admin) -> dict[str, object]:
+    """`onboarding_completed_at` por negocio."""
+    async with admin.connect() as conn:
+        filas = (
+            await conn.execute(
+                text(
+                    "SELECT t.name, s.onboarding_completed_at FROM tenants t "
+                    "JOIN tenant_settings s ON s.tenant_id = t.id"
+                )
+            )
+        ).all()
+    return {f.name: f.onboarding_completed_at for f in filas}
+
+
 async def test_el_script_existe():
     assert SCRIPT.exists(), f"falta {SCRIPT} (de `deploy`)"
 
@@ -76,6 +90,10 @@ async def test_seed_puebla_toda_tabla_con_tenant_y_no_duplica(pg_admin_engine, p
     assert not vacias, f"el seed no puebla: {vacias}"
     hashes_uno = await _hashes(pg_admin_engine)
     assert all(email.endswith(".invalid") for email in hashes_uno), "emails no sintéticos"
+    # PR 4.6: el seed cumple los requisitos del alta y la deja terminada (si no, el dueño de
+    # prueba quedaría encerrado en el wizard); la segunda corrida no cambia la fecha.
+    altas_uno = await _altas(pg_admin_engine)
+    assert altas_uno and all(f is not None for f in altas_uno.values()), altas_uno
 
     segunda = _correr_seed(PASSWORD_SEGUNDA)
     assert segunda.returncode == 0, segunda.stdout + segunda.stderr
@@ -84,6 +102,7 @@ async def test_seed_puebla_toda_tabla_con_tenant_y_no_duplica(pg_admin_engine, p
     hashes_dos = await _hashes(pg_admin_engine)
     assert hashes_dos.keys() == hashes_uno.keys()
     assert all(hashes_dos[e] != hashes_uno[e] for e in hashes_uno)
+    assert await _altas(pg_admin_engine) == altas_uno
 
 
 async def test_seed_usa_telefonos_y_patentes_inconfundiblemente_falsos(pg_admin_engine, pg_clean):
@@ -169,3 +188,7 @@ async def test_seed_completa_el_dominio_de_un_staging_sembrado_en_fase_2(pg_admi
     async with pg_admin_engine.connect() as conn:
         por_tenant = await conn.scalar(text("SELECT count(DISTINCT tenant_id) FROM job_events"))
     assert por_tenant == len(seed_staging.TENANTS)
+    # y un staging previo al PR 4.6 queda con el alta terminada
+    altas = await _altas(pg_admin_engine)
+    assert len(altas) == len(seed_staging.TENANTS)
+    assert all(f is not None for f in altas.values()), altas
