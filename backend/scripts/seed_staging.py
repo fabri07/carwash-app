@@ -74,7 +74,6 @@ from app.application.services.vehicle_catalog_service import (  # noqa: E402
     VehicleCatalogService,
     copy_vehicle_base,
 )
-from app.domain.vehicle_catalog import VehicleBodyType  # noqa: E402
 from app.domain.enums import (  # noqa: E402
     BookingSource,
     Channel,
@@ -83,6 +82,7 @@ from app.domain.enums import (  # noqa: E402
     PricingMode,
 )
 from app.domain.roles import Role  # noqa: E402
+from app.domain.vehicle_catalog import VehicleBodyType  # noqa: E402
 from app.persistence.models.agenda import Booking  # noqa: E402
 from app.persistence.models.catalog import VehicleSize  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
@@ -211,8 +211,11 @@ _SEED_BODY_TYPES = {
 
 
 async def _seed_vehicles(session: AsyncSession, tenant_id: uuid.UUID, owner_id: uuid.UUID) -> bool:
-    """Catálogo de vehículos (PR 4.4): copia la base si el negocio no tiene marcas (staging sembrado
-    antes de la `0008`) y carga el mapa carrocería → tamaño si está vacío. `False` si no hizo nada."""
+    """Catálogo de vehículos (PR 4.4): copia la base si el negocio no tiene marcas (staging
+    sembrado antes de la `0008`) y carga el mapa carrocería → tamaño si está vacío.
+
+    `False` si no hizo nada.
+    """
     hizo = False
     marcas = await session.scalar(
         select(func.count()).select_from(VehicleMake).where(VehicleMake.tenant_id == tenant_id)
