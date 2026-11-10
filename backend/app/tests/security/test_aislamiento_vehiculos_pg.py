@@ -43,8 +43,8 @@ async def _registrar(pg_client, email: str, negocio: str) -> dict[str, Any]:
 
 
 async def test_el_registro_copia_la_base_con_el_rol_de_runtime(pg_client, pg_admin_engine):
-    a = await _registrar(pg_client, "vehiculos-a@ejemplo.invalid", "Lavadero Sintético A")
-    b = await _registrar(pg_client, "vehiculos-b@ejemplo.invalid", "Lavadero Sintético B")
+    a = await _registrar(pg_client, "vehiculos-a@example.com", "Lavadero Sintético A")
+    b = await _registrar(pg_client, "vehiculos-b@example.com", "Lavadero Sintético B")
     async with pg_admin_engine.connect() as conn:
         for alta in (a, b):
             fila = (
