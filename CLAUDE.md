@@ -21,17 +21,20 @@ salir de la app para hacerlo?* Si sí, entra. Si no, va a v2.
 httpOnly, RLS en todas las tablas, el dominio de turnos, jobs, cobros y cotizaciones con su aislamiento
 probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA).
 
-**Fase 4 en curso** (contrato: `docs/adr/FASE-4-CONTRATO.md`, 6 PRs). PR 4.1: cuentas de empleados
-(login usuario o email, cambio de clave obligatorio), perfiles de permisos editables
-(`require_permission`), `/configuracion/equipo` y la base de componentes del front (`SmartTable`,
-`MoneyInput`, etc.). Siguen 4.2 configuración y seña global → 4.3 servicios ‖ 4.4 vehículos ‖ 4.5
-personalización → 4.6 wizard.
+**Fase 4 en curso** (contrato: `docs/adr/FASE-4-CONTRATO.md`). Mergeados: 4.1 cuentas de empleados y
+perfiles de permisos, 4.2 configuración del negocio y seña global, 4.3 servicios, categorías, plantillas
+y búsqueda (back y front). Siguen 4.3c seña propia por servicio → 4.4 vehículos ‖ 4.5 personalización →
+4.6 wizard.
+
+El **relevamiento de la planilla del 2026-11-10** sumó al MVP fidelidad y avisos por WhatsApp (F7C nueva),
+propinas (F7), reglas horarias por servicio, bloqueos y lista de espera (F5) y carga retrospectiva (F6).
 
 Roadmap completo: `docs/ROADMAP.md`.
 
 ```
 F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero
-       → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Go-live beta → F9 Productos y ventas
+       → F6 Operación → F7 Caja/CRM → F7B Costos → F7C Fidelidad y WhatsApp → F8 Go-live beta
+       → F9 Productos y ventas
 ```
 
 > ⚠️ **`docs/spec/` y `docs/legacy/` no están en este repositorio.** Son local-only (ver `.gitignore`):
@@ -111,12 +114,13 @@ Estas están verificadas contra el código, no supuestas. El sistema nuevo debe 
 | Trampa | Qué hace el legacy |
 |---|---|
 | `parseMoney_` | `"20.000"` → `20`. Error de factor 1000 con formato argentino. `"abc"` → `0` silencioso. |
-| Auth del panel | **No existe.** El PIN nunca se lee y el panel arranca solo sin mostrar login. |
+| Auth del panel | **No existe.** El PIN nunca se lee y el panel arranca solo sin mostrar login. En el panel móvil (2026-11) el PIN solo se guarda en el navegador y el servidor no lo verifica: `/exec?view=admin` abre sin PIN. |
 | `CLIENTES` | Se borra entera y se reconstruye desde las transacciones en cada cierre de servicio. |
 | Identidad de cliente | Tres políticas de normalización de teléfono en la misma operación. El teléfono **no debe ser PK**. |
 | Parámetros | 7 valores de `CONFIGURACION` se muestran configurables y el código nunca los lee. |
 | Comisiones | `getCommissionRate_` lee el rango hardcodeado `A28:C31`; insertar una fila rompe todo en silencio. |
 | Cobro | No hay cobro parcial ni medios múltiples; un segundo cobro pisa al primero sin sumar. |
+| Avisos por WhatsApp | El disparador de cada 30 min reintenta la misma plantilla sin tope ni espera: 383 errores contra 1 envío bueno en `AVISOS_LOG`. |
 
 Detalle completo y citas en `docs/spec/02-reglas-negocio.md`.
 
@@ -125,7 +129,8 @@ Detalle completo y citas en `docs/spec/02-reglas-negocio.md`.
 Reglas que salen **solo del código**, sin un dato real que las respalde. Confirmar contra la operación
 antes de implementar:
 
-- `CANCELACIONES`, `LISTA_ESPERA`, `DISPONIBILIDAD_SEMANAL` — vacías.
+- `CANCELACIONES`, `LISTA_ESPERA`, `DISPONIBILIDAD_SEMANAL` — vacías. Lista de espera y disponibilidad
+  especial **entran al MVP igual** (decisión del 2026-11-10): sus reglas salen solo del código.
 - `COTIZACIONES` — 1 fila, cargada a mano. **El flujo de cotización no existe en el código**: es
   insert-only y nunca se vuelve a leer. D-006 se diseña, no se copia.
 - `EMPLEADOS`, `PAGOS_EMPLEADOS`, `RETIROS_DUEÑO` — sin una sola línea de código que las toque.

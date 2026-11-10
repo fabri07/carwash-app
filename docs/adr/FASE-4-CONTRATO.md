@@ -20,7 +20,7 @@ Referencias de patrón: `fabri07/app-gim` (personalización) y `~/dev/vektor/Vek
 | D4-1 | **Criterio de éxito:** el MVP (antes de F9) termina cuando uno o dos negocios reales en beta operan una semana completa solo con la app. Sola CleanCars es fuente de reglas, no criterio. |
 | D4-2 | **Admin + subcuentas.** El `OWNER` crea empleados (`STAFF`) y les asigna un **perfil de permisos**. La app trae Encargado, Cajero y Lavador; el admin los edita o crea otros. |
 | D4-3 | **Login de empleados por usuario + contraseña.** El admin elige el usuario y una clave inicial; el email es opcional. El dueño sigue entrando con email. |
-| D4-4 | **Seña global:** un interruptor en Configuración la activa o desactiva para todos los servicios, con un único %. |
+| D4-4 | **Seña global:** un interruptor en Configuración la activa o desactiva para todos los servicios, con un % general. **Cada servicio puede tener su propio %, que pisa al general** (D4-17, 2026-11-10). |
 | D4-5 | **Con seña activa, el auto se recibe aunque no se haya pagado:** lo pendiente queda en el saldo (ya es así en F3, §9 respuesta 3). |
 | D4-6 | **Todo servicio tiene precio base por tamaño.** `A_COTIZAR` = "desde $X": el precio base es referencia y la cotización fija el final. Nada se crea sin precio. |
 | D4-7 | **La seña de un ítem cotizado se calcula sobre el precio acordado**, al aceptar la cotización. |
@@ -151,8 +151,8 @@ slug del nombre + sufijo corto.
 
 **`booking_items`** (se altera): suma `pricing_mode` snapshot NN; se quita el CHECK
 `sin_precio_sin_sena`; `price_cents` pasa a NOT NULL (es el base; en un ítem cotizado el final vive en
-la cotización). `deposit_bps` es **el único snapshot de la seña**: al reservar guarda el % del tenant si
-la seña está activa y 0 si no; el ítem cotizado lo guarda igual pero su seña es 0 hasta aceptar (§5).
+la cotización). `deposit_bps` es **el único snapshot de la seña**: al reservar guarda el % del servicio si tiene uno
+(D4-17) o el del tenant si no, siempre que la seña esté activa, y 0 si no; el ítem cotizado lo guarda igual pero su seña es 0 hasta aceptar (§5).
 
 **`job_items`**: suma `pricing_mode` snapshot NN.
 
@@ -231,7 +231,7 @@ perfil con empleados vivos no se anula (409). El `OWNER` no se edita por `/staff
 | Lugar | Cambio |
 |---|---|
 | `catalog_service.py::check_price_coherence` | Sin `deposit_bps`. Precio NN > 0 en ambas modalidades. |
-| `_items.py::catalog_items` / `CatalogItem` | Siempre hay fila de precio. Snapshot `deposit_bps` = % del tenant si `deposit_enabled`, 0 si no; un ítem `A_COTIZAR` no lleva seña al reservar (D4-7). Redondeo por ítem, como en F3. |
+| `_items.py::catalog_items` / `CatalogItem` | Siempre hay fila de precio. Snapshot `deposit_bps` = % del servicio o, si no tiene, del tenant (D4-17) si `deposit_enabled`, 0 si no; un ítem `A_COTIZAR` no lleva seña al reservar (D4-7). Redondeo por ítem, como en F3. |
 | `booking_service.create` | Lee `tenant_settings`; aplica `min_advance_min`; `hold_expires_at = now + hold_min` solo para `PENDIENTE_SEÑA`. Con ítem cotizado nace `PENDIENTE_COTIZACION` **sin ocupar el puesto** (D4-13). Precio total: suma de bases; el ítem cotizado se identifica por `pricing_mode`. |
 | `booking_service.confirm_late`, `record_deposit` | La guarda deja de apoyarse en `price_cents IS NULL`: un turno con ítem `A_COTIZAR` exige su cotización `ACEPTADO`, aunque haya precio base. |
 | `booking_service` (cancelación tardía) | `late_cancel_threshold_min` de `tenant_settings`; sale la constante de `domain/booking_state.py:31`. |
@@ -441,3 +441,21 @@ alimentan la búsqueda (sinónimos, defecto → servicio) o, en el caso de `prod
 | 4.3-12 | **`GET /services?q=`** admite vacío o sin nada que buscar (`normalize(q)` vacío): se trata como sin filtro y lista todo. `GET /services/search` sigue exigiendo `q` no vacío. |
 | 4.3-13 | **Búsqueda sin renormalizar:** los alias del glosario se guardan ya normalizados y `match_tier(wanted, search_key, aliases=…)` recibe todo normalizado; la consulta se normaliza una vez por request. |
 | 4.3-14 | **Pocas consultas en `apply`:** tamaños y servicios vivos se leen una vez por lote y los precios de cada servicio nuevo se insertan juntos; 56 ítems × 4 tamaños son 7 `SELECT` (un test fija el tope). `PUT .../prices` lee los precios existentes en una consulta. |
+
+---
+
+## 11.6 Adenda del relevamiento de la planilla (2026-11-10)
+
+El dueño revisó lo que la planilla de Sola sumó desde F1 (ver `docs/ROADMAP.md`, Context). Lo que toca a F4:
+
+| # | Decisión |
+|---|---|
+| D4-17 | **Seña propia por servicio.** `services.deposit_bps` int **nullable**, CHECK `BETWEEN 1 AND 10000`. `NULL` = usa `tenant_settings.deposit_bps`. El interruptor `deposit_enabled` sigue siendo general: con la seña apagada, ningún servicio la cobra aunque tenga % propio. El snapshot de `booking_items.deposit_bps` toma el del servicio si existe (§3.2, §5). En Sola: camión 30 %, resto 20 %. |
+| D4-18 | **Anticipación mínima: 5 minutos.** Ya es el default de `tenant_settings.min_advance_min`; no cambia código. El 15 que aparece en textos de ayuda de la planilla está desactualizado. |
+
+**PR 4.3c** (antes de 4.4 y 4.5, chico): migración `0007` con `services.deposit_bps` (idempotente; el
+downgrade corta si algún servicio tiene % propio, como la `0006`); `POST /services` y `PATCH /services/{id}`
+aceptan `deposit_bps` (exige `PRECIOS_EDITAR`, porque cambia lo que paga el cliente) y lo devuelven;
+`catalog_items` toma el % del servicio; front: campo opcional "Seña propia (%)" en el formulario de
+servicio. Aceptación: servicio con y sin % propio, seña apagada con % propio (cobra 0), bordes 0 y 10001
+(422), aislamiento del campo entre tenants.
