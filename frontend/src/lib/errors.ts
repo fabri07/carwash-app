@@ -1,6 +1,11 @@
 import axios from "axios";
 
-import type { ApiError, ApiErrorCode } from "@/types/api";
+import type {
+  ApiError,
+  ApiErrorCode,
+  OnboardingIncomplete,
+  OnboardingMissingItem,
+} from "@/types/api";
 
 /** Código de error del envelope único (`{detail: {code}}`), si vino. */
 export function apiErrorCode(e: unknown): ApiErrorCode | undefined {
@@ -225,4 +230,19 @@ export function safeNextPath(next: string | null | undefined, fallback = "/dashb
   }
   if (url.origin !== origin) return fallback;
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
+ * Faltantes del 409 `ONBOARDING_INCOMPLETE` de `POST /onboarding/complete` (§6): el envelope de
+ * siempre más `detail.missing`. `null` si el error es otro.
+ */
+export function onboardingMissing(e: unknown): OnboardingMissingItem[] | null {
+  if (apiErrorCode(e) !== "ONBOARDING_INCOMPLETE" || !axios.isAxiosError(e)) return null;
+  const detail = (e.response?.data as Partial<OnboardingIncomplete> | undefined)?.detail;
+  return Array.isArray(detail?.missing) ? detail.missing : [];
+}
+
+/** Error del wizard que no es un faltante (sin conexión, 403, 5xx). */
+export function onboardingError(e: unknown): string {
+  return genericMessage(e);
 }

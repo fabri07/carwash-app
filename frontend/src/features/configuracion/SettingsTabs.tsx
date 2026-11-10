@@ -43,8 +43,17 @@ export function SettingsState({
   return <>{children(query.data)}</>;
 }
 
+/**
+ * Lo que el wizard de alta (PR 4.6) le cambia a una pestaña: el texto del botón y qué hacer
+ * después de guardar (pasar al paso siguiente). En Configuración no se pasa nada.
+ */
+export interface StepProps {
+  submitLabel?: string;
+  onSaved?: () => void;
+}
+
 /** Pestaña Negocio: solo el dueño. */
-export function BusinessTab() {
+export function BusinessTab({ submitLabel, onSaved }: StepProps = {}) {
   const save = useSave();
   return (
     <SettingsState>
@@ -53,6 +62,7 @@ export function BusinessTab() {
           // Re-arma el formulario con lo guardado (la URL o los textos normalizados por el backend).
           key={settings.slug + (settings.address ?? "") + (settings.welcome_text ?? "")}
           settings={settings}
+          submitLabel={submitLabel}
           onSubmit={(v: BusinessInput) =>
             save(
               {
@@ -65,7 +75,7 @@ export function BusinessTab() {
                 cancellation_policy: v.cancellation_policy,
               },
               "Datos del negocio guardados.",
-            )
+            ).then(onSaved)
           }
         />
       )}
@@ -74,7 +84,7 @@ export function BusinessTab() {
 }
 
 /** Pestaña Seña y reservas: solo el dueño. */
-export function DepositTab() {
+export function DepositTab({ submitLabel, onSaved }: StepProps = {}) {
   const save = useSave();
   return (
     <SettingsState>
@@ -82,6 +92,7 @@ export function DepositTab() {
         <DepositForm
           key={`${settings.deposit_bps}-${settings.deposit_enabled}`}
           settings={settings}
+          submitLabel={submitLabel}
           onSubmit={(v: DepositInput) =>
             save(
               {
@@ -94,7 +105,7 @@ export function DepositTab() {
                 quote_validity_hours: Number(v.quote_validity_hours),
               },
               "Seña y reservas guardadas.",
-            )
+            ).then(onSaved)
           }
         />
       )}

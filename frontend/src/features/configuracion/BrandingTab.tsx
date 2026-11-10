@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { BrandingForm, PaletteSwatches } from "@/features/configuracion/BrandingForm";
 import { configKeys } from "@/features/configuracion/queries";
-import { SettingsState, useSave } from "@/features/configuracion/SettingsTabs";
+import { SettingsState, useSave, type StepProps } from "@/features/configuracion/SettingsTabs";
 import { findPalette, useBrandingCatalog, validateLogo } from "@/lib/branding";
 import { apiErrorCode, brandingError } from "@/lib/errors";
 import { deleteLogo, suggestPalette, uploadLogo } from "@/services/branding.service";
@@ -187,7 +187,7 @@ function SuggestionBanner({
 }
 
 /** Pestaña Personalización: solo el dueño (PR 4.5). */
-export function BrandingTab() {
+export function BrandingTab({ submitLabel, onSaved }: StepProps = {}) {
   const save = useSave();
   const catalog = useBrandingCatalog();
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
@@ -219,8 +219,9 @@ export function BrandingTab() {
             key={`${settings.palette}-${settings.font}`}
             catalog={data}
             settings={settings}
+            submitLabel={submitLabel}
             onSubmit={(v) =>
-              save({ palette: v.palette, font: v.font }, "Personalización guardada.")
+              save({ palette: v.palette, font: v.font }, "Personalización guardada.").then(onSaved)
             }
           />
         </div>

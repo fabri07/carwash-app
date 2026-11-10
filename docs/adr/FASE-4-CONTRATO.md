@@ -533,3 +533,34 @@ Completa §3.5, §4, §7, §8 y A11; donde choque, manda esta subsección. **Sin
 | 4.5-15 | **Variables de R2** (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`) en `config/settings.py` y `.env.example`, vacías. Las carga el dueño en Railway (staging y producción, cada uno con su bucket o al menos su token); nunca en el repo ni en el chat. |
 | 4.5-16 | **Tope del cuerpo antes de autenticar** (`app/api/body_limit.py`, middleware ASGI puro, por dentro del CORS): FastAPI lee el multipart antes de resolver las dependencias, así que sin esto un anónimo podía mandar gigas. En `/v1/branding/*`, un `Content-Length` > 2,5 MB (o inválido) se rechaza con 413 `FILE_TOO_LARGE` sin leer el cuerpo; sin `Content-Length` (chunked) se cuentan los bytes y al pasar el tope se corta la lectura y la respuesta se reemplaza por el mismo 413. |
 | 4.5-17 | **La subida no retiene una conexión durante la I/O.** La sesión del request no admite seguir después de un `commit` (está dentro de `session.begin()`), así que: se autentica; se hace `commit` de esa sesión (devuelve la conexión al pool) y no se usa más; Pillow corre en el threadpool; la clave se guarda en una transacción corta propia (`get_session_factory`, dependency nueva en `persistence/db/session.py` que los tests apuntan a la sesión del test); recién entonces se sube a R2 sin conexión tomada; si R2 falla, otra transacción corta vuelve al logo anterior (salvo que otro pedido ya lo haya cambiado) y se responde 503. Costo: durante la subida (segundos) `logo_url` apunta a un objeto que todavía no existe. `suggest-palette` también suelta la conexión antes de decodificar. |
+
+---
+
+## 11.9 Adenda del PR 4.6 — wizard de alta (2026-11-10)
+
+Completa §4 (fila 4.6), §6 y §7; donde choque, manda esta subsección. **Sin migración**: usa
+`tenant_settings.onboarding_completed_at`, que existe desde la `0005`.
+
+### Endpoints
+
+| Ruta | Quién | Qué hace |
+|---|---|---|
+| `GET /onboarding/status` | OWNER | `completed`, `completed_at`, `resume_step`, `steps[]` (`step`, `required`, `done`) y `missing[]` |
+| `POST /onboarding/complete` | OWNER | exige los requisitos de §6 y fija `onboarding_completed_at`; responde el mismo estado |
+
+Pasos (`OnboardingStep`, en el orden de §6): `BUSINESS`, `BRANDING`, `SIZES`, `SERVICES`, `SCHEDULE`
+(puestos y horarios), `PAYMENTS`, `DEPOSIT`, `STAFF`. Requisitos (`OnboardingRequirement`) y su paso:
+`VEHICLE_SIZE` → `SIZES`; `SERVICE` y `SERVICE_PRICES` → `SERVICES`; `RESOURCE` y `BUSINESS_HOURS` →
+`SCHEDULE`; `PAYMENT_METHOD` → `PAYMENTS`. Vocabulario y reglas puras en `app/domain/onboarding.py`.
+
+### Decisiones tomadas al construir
+
+| # | Decisión |
+|---|---|
+| 4.6-1 | **Formato del 409**: el envelope de siempre más una lista, `{"detail": {"code": "ONBOARDING_INCOMPLETE", "message": …, "missing": [{"requirement", "step", "service_ids"}]}}` (código de error nuevo). `missing` tiene la misma forma en el 409 y en `GET /onboarding/status`. `service_ids` solo viene lleno en `SERVICE_PRICES`: los servicios vivos sin precio vivo para algún tamaño vivo (A8). El OpenAPI lo declara como `OnboardingIncompleteResponse`; `ApiError` suma el parámetro `extra` para los campos propios de un error. |
+| 4.6-2 | **Solo cuenta lo vivo.** Un tamaño, servicio, precio, puesto, franja o medio anulado no cumple nada; un precio que apunta a un tamaño anulado no suma ni falta. **Medio de cobro** = medio vivo con `for_income = true`: uno solo de egresos no alcanza. Los servicios `A_COTIZAR` también necesitan su precio base (D4-6). |
+| 4.6-3 | **Idempotente y sin vuelta atrás**: con el alta ya terminada, `complete` responde 200 con la fecha original aunque después falte algo (anular el último puesto no "des-termina" el alta; el estado sí lo informa en `missing`). La fila de `tenant_settings` se toma con `FOR UPDATE` y los requisitos se cuentan con ella tomada: dos "Terminar" a la vez quedan con **una** fecha (test contra Postgres). |
+| 4.6-4 | **Reanudación sin columna de progreso.** Un paso con requisito está hecho si no le falta ninguno. Uno opcional (negocio, personalización, seña, empleados) está hecho si guardó algo propio (un dato de contacto; paleta, fuente o logo distintos del default; la seña prendida; un empleado vivo) **o** si algún paso posterior tiene datos. `resume_step` = el primer paso no hecho (todos hechos → `STAFF`, desde donde se termina). Así un negocio recién creado arranca en `BUSINESS`, quien ya cargó tamaños no vuelve al negocio, y un obligatorio incompleto nunca se saltea aunque haya datos después. Costo aceptado: un opcional que se dejó como venía y sin nada posterior se vuelve a ofrecer (no se pierde nada). |
+| 4.6-5 | **El front reusa las pantallas de Configuración, Catálogo y Equipo** (`BusinessTab`, `BrandingTab`, `VehicleSizesTab` + `BodyTypeSizesForm`, `TemplatesTab` + `ServicesTab`, `ResourcesTab` + `BusinessHoursTab`, `PaymentMethodsTab`, `DepositTab`, `StaffTab`). Las pestañas de formulario aceptan `submitLabel` y `onSaved` ("Guardar y seguir" guarda y avanza); las listas guardan en cada alta y el paso tiene "Siguiente", que relee el estado y **no avanza** si el paso obligatorio sigue incompleto (muestra qué falta). Los opcionales se pueden saltar. "Terminar" llama a `complete`; ante el 409 muestra la lista y lleva al primer paso que falta. Al terminar se invalida `["auth", "me"]` y se marca el store. El logo es opcional y su 503 lo maneja la pestaña de 4.5 (sugiere la paleta igual). |
+| 4.6-6 | **Redirección desde el layout protegido** con `onboarding_completed` de la sesión (`/auth/me`, login, registro): el `OWNER` sin alta va a `/onboarding` desde cualquier pantalla del shell, y con el alta terminada `/onboarding` lo devuelve al inicio; antes de que llegue la sesión no se redirige. Un **`STAFF` no se redirige**: ve un aviso arriba de cada pantalla mientras el alta no termine, y si entra a `/onboarding` ve "El alta la hace el dueño" (los endpoints le dan 403). El middleware del edge no cambia: no ve la base. |
+| 4.6-7 | **Los pasos siguen editables después del alta** desde Configuración, Catálogo y Equipo; el wizard no tiene estado propio que mantener. Agregar un tamaño después deja servicios sin precio (§6): `GET /onboarding/status` los lista en `SERVICE_PRICES`, pero el alta ya terminada no cambia. |

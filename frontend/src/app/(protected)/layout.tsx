@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useTenantBranding } from "@/lib/branding";
-import { CHANGE_PASSWORD_PATH } from "@/lib/routes";
+import { CHANGE_PASSWORD_PATH, HOME_PATH, ONBOARDING_PATH } from "@/lib/routes";
 import { getMeRequest } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -27,6 +27,11 @@ import { useAuthStore } from "@/stores/authStore";
  *
  * La paleta y la tipografía del negocio (PR 4.5) se aplican acá, con sesión
  * utilizable; al salir del shell vuelve el tema por defecto.
+ *
+ * Alta sin terminar (FASE-4-CONTRATO §6, PR 4.6): el dueño va a `/onboarding` desde cualquier
+ * pantalla (y con el alta terminada, `/onboarding` lo devuelve al inicio); un empleado no se
+ * redirige: ve un aviso arriba de cada pantalla. Se decide con `onboarding_completed` de la sesión
+ * del servidor; antes de que llegue no se redirige nada.
  */
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -34,6 +39,16 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const setSession = useAuthStore((s) => s.setSession);
   const mustChangePassword = useAuthStore((s) => s.mustChangePassword);
   const hasUser = useAuthStore((s) => s.user !== null);
+  const role = useAuthStore((s) => s.user?.role);
+  const onboardingCompleted = useAuthStore((s) => s.onboardingCompleted);
+  const pathname = usePathname() ?? "";
+  const inOnboarding = pathname === ONBOARDING_PATH || pathname.startsWith(`${ONBOARDING_PATH}/`);
+  // Solo el dueño se redirige, y solo con el dato del servidor (`null` = todavía no se sabe).
+  const ownerMustOnboard =
+    !mustChangePassword && role === "OWNER" && onboardingCompleted === false && !inOnboarding;
+  const ownerAlreadyDone =
+    !mustChangePassword && role === "OWNER" && onboardingCompleted === true && inOnboarding;
+  const staffWaiting = role === "STAFF" && onboardingCompleted === false;
 
   const { data: me } = useQuery({
     queryKey: ["auth", "me"],
@@ -55,7 +70,12 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     if (mustChangePassword) router.replace(CHANGE_PASSWORD_PATH);
   }, [mustChangePassword, router]);
 
-  if (mustChangePassword) {
+  useEffect(() => {
+    if (ownerMustOnboard) router.replace(ONBOARDING_PATH);
+    else if (ownerAlreadyDone) router.replace(HOME_PATH);
+  }, [ownerMustOnboard, ownerAlreadyDone, router]);
+
+  if (mustChangePassword || ownerMustOnboard || ownerAlreadyDone) {
     return (
       <div role="status" aria-label="Cargando" className="flex h-dvh items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
@@ -72,7 +92,18 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
           className="flex-1 overflow-y-auto p-4 sm:p-6"
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="mx-auto max-w-[1200px]">{children}</div>
+          <div className="mx-auto max-w-[1200px]">
+            {staffWaiting && (
+              <p
+                role="status"
+                className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+              >
+                El negocio todavía se está configurando: el dueño tiene que terminar el alta. Hasta
+                entonces puede faltar información en algunas pantallas.
+              </p>
+            )}
+            {children}
+          </div>
         </main>
       </div>
     </div>
