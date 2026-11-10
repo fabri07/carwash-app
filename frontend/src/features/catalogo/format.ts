@@ -51,7 +51,15 @@ export const categoryOptions = (categories: ServiceCategory[]) => [
   ...categories.map((c) => ({ value: c.id, label: c.name })),
 ];
 
-/** Seña de un servicio en la tabla: su % propio o «General» (usa la del negocio, D4-17). */
-export function depositLabel(service: Pick<Service, "deposit_bps">): string {
-  return service.deposit_bps == null ? "General" : formatPercent(service.deposit_bps);
+/**
+ * Seña de un servicio en la tabla: su % propio o «General» (D4-17). Con la seña apagada en el negocio
+ * no se cobra ninguna, aunque el servicio tenga % propio: se dice, para no prometer una seña que el
+ * sistema no va a pedir.
+ */
+export function depositLabel(
+  service: Pick<Service, "deposit_bps">,
+  depositEnabled: boolean | undefined,
+): string {
+  const own = service.deposit_bps == null ? "General" : formatPercent(service.deposit_bps);
+  return depositEnabled === false ? `${own} (seña apagada)` : own;
 }

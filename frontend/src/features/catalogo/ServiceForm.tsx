@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Form } from "@/components/ui/form";
 import { categoryOptions } from "@/features/catalogo/format";
+import { OwnDepositField } from "@/features/catalogo/OwnDepositField";
 import { PriceFields } from "@/features/catalogo/PriceFields";
 import { DialogFormFooter, SelectField, TextField } from "@/features/configuracion/fields";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
@@ -61,14 +62,7 @@ export function ServiceForm({ sizes, categories, onSubmit, onCancel }: ServiceFo
           multiline
           hint="Qué incluye, aclaraciones para el equipo."
         />
-        <TextField
-          control={form.control}
-          name="deposit_percent"
-          label="Seña propia (%) (opcional)"
-          inputMode="decimal"
-          placeholder="Usa la general"
-          hint="Vacío: usa el % de seña del negocio. Solo se cobra si la seña está activa en Configuración."
-        />
+        <OwnDepositField control={form.control} />
         <PriceFields sizes={sizes} />
         <DialogFormFooter
           formError={formError}

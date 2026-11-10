@@ -7,7 +7,7 @@ import { Form } from "@/components/ui/form";
 import { DialogFormFooter, SwitchField, TextField } from "@/features/configuracion/fields";
 import type { CatalogFormProps } from "@/features/configuracion/CatalogTab";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
-import { bpsToPercent } from "@/lib/percent";
+import { bpsToInput } from "@/lib/percent";
 import type { PaymentMethod } from "@/types/api";
 import { paymentMethodSchema, type PaymentMethodInput } from "@/validation/catalog";
 
@@ -22,7 +22,7 @@ export function PaymentMethodForm({
     defaultValues: {
       code: item?.code ?? "",
       label: item?.label ?? "",
-      commission_percent: String(item ? bpsToPercent(item.commission_bps) : 0).replace(".", ","),
+      commission_percent: item ? bpsToInput(item.commission_bps) : "0",
       settlement_account: item?.settlement_account ?? "",
       for_income: item?.for_income ?? true,
       for_expense: item?.for_expense ?? false,

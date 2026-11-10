@@ -544,9 +544,9 @@ describe("Servicios — alta, edición y baja", () => {
     await userEvent.selectOptions(within(dialog).getByLabelText("Modalidad"), "A_COTIZAR");
     await userEvent.click(within(dialog).getByRole("button", { name: "Guardar precios" }));
     await waitFor(() => expect(servicesApi.replacePrices).toHaveBeenCalledTimes(1));
+    // La seña no cambió: no se manda, así no pisa la que otro haya fijado mientras tanto.
     expect(servicesApi.replacePrices).toHaveBeenCalledWith("sv1", {
       pricing_mode: "A_COTIZAR",
-      deposit_bps: null,
       prices: [
         { vehicle_size_id: "s1", price_cents: 2_500_000, duration_min: 60 },
         { vehicle_size_id: "s2", price_cents: 3_000_000, duration_min: 90 },
@@ -586,6 +586,13 @@ describe("Servicios — alta, edición y baja", () => {
     expect((servicesApi.replacePrices as jest.Mock).mock.calls[0]![1]).toMatchObject({
       deposit_bps: null,
     });
+  });
+
+  it("con la seña apagada en el negocio, la tabla lo dice", async () => {
+    (getSettings as jest.Mock).mockResolvedValue({ deposit_enabled: false });
+    (servicesApi.list as jest.Mock).mockResolvedValue(page([service({ deposit_bps: 3000 })]));
+    renderPage();
+    expect(await screen.findByText("30 % (seña apagada)")).toBeInTheDocument();
   });
 
   it("seña propia inválida no se manda", async () => {

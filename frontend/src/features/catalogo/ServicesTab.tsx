@@ -35,6 +35,8 @@ import { ServicePricesForm } from "@/features/catalogo/ServicePricesForm";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useCan } from "@/hooks/usePermission";
 import { apiErrorCode, FormSubmitError, serviceError } from "@/lib/errors";
+import { useSettings } from "@/features/configuracion/queries";
+import { bpsToPercent } from "@/lib/percent";
 import { servicesApi } from "@/services/catalog.service";
 import { toast } from "@/stores/toastStore";
 import type { Service } from "@/types/api";
@@ -82,6 +84,8 @@ export function ServicesTab() {
   const query = useServices(params);
   const categoriesQuery = useAllCategories();
   const sizesQuery = useAllVehicleSizes();
+  // Para avisar en la tabla si la seña está apagada (la lectura no pide permiso).
+  const depositEnabled = useSettings().data?.deposit_enabled;
   const categories = useMemo(() => categoriesQuery.data?.items ?? [], [categoriesQuery.data]);
   const sizes = useMemo(() => sizesQuery.data?.items ?? [], [sizesQuery.data]);
   const categoryName = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
@@ -141,8 +145,9 @@ export function ServicesTab() {
     {
       key: "deposit",
       header: "Seña",
-      cell: (s) => depositLabel(s),
-      csvValue: (s) => depositLabel(s),
+      cell: (s) => depositLabel(s, depositEnabled),
+      // Número en el CSV (como la comisión): vacío = usa la seña general.
+      csvValue: (s) => (s.deposit_bps == null ? "" : bpsToPercent(s.deposit_bps)),
     },
     { key: "notes", header: "Notas", defaultVisible: false },
   ];
@@ -193,11 +198,13 @@ export function ServicesTab() {
   }
 
   async function savePrices(item: Service, values: ServicePricesInput) {
+    const deposit = toDepositBps(values.deposit_percent);
     try {
       await servicesApi.replacePrices(item.id, {
         pricing_mode: values.pricing_mode,
-        // Siempre se manda: vacío (`null`) vuelve a la seña general del negocio.
-        deposit_bps: toDepositBps(values.deposit_percent),
+        // Solo si cambió: ausente no la toca en el servidor, así un formulario abierto con datos
+        // viejos no pisa la seña que otro acaba de fijar. Vacía (`null`) vuelve a la general.
+        ...(deposit !== item.deposit_bps && { deposit_bps: deposit }),
         prices: toPriceItems(values.prices),
       });
     } catch (e) {

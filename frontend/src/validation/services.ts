@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { parsePercent, percentToBps } from "@/lib/percent";
+import { percentText } from "@/validation/percent";
 import type { ServicePriceItem } from "@/types/api";
 
 /**
@@ -79,18 +80,8 @@ const categoryId = z.string();
 
 const prices = z.array(priceRowSchema).min(1, "Primero cargá al menos un tamaño de vehículo");
 
-/**
- * Seña propia del servicio (D4-17), como texto: `""` = usa la general del negocio. Mismo rango que
- * la general (0,01 % a 100 %).
- */
-const ownDeposit = z
-  .string()
-  .trim()
-  .refine((v) => v === "" || parsePercent(v) !== null, "Poné un porcentaje, por ejemplo 30 o 12,5")
-  .refine((v) => {
-    const p = v === "" ? null : parsePercent(v);
-    return p === null || (p >= 0.01 && p <= 100);
-  }, "Entre 0,01 % y 100 %");
+/** Seña propia del servicio (D4-17): `""` = usa la general del negocio. */
+const ownDeposit = percentText({ min: 0.01, example: "30 o 12,5", optional: true });
 
 /** `""` → `null` (usa la del negocio); `"30"` → `3000`. */
 export function toDepositBps(value: string): number | null {

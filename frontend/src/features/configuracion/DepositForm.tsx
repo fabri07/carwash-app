@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { SwitchField, TextField } from "@/features/configuracion/fields";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
-import { bpsToPercent } from "@/lib/percent";
+import { bpsToInput } from "@/lib/percent";
 import type { BusinessSettings } from "@/types/api";
 import { depositSchema, type DepositInput } from "@/validation/settings";
 
@@ -25,7 +25,7 @@ export function DepositForm({ settings, onSubmit }: DepositFormProps) {
     resolver: zodResolver(depositSchema),
     defaultValues: {
       deposit_enabled: settings.deposit_enabled,
-      deposit_percent: String(bpsToPercent(settings.deposit_bps)).replace(".", ","),
+      deposit_percent: bpsToInput(settings.deposit_bps),
       hold_min: String(settings.hold_min),
       tolerance_min: String(settings.tolerance_min),
       late_cancel_threshold_min: String(settings.late_cancel_threshold_min),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { parsePercent } from "@/lib/percent";
+import { percentText } from "@/validation/percent";
 
 /**
  * Schemas de la configuración del negocio (PR 4.2b). Límites = los de
@@ -49,14 +49,7 @@ export type BusinessInput = z.infer<typeof businessSchema>;
 
 export const depositSchema = z.object({
   deposit_enabled: z.boolean(),
-  deposit_percent: z
-    .string()
-    .trim()
-    .refine((v) => parsePercent(v) !== null, "Poné un porcentaje, por ejemplo 20 o 12,5")
-    .refine((v) => {
-      const p = parsePercent(v);
-      return p === null || (p >= 0.01 && p <= 100);
-    }, "Entre 0,01 % y 100 %"),
+  deposit_percent: percentText({ min: 0.01, example: "20 o 12,5" }),
   hold_min: wholeNumber(1, MAX_MINUTES, "Retención de la seña"),
   tolerance_min: wholeNumber(1, MAX_MINUTES, "Tolerancia"),
   late_cancel_threshold_min: wholeNumber(1, MAX_MINUTES, "Cancelación tardía"),

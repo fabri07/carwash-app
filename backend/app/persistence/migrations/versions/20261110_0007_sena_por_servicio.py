@@ -61,7 +61,8 @@ def downgrade() -> None:
             propios integer := 0;
         BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.columns
-                       WHERE table_name = 'services' AND column_name = 'deposit_bps') THEN
+                       WHERE table_schema = 'public' AND table_name = 'services'
+                         AND column_name = 'deposit_bps') THEN
                 SELECT count(*) INTO propios FROM services WHERE deposit_bps IS NOT NULL;
             END IF;
             IF propios > 0 THEN

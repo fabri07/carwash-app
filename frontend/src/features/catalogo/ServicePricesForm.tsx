@@ -4,9 +4,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Form } from "@/components/ui/form";
+import { OwnDepositField } from "@/features/catalogo/OwnDepositField";
 import { PriceFields } from "@/features/catalogo/PriceFields";
-import { DialogFormFooter, TextField } from "@/features/configuracion/fields";
-import { bpsToPercent } from "@/lib/percent";
+import { DialogFormFooter } from "@/features/configuracion/fields";
+import { bpsToInput } from "@/lib/percent";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import type { Service, VehicleSize } from "@/types/api";
 import { servicePricesSchema, type ServicePricesInput } from "@/validation/services";
@@ -27,10 +28,7 @@ export function ServicePricesForm({ service, sizes, onSubmit, onCancel }: Servic
     resolver: zodResolver(servicePricesSchema),
     defaultValues: {
       pricing_mode: service.pricing_mode,
-      deposit_percent:
-        service.deposit_bps == null
-          ? ""
-          : String(bpsToPercent(service.deposit_bps)).replace(".", ","),
+      deposit_percent: service.deposit_bps == null ? "" : bpsToInput(service.deposit_bps),
       prices: sizes.map((s) => {
         const current = service.prices.find((p) => p.vehicle_size_id === s.id);
         return {
@@ -45,14 +43,7 @@ export function ServicePricesForm({ service, sizes, onSubmit, onCancel }: Servic
   return (
     <Form {...form}>
       <form onSubmit={submit} noValidate className="space-y-4">
-        <TextField
-          control={form.control}
-          name="deposit_percent"
-          label="Seña propia (%) (opcional)"
-          inputMode="decimal"
-          placeholder="Usa la general"
-          hint="Vacío: usa el % de seña del negocio. Solo se cobra si la seña está activa en Configuración."
-        />
+        <OwnDepositField control={form.control} />
         <PriceFields sizes={sizes} />
         <DialogFormFooter
           formError={formError}
