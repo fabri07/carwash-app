@@ -6,7 +6,7 @@ import { BusinessForm } from "@/features/configuracion/BusinessForm";
 import { DepositForm } from "@/features/configuracion/DepositForm";
 import { configKeys, useSettings } from "@/features/configuracion/queries";
 import { configError, FormSubmitError } from "@/lib/errors";
-import { percentToBps, parsePercent } from "@/lib/percent";
+import { inputToBps } from "@/lib/percent";
 import { patchSettings } from "@/services/config.service";
 import { toast } from "@/stores/toastStore";
 import type { BusinessSettingsPatch } from "@/types/api";
@@ -86,7 +86,7 @@ export function DepositTab() {
             save(
               {
                 deposit_enabled: v.deposit_enabled,
-                deposit_bps: percentToBps(parsePercent(v.deposit_percent) ?? 0),
+                deposit_bps: inputToBps(v.deposit_percent) ?? 0,
                 hold_min: Number(v.hold_min),
                 min_advance_min: Number(v.min_advance_min),
                 tolerance_min: Number(v.tolerance_min),

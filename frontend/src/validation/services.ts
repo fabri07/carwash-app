@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { parsePercent, percentToBps } from "@/lib/percent";
+import { inputToBps } from "@/lib/percent";
 import { percentText } from "@/validation/percent";
 import type { ServicePriceItem } from "@/types/api";
 
@@ -85,8 +85,7 @@ const ownDeposit = percentText({ min: 0.01, example: "30 o 12,5", optional: true
 
 /** `""` → `null` (usa la del negocio); `"30"` → `3000`. */
 export function toDepositBps(value: string): number | null {
-  const percent = value.trim() === "" ? null : parsePercent(value);
-  return percent === null ? null : percentToBps(percent);
+  return inputToBps(value);
 }
 
 export const serviceCreateSchema = z.object({

@@ -1,5 +1,5 @@
 import { hhmm } from "@/lib/time";
-import { bpsToPercent, formatPercent, parsePercent, percentToBps } from "@/lib/percent";
+import { bpsToPercent, formatPercent, inputToBps, parsePercent, percentToBps } from "@/lib/percent";
 import {
   businessHoursSchema,
   paymentMethodSchema,
@@ -31,6 +31,15 @@ describe("percent", () => {
     expect(parsePercent("abc")).toBeNull();
     expect(parsePercent("1,234")).toBeNull();
     expect(parsePercent("-5")).toBeNull();
+  });
+});
+
+describe("inputToBps", () => {
+  it("convierte lo que escribe el usuario a bps y devuelve null si no se lee", () => {
+    expect(inputToBps("12,5")).toBe(1250);
+    expect(inputToBps("30")).toBe(3000);
+    expect(inputToBps("")).toBeNull();
+    expect(inputToBps("abc")).toBeNull();
   });
 });
 

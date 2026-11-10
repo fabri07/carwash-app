@@ -36,7 +36,6 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useCan } from "@/hooks/usePermission";
 import { apiErrorCode, FormSubmitError, serviceError } from "@/lib/errors";
 import { useSettings } from "@/features/configuracion/queries";
-import { bpsToPercent } from "@/lib/percent";
 import { servicesApi } from "@/services/catalog.service";
 import { toast } from "@/stores/toastStore";
 import type { Service } from "@/types/api";
@@ -146,8 +145,8 @@ export function ServicesTab() {
       key: "deposit",
       header: "Seña",
       cell: (s) => depositLabel(s, depositEnabled),
-      // Número en el CSV (como la comisión): vacío = usa la seña general.
-      csvValue: (s) => (s.deposit_bps == null ? "" : bpsToPercent(s.deposit_bps)),
+      // Igual que en pantalla: con la seña del negocio apagada el CSV lo dice, no muestra un % que no se cobra.
+      csvValue: (s) => depositLabel(s, depositEnabled),
     },
     { key: "notes", header: "Notas", defaultVisible: false },
   ];
