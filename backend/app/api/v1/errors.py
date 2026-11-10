@@ -22,10 +22,13 @@ class ApiError(HTTPException):
         code: ErrorCode,
         message: str,
         headers: dict[str, str] | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
+        """`extra`: campos propios de un error además de `code` y `message` (p. ej. `missing` del
+        409 de `/onboarding/complete`); su forma la declara el `responses=` de la ruta."""
         super().__init__(
             status_code=status_code,
-            detail={"code": code.value, "message": message},
+            detail={**(extra or {}), "code": code.value, "message": message},
             headers=headers,
         )
         self.code = code

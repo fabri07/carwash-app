@@ -314,6 +314,7 @@
           "IMAGE_TOO_SMALL",
           "FILE_TOO_LARGE",
           "STORAGE_UNAVAILABLE",
+          "ONBOARDING_INCOMPLETE",
           "CONFLICT",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
@@ -523,6 +524,167 @@
           "onboarding_completed"
         ],
         "title": "MeResponse",
+        "type": "object"
+      },
+      "OnboardingIncompleteDetail": {
+        "properties": {
+          "code": {
+            "const": "ONBOARDING_INCOMPLETE",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingMissing"
+            },
+            "title": "Missing",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "missing"
+        ],
+        "title": "OnboardingIncompleteDetail",
+        "type": "object"
+      },
+      "OnboardingIncompleteResponse": {
+        "description": "El 409 de `POST /onboarding/complete`: el envelope de siempre con la lista de faltantes.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/OnboardingIncompleteDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "OnboardingIncompleteResponse",
+        "type": "object"
+      },
+      "OnboardingMissing": {
+        "properties": {
+          "requirement": {
+            "$ref": "#/components/schemas/OnboardingRequirement"
+          },
+          "service_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Service Ids",
+            "type": "array"
+          },
+          "step": {
+            "$ref": "#/components/schemas/OnboardingStep"
+          }
+        },
+        "required": [
+          "requirement",
+          "step"
+        ],
+        "title": "OnboardingMissing",
+        "type": "object"
+      },
+      "OnboardingRequirement": {
+        "description": "Lo que exige `POST /onboarding/complete` (§6). Cada uno se resuelve en un paso.",
+        "enum": [
+          "VEHICLE_SIZE",
+          "SERVICE",
+          "SERVICE_PRICES",
+          "RESOURCE",
+          "BUSINESS_HOURS",
+          "PAYMENT_METHOD"
+        ],
+        "title": "OnboardingRequirement",
+        "type": "string"
+      },
+      "OnboardingStatusResponse": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingMissing"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "resume_step": {
+            "$ref": "#/components/schemas/OnboardingStep"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingStepStatus"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "completed",
+          "completed_at",
+          "resume_step",
+          "steps",
+          "missing"
+        ],
+        "title": "OnboardingStatusResponse",
+        "type": "object"
+      },
+      "OnboardingStep": {
+        "description": "Pasos del wizard, en el orden de §6.",
+        "enum": [
+          "BUSINESS",
+          "BRANDING",
+          "SIZES",
+          "SERVICES",
+          "SCHEDULE",
+          "PAYMENTS",
+          "DEPOSIT",
+          "STAFF"
+        ],
+        "title": "OnboardingStep",
+        "type": "string"
+      },
+      "OnboardingStepStatus": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "step": {
+            "$ref": "#/components/schemas/OnboardingStep"
+          }
+        },
+        "required": [
+          "step",
+          "required",
+          "done"
+        ],
+        "title": "OnboardingStepStatus",
         "type": "object"
       },
       "PaginatedResponse_BodyTypeSizeResponse_": {
@@ -4439,6 +4601,118 @@
         "summary": "Update Business Hours",
         "tags": [
           "Configuración"
+        ]
+      }
+    },
+    "/v1/onboarding/complete": {
+      "post": {
+        "operationId": "complete_v1_onboarding_complete_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingIncompleteResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "summary": "Complete",
+        "tags": [
+          "Alta"
+        ]
+      }
+    },
+    "/v1/onboarding/status": {
+      "get": {
+        "operationId": "get_status_v1_onboarding_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Get Status",
+        "tags": [
+          "Alta"
         ]
       }
     },
