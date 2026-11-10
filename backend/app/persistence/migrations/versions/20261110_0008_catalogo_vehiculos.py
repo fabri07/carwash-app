@@ -17,9 +17,11 @@ Por qué (FASE-4-CONTRATO D4-8, Y3, Y7, §3.4):
 **Copia de la base a los negocios existentes (Y3):** cada tenant que todavía no tiene marcas
 recibe la base de `app/data/vehiculos_ar.json` entera, en tres `INSERT … SELECT` (marcas, modelos
 por marca, colores). Un tenant que ya tiene marcas no se toca: re-aplicar no duplica ni
-"resucita" lo que el negocio renombró. La base se lee **del archivo** (no se congela acá: son
-~400 modelos); si la base cambia, los negocios existentes se completan con una migración de datos
-nueva, esta no se edita.
+"resucita" lo que el negocio renombró. La base se lee de una **copia congelada**,
+`migrations/data/0008_vehiculos_ar.json` (no de `app/data/vehiculos_ar.json`, que puede cambiar): la
+migración describe lo que copió en su momento, y la guarda del downgrade compara contra esa misma
+copia. `test_base_de_vehiculos.py` compara hoy la copia con la viva; si la base cambia, los
+negocios existentes se completan con una migración de datos nueva y esta copia no se toca.
 `search_key` se calcula con una copia **congelada** de `normalize` (`_normalize`), como en 0006.
 
 `body_type_sizes` nace **vacía** (también en `provision_tenant`): al registrarse el negocio
@@ -33,8 +35,8 @@ misma transacción. `carwash_owner` no crea extensiones (X11): `gen_random_uuid(
 
 Idempotente (A6), como 0003 a 0007.
 
-**Downgrade con corte explícito:** bajar borra el catálogo de cada negocio. Si hay algo que el
-negocio hizo (marcas, modelos o colores propios, ocultos o renombrados respecto de la base;
+**Downgrade con corte explícito:** bajar borra el catálogo de cada negocio. Si hay algo vivo que
+el negocio hizo (marcas, modelos o colores propios, ocultos o renombrados respecto de la base;
 carrocerías con tamaño; vehículos con marca, modelo o color del catálogo), **corta y lo dice**. Hay
 que vaciarlo a mano y reintentar. La copia intacta de la base se borra sin preguntar: se regenera.
 """
@@ -88,7 +90,8 @@ NEW_TABLES = (MAKES, MODELS, COLORS, BODY_TYPE_SIZES)
 #: `vehicles.<columna>` → tabla del catálogo.
 VEHICLE_FKS = {"make_id": MAKES, "model_id": MODELS, "color_id": COLORS}
 
-DATA_FILE = Path(__file__).resolve().parents[3] / "data" / "vehiculos_ar.json"
+#: Copia congelada de `app/data/vehiculos_ar.json` al momento de esta migración.
+DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "0008_vehiculos_ar.json"
 
 _NO_ALFANUM = re.compile(r"[^a-z0-9]+")
 
@@ -334,29 +337,31 @@ def _business_data() -> dict[str, int]:
     def count(label: str, sql: str) -> None:
         counts[label] = int(bind.scalar(sa.text(sql)) or 0)
 
+    # Solo filas vivas: lo anulado ya lo descartó el negocio y bajar no le quita nada.
+
     if _has_table(MAKES):
         count(
             "marcas propias, ocultas o renombradas",
-            f"SELECT count(*) FROM {MAKES} WHERE is_custom OR hidden_at IS NOT NULL "
-            f"OR (name, search_key) NOT IN (VALUES {_values(base['makes'])})",
+            f"SELECT count(*) FROM {MAKES} WHERE {ALIVE} AND (is_custom OR hidden_at IS NOT NULL "
+            f"OR (name, search_key) NOT IN (VALUES {_values(base['makes'])}))",
         )
     if _has_table(MODELS) and _has_table(MAKES):
         count(
             "modelos propios, ocultos o editados",
             f"SELECT count(*) FROM {MODELS} AS x JOIN {MAKES} AS m "
             "ON m.tenant_id = x.tenant_id AND m.id = x.make_id "
-            "WHERE x.is_custom OR x.hidden_at IS NOT NULL "
+            f"WHERE x.{ALIVE} AND (x.is_custom OR x.hidden_at IS NOT NULL "
             "OR (m.search_key, x.name, x.body_type::text, x.search_key) NOT IN "
-            f"(VALUES {_values(base['models'])})",
+            f"(VALUES {_values(base['models'])}))",
         )
     if _has_table(COLORS):
         count(
             "colores propios, ocultos o renombrados",
-            f"SELECT count(*) FROM {COLORS} WHERE is_custom OR hidden_at IS NOT NULL "
-            f"OR (name, search_key) NOT IN (VALUES {_values(base['colors'])})",
+            f"SELECT count(*) FROM {COLORS} WHERE {ALIVE} AND (is_custom OR hidden_at IS NOT NULL "
+            f"OR (name, search_key) NOT IN (VALUES {_values(base['colors'])}))",
         )
     if _has_table(BODY_TYPE_SIZES):
-        count("carrocerias con tamano", f"SELECT count(*) FROM {BODY_TYPE_SIZES}")
+        count("carrocerias con tamano", f"SELECT count(*) FROM {BODY_TYPE_SIZES} WHERE {ALIVE}")
     present = bind.scalar(
         sa.text(
             "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' "
@@ -366,8 +371,8 @@ def _business_data() -> dict[str, int]:
     if present:
         count(
             "vehiculos con marca, modelo o color del catalogo",
-            "SELECT count(*) FROM vehicles "
-            "WHERE make_id IS NOT NULL OR model_id IS NOT NULL OR color_id IS NOT NULL",
+            f"SELECT count(*) FROM vehicles WHERE {ALIVE} "
+            "AND (make_id IS NOT NULL OR model_id IS NOT NULL OR color_id IS NOT NULL)",
         )
     return {label: n for label, n in counts.items() if n}
 

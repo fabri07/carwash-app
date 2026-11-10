@@ -16,7 +16,7 @@
 """
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +32,7 @@ from app.domain.void import VoidReason
 from app.persistence.db._savepoint import SavepointConflictError, guarded_savepoint
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.models.catalog import VehicleSize
+from app.persistence.models.tenant import TenantSettings
 from app.persistence.models.vehicle_catalog import (
     BodyTypeSize,
     VehicleColor,
@@ -45,9 +46,6 @@ from app.persistence.repositories.vehicle_catalog import (
     VehicleModelRepository,
 )
 from app.utils.datetime_utils import utcnow
-
-#: Un negocio tiene cientos de modelos: se filtra y ordena en Python (Y8).
-_ALL_ROWS = 10_000
 
 CatalogRow = VehicleMake | VehicleModel | VehicleColor
 
@@ -163,9 +161,14 @@ class VehicleCatalogService(ServiceBase):
         q: str | None,
         limit: int,
         offset: int,
-        aliases_of: Any = None,
+        aliases_of: Callable[[Sequence[M]], Mapping[uuid.UUID, Sequence[str]]] | None = None,
     ) -> Page[M]:
-        """Página de filas vivas de `model`: por nombre en la base, o rankeada en Python con `q`."""
+        """Página de filas vivas de `model`: por nombre en la base, o rankeada en Python con `q`.
+
+        Con `q` se lee **todo** el alcance (sin tope) para que `total` sea exacto: un negocio
+        tiene unas 450 filas de la base más las que sume a mano (Y8). Un tope fijo truncaría en
+        silencio y el total mentiría.
+        """
         wanted = normalize(q) if q is not None else ""
         order = (model.name.asc(), model.id.desc())
         if not wanted:
@@ -179,12 +182,8 @@ class VehicleCatalogService(ServiceBase):
                 )
             )
             return Page(items=items, total=total)
-        rows = list(
-            await self._session.scalars(
-                select(model).where(*scope).order_by(*order).limit(_ALL_ROWS)
-            )
-        )
-        aliases = await aliases_of(rows) if aliases_of is not None else None
+        rows = list(await self._session.scalars(select(model).where(*scope).order_by(*order)))
+        aliases = aliases_of(rows) if aliases_of is not None else None
         ranked = _rank(rows, wanted, aliases)
         return Page(items=ranked[offset : offset + limit], total=len(ranked))
 
@@ -251,7 +250,7 @@ class VehicleCatalogService(ServiceBase):
         )
         return {row.body_type: row.vehicle_size_id for row in rows}
 
-    async def _make_names(self, make_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, VehicleMake]:
+    async def _makes_of(self, make_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, VehicleMake]:
         if not make_ids:
             return {}
         rows = await self._session.scalars(
@@ -261,8 +260,20 @@ class VehicleCatalogService(ServiceBase):
         )
         return {make.id: make for make in rows}
 
-    async def _views(self, models: Sequence[VehicleModel]) -> list[ModelView]:
-        makes = await self._make_names([m.make_id for m in models])
+    async def _all_makes(self) -> dict[uuid.UUID, VehicleMake]:
+        """Todas las marcas del negocio (unas 40): una consulta por request de listado."""
+        rows = await self._session.scalars(
+            select(VehicleMake).where(VehicleMake.tenant_id == self._tenant_id)
+        )
+        return {make.id: make for make in rows}
+
+    async def _views(
+        self,
+        models: Sequence[VehicleModel],
+        makes: Mapping[uuid.UUID, VehicleMake] | None = None,
+    ) -> list[ModelView]:
+        if makes is None:
+            makes = await self._makes_of([m.make_id for m in models])
         suggested = await self._suggestions()
         return [ModelView(m, makes[m.make_id].name, suggested.get(m.body_type)) for m in models]
 
@@ -290,15 +301,17 @@ class VehicleCatalogService(ServiceBase):
             )
             scope.append(VehicleModel.make_id.in_(visible_makes))
 
-        async def make_and_model(rows: Sequence[VehicleModel]) -> dict[uuid.UUID, list[str]]:
+        # Una sola carga de las marcas: sirve para la búsqueda y para armar las vistas.
+        makes = await self._all_makes()
+
+        def make_and_model(rows: Sequence[VehicleModel]) -> dict[uuid.UUID, list[str]]:
             # "toyota hilux" encuentra a la Hilux aunque se busque sin elegir marca.
-            makes = await self._make_names([r.make_id for r in rows])
             return {r.id: [f"{makes[r.make_id].search_key} {r.search_key}"] for r in rows}
 
         page = await self._page(
             VehicleModel, scope, q=q, limit=limit, offset=offset, aliases_of=make_and_model
         )
-        return await self._views(page.items), page.total
+        return await self._views(page.items, makes), page.total
 
     async def get_model(self, id: uuid.UUID) -> ModelView:
         await self._enter()
@@ -389,6 +402,27 @@ class VehicleCatalogService(ServiceBase):
         suggested = await self._suggestions()
         return [BodyTypeSizeView(bt, suggested.get(bt)) for bt in VehicleBodyType]
 
+    async def _lock_body_type_map(self) -> None:
+        """Serializa los `PUT` del mapa de un negocio: `FOR UPDATE` sobre su `tenant_settings`.
+
+        Bloquear las filas del mapa no alcanza: en un negocio sin filas no hay nada que bloquear y
+        dos `PUT` a la vez insertarían la misma carrocería (el único vivo rechazaría al segundo).
+        `tenant_settings` existe siempre y es una por negocio (§3.2). En SQLite no se emite.
+        """
+        await self._session.execute(
+            select(TenantSettings.id)
+            .where(TenantSettings.tenant_id == self._tenant_id)
+            .with_for_update()
+        )
+
+    async def _current_body_type_sizes(self) -> dict[VehicleBodyType, BodyTypeSize]:
+        rows = await self._session.scalars(
+            select(BodyTypeSize).where(
+                BodyTypeSize.tenant_id == self._tenant_id, BodyTypeSize.voided_at.is_(None)
+            )
+        )
+        return {row.body_type: row for row in rows}
+
     async def replace_body_type_sizes(
         self, mapping: Sequence[tuple[VehicleBodyType, uuid.UUID | None]]
     ) -> list[BodyTypeSizeView]:
@@ -412,14 +446,8 @@ class VehicleCatalogService(ServiceBase):
         unknown = sorted(str(s) for s in set(wanted.values()) - live)
         if unknown:
             raise InvalidAmountError(f"unknown vehicle size(s): {', '.join(unknown)}")
-        current = {
-            row.body_type: row
-            for row in await self._session.scalars(
-                select(BodyTypeSize)
-                .where(BodyTypeSize.tenant_id == self._tenant_id, BodyTypeSize.voided_at.is_(None))
-                .with_for_update()
-            )
-        }
+        await self._lock_body_type_map()
+        current = await self._current_body_type_sizes()
         for body_type, row in current.items():
             if body_type not in wanted:
                 row.voided_at = utcnow()
@@ -437,6 +465,8 @@ class VehicleCatalogService(ServiceBase):
                     for bt, size in wanted.items()
                     if bt not in current
                 )
-        except SavepointConflictError as exc:  # pragma: no cover  # carrera de dos PUT a la vez
+        except SavepointConflictError as exc:
+            # Red de abajo: con el lock de arriba no debería pasar. La API lo da como 409
+            # `CONFLICT` (reintentable), nunca como 500.
             raise AlreadyExistsError("body type sizes changed concurrently") from exc
         return await self.list_body_type_sizes()

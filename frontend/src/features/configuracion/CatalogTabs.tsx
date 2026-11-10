@@ -51,6 +51,8 @@ export function VehicleSizesTab() {
       toPatch={(v) => ({ label: v.label, sort_order: Number(v.sort_order) })}
       Form={VehicleSizeForm}
       deleteHint="Solo se puede quitar un tamaño que no tenga precios cargados."
+      // La carrocería → tamaño y la sugerencia de cada modelo (PR 4.4) cuelgan de los tamaños.
+      alsoInvalidates={[["vehicles"]]}
     />
   );
 }

@@ -217,6 +217,32 @@ async def test_el_downgrade_corta_si_perderia_datos_del_negocio(
         migrate_head(owner_url())
 
 
+async def test_el_downgrade_no_cuenta_lo_anulado(en_0007: AsyncEngine):
+    """Lo anulado ya lo descartó el negocio: no frena el downgrade."""
+    admin = en_0007
+    tenant = await _tenant(admin, "Lavadero Demo Seis")
+    _alembic("upgrade", "head")
+    tamano = uuid.uuid4()
+    await _ejecutar(
+        admin,
+        "INSERT INTO vehicle_sizes (id, tenant_id, code, label, voided_at, void_reason) "
+        "VALUES (:s, :t, 'AUTO', 'Auto', now(), 'PEDIDO_DEL_USUARIO')",
+        s=tamano,
+        t=tenant,
+    )
+    for sentencia in (
+        "INSERT INTO body_type_sizes "
+        "(id, tenant_id, body_type, vehicle_size_id, voided_at, void_reason) "
+        "VALUES (gen_random_uuid(), :t, 'SEDAN', :s, now(), 'PEDIDO_DEL_USUARIO')",
+        "INSERT INTO vehicle_makes (id, tenant_id, name, search_key, is_custom, voided_at, "
+        "void_reason) VALUES (gen_random_uuid(), :t, 'Vieja', 'vieja', true, now(), "
+        "'ERROR_DE_CARGA')",
+    ):
+        await _ejecutar(admin, sentencia, t=tenant, s=tamano)
+    _alembic("downgrade", ANTERIOR)
+    assert await _version(admin) == ANTERIOR
+
+
 async def test_el_downgrade_baja_limpio_con_la_base_intacta(en_0007: AsyncEngine):
     admin = en_0007
     tenant = await _tenant(admin, "Lavadero Demo Cinco")

@@ -300,6 +300,12 @@ async def replace_body_type_sizes(
     views = await guard(
         _service(session, user).replace_body_type_sizes(
             [(i.body_type, i.vehicle_size_id) for i in body.items]
-        )
+        ),
+        # Dos `PUT` a la vez: el servicio los serializa; si igual chocan, 409 reintentable.
+        ApiError(
+            status.HTTP_409_CONFLICT,
+            ErrorCode.CONFLICT,
+            "The body type map changed at the same time. Try again.",
+        ),
     )
     return _sizes_page(views, len(views), 0)

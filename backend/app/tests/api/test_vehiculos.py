@@ -426,3 +426,31 @@ async def test_sin_sesion_es_401(client, negocio):
     for url in ("/v1/vehicle-makes", "/v1/vehicle-models", "/v1/vehicle-colors"):
         assert (await client.get(url)).status_code == 401
     assert (await client.put("/v1/body-type-sizes", json={"items": []})).status_code == 401
+
+
+async def test_put_que_choca_con_otro_a_la_vez_es_409_reintentable(client, negocio, monkeypatch):
+    """La red de abajo del lock (§11.7, 4.4-7): si dos `PUT` igual chocan en el único vivo por
+    carrocería, la API responde 409 `CONFLICT`, no 500. Se simula el perdedor de la carrera: lee
+    el mapa vacío aunque el otro ya insertó."""
+    from app.application.services.vehicle_catalog_service import (  # noqa: PLC0415
+        VehicleCatalogService,
+    )
+
+    tamanos = await crear_tamanos(client, {}, "AUTO")
+    cuerpo = {"items": [{"body_type": "SEDAN", "vehicle_size_id": tamanos["AUTO"]}]}
+    assert (await client.put("/v1/body-type-sizes", json=cuerpo)).status_code == 200
+
+    async def mapa_viejo(self):
+        return {}
+
+    monkeypatch.setattr(VehicleCatalogService, "_current_body_type_sizes", mapa_viejo)
+    r = await client.put("/v1/body-type-sizes", json=cuerpo)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "CONFLICT"
+
+
+async def test_buscar_modelos_cuenta_todos_los_que_encuentra(client, negocio):
+    """Con `q` se rankea todo el alcance: el total es exacto aunque la página sea chica."""
+    todos = (await client.get("/v1/vehicle-models", params={"q": "gol", "limit": 200})).json()
+    uno = (await client.get("/v1/vehicle-models", params={"q": "gol", "limit": 1})).json()
+    assert uno["total"] == todos["total"] == len(todos["items"]) >= 3
+    assert uno["items"][0]["name"] == "Gol"

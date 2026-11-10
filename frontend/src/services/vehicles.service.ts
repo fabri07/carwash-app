@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { crud, type CrudApi } from "@/services/config.service";
 import type { PageParams } from "@/services/pagination";
 import type {
   BodyTypeSize,
@@ -36,7 +37,7 @@ export interface VehicleModelListParams extends VehicleListParams {
 }
 
 /** Saca de la URL lo que no filtra: un `q` vacío, `include_hidden=false`, la marca sin elegir. */
-function clean<P extends VehicleModelListParams>(params: P): VehicleModelListParams {
+function clean(params: VehicleModelListParams): VehicleModelListParams {
   const out: VehicleModelListParams = { limit: params.limit, offset: params.offset };
   if (params.q?.trim()) out.q = params.q.trim();
   if (params.include_hidden) out.include_hidden = true;
@@ -44,34 +45,20 @@ function clean<P extends VehicleModelListParams>(params: P): VehicleModelListPar
   return out;
 }
 
-export interface VehicleCatalogApi<R, C, U, P extends VehicleListParams> {
-  list: (params: P) => Promise<PaginatedResponse<R>>;
-  create: (data: C, idempotencyKey?: string) => Promise<R>;
-  /** Renombrar, ocultar/mostrar (y en modelos, corregir la carrocería). */
-  update: (id: string, data: U) => Promise<R>;
-}
+/**
+ * El `crud` de la configuración sin `remove`: el catálogo de vehículos no tiene baja (se oculta
+ * con `PATCH { hidden: true }`).
+ */
+export type VehicleCatalogApi<R, C, U, P extends VehicleListParams> = Omit<
+  CrudApi<R, C, U, P>,
+  "remove"
+>;
 
 function catalogApi<R, C, U, P extends VehicleListParams>(
   path: string,
 ): VehicleCatalogApi<R, C, U, P> {
-  return {
-    async list(params) {
-      const res = await api.get<PaginatedResponse<R>>(path, { params: clean(params) });
-      return res.data;
-    },
-    async create(data, idempotencyKey) {
-      const res = await api.post<R>(
-        path,
-        data,
-        idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : undefined,
-      );
-      return res.data;
-    },
-    async update(id, data) {
-      const res = await api.patch<R>(`${path}/${id}`, data);
-      return res.data;
-    },
-  };
+  const { list, create, update } = crud<R, C, U, P>(path, clean);
+  return { list, create, update };
 }
 
 export const vehicleMakesApi = catalogApi<

@@ -38,19 +38,25 @@ export async function patchSettings(data: BusinessSettingsPatch): Promise<Busine
   return res.data;
 }
 
-/** ABM paginado de un recurso del catálogo. */
-export interface CrudApi<R, C, U> {
-  list: (params: PageParams) => Promise<PaginatedResponse<R>>;
+/** ABM paginado de un recurso del catálogo. `P`: los filtros que acepta el listado. */
+export interface CrudApi<R, C, U, P extends PageParams = PageParams> {
+  list: (params: P) => Promise<PaginatedResponse<R>>;
   create: (data: C, idempotencyKey?: string) => Promise<R>;
   update: (id: string, data: U) => Promise<R>;
   /** 409 `IN_USE` si todavía se usa. */
   remove: (id: string) => Promise<void>;
 }
 
-export function crud<R, C, U>(path: string): CrudApi<R, C, U> {
+/**
+ * `toParams` arma la query del listado (p. ej. saca los filtros vacíos); sin él, va tal cual.
+ */
+export function crud<R, C, U, P extends PageParams = PageParams>(
+  path: string,
+  toParams: (params: P) => object = (params) => params,
+): CrudApi<R, C, U, P> {
   return {
     async list(params) {
-      const res = await api.get<PaginatedResponse<R>>(path, { params });
+      const res = await api.get<PaginatedResponse<R>>(path, { params: toParams(params) });
       return res.data;
     },
     async create(data, idempotencyKey) {

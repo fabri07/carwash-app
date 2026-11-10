@@ -121,6 +121,17 @@ def test_la_migracion_congela_el_mismo_enum_y_la_misma_normalize():
         assert migracion._normalize(nombre) == normalize(nombre), nombre
 
 
+def test_la_copia_congelada_de_la_migracion_es_hoy_la_base_viva():
+    """La `0008` copia de `migrations/data/0008_vehiculos_ar.json`, no del archivo vivo. Si este
+    test falla porque cambió la base, **no** se edita la copia: se escribe una migración de datos
+    nueva que complete los negocios existentes (§11.7, 4.4-9) y se ajusta este test."""
+    congelada = _migracion().DATA_FILE
+    assert congelada.name == "0008_vehiculos_ar.json" and congelada != DATA_FILE
+    assert json.loads(congelada.read_text(encoding="utf-8")) == json.loads(
+        DATA_FILE.read_text(encoding="utf-8")
+    )
+
+
 def test_la_migracion_lee_la_misma_base():
     base = _migracion()._base()
     assert len(base["makes"]) == len(BASE.makes)

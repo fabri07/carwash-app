@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { Eye, EyeOff, Pencil, Plus } from "lucide-react";
 
@@ -19,7 +19,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { vehicleKeys } from "@/features/vehiculos/queries";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { apiErrorCode, configError, FormSubmitError } from "@/lib/errors";
+import { capitalize, useCatalogEditor, useStepBackOnEmptyPage } from "@/hooks/useCatalogEditor";
+import { configError } from "@/lib/errors";
 import type { PaginatedResponse } from "@/types/api";
 import { toast } from "@/stores/toastStore";
 
@@ -40,8 +41,6 @@ export interface TableParams {
   make_id?: string;
 }
 
-type DialogState<R> = { kind: "create"; idempotencyKey: string } | { kind: "edit"; item: R } | null;
-
 const PAGE_SIZE = 25;
 const SEARCH_DELAY_MS = 300;
 
@@ -56,8 +55,11 @@ interface VehicleCatalogTableProps<R extends CatalogRow, F> {
   exportFilename: string;
   /** El hook de la query; recibe los filtros de la tabla (búsqueda, ocultas, página). */
   useRows: (params: TableParams) => UseQueryResult<PaginatedResponse<R>>;
-  /** Filtros que vienen de afuera de la tabla (la marca de los modelos). */
-  scope?: Pick<TableParams, "make_id">;
+  /**
+   * Filtros que vienen de afuera de la tabla (la marca de los modelos). Un `include_hidden: true`
+   * acá pisa el interruptor (los modelos de una marca oculta se ven siempre).
+   */
+  scope?: Partial<Pick<TableParams, "make_id" | "include_hidden">>;
   /** Columnas además del nombre y el estado. */
   extraColumns?: SmartColumn<R>[];
   /** Filtros además de la búsqueda (p. ej. la marca de los modelos). */
@@ -101,24 +103,24 @@ export function VehicleCatalogTable<R extends CatalogRow, F>({
   const q = useDebouncedValue(search.trim(), SEARCH_DELAY_MS);
   const [showHidden, setShowHidden] = useState(false);
   // La página vale para los filtros con que se eligió: si cambian, vuelve a la primera.
-  const key = `${q}|${showHidden}|${scope?.make_id ?? ""}`;
+  const key = `${q}|${showHidden}|${scope?.make_id ?? ""}|${scope?.include_hidden ?? ""}`;
   const [paging, setPaging] = useState({ key, offset: 0 });
   const offset = paging.key === key ? paging.offset : 0;
   const setOffset = (next: number) => setPaging({ key, offset: next });
-  const [dialog, setDialog] = useState<DialogState<R>>(null);
 
   const query = useRows({ limit: PAGE_SIZE, offset, q, include_hidden: showHidden, ...scope });
-  const loaded = query.data;
   // Ocultar el último ítem de la última página (sin "mostrar ocultas") la deja vacía: retrocede.
-  useEffect(() => {
-    if (loaded && loaded.items.length === 0 && loaded.total > 0 && offset > 0) {
-      setPaging({ key, offset: Math.floor((loaded.total - 1) / PAGE_SIZE) * PAGE_SIZE });
-    }
-  }, [loaded, offset, key]);
+  useStepBackOnEmptyPage(query.data, offset, PAGE_SIZE, setOffset);
 
-  const capital = singular.charAt(0).toUpperCase() + singular.slice(1);
-  const close = () => setDialog(null);
+  const capital = capitalize(singular);
   const refresh = () => queryClient.invalidateQueries({ queryKey: vehicleKeys.all });
+  const { dialog, setDialog, close, openCreate, submitFor } = useCatalogEditor<R, F>({
+    singular,
+    feminine,
+    create,
+    update,
+    refresh,
+  });
 
   const columns: SmartColumn<R>[] = [
     {
@@ -144,23 +146,6 @@ export function VehicleCatalogTable<R extends CatalogRow, F>({
       csvValue: (r) => (r.is_custom ? "propio" : "base"),
     },
   ];
-
-  async function save(values: F, current?: R, idempotencyKey?: string) {
-    let replay = false;
-    try {
-      if (current) await update(current, values);
-      else await create(values, idempotencyKey ?? crypto.randomUUID());
-    } catch (e) {
-      if (current || apiErrorCode(e) !== "DUPLICATE_IDEMPOTENT") {
-        throw new FormSubmitError(configError(e));
-      }
-      replay = true;
-    }
-    await refresh();
-    close();
-    if (replay) toast.info(`Ese ${singular} ya se había creado. Revisá en la lista cómo quedó.`);
-    else toast.success(`${capital} ${current ? "guardad" : "cread"}${feminine ? "a" : "o"}.`);
-  }
 
   async function toggle(item: R) {
     const hide = !item.hidden_at;
@@ -212,11 +197,7 @@ export function VehicleCatalogTable<R extends CatalogRow, F>({
                 {feminine ? "Mostrar ocultas" : "Mostrar ocultos"}
               </Label>
             </div>
-            <Button
-              type="button"
-              disabled={!canCreate}
-              onClick={() => setDialog({ kind: "create", idempotencyKey: crypto.randomUUID() })}
-            >
+            <Button type="button" disabled={!canCreate} onClick={openCreate}>
               <Plus aria-hidden="true" />
               {`${feminine ? "Nueva" : "Nuevo"} ${singular}`}
             </Button>
@@ -246,9 +227,12 @@ export function VehicleCatalogTable<R extends CatalogRow, F>({
         )}
       />
 
-      <Dialog open={dialog !== null} onOpenChange={(open) => !open && close()}>
+      <Dialog
+        open={dialog?.kind === "create" || dialog?.kind === "edit"}
+        onOpenChange={(open) => !open && close()}
+      >
         <DialogContent>
-          {dialog && (
+          {(dialog?.kind === "create" || dialog?.kind === "edit") && (
             <>
               <DialogHeader>
                 <DialogTitle>
@@ -262,10 +246,7 @@ export function VehicleCatalogTable<R extends CatalogRow, F>({
               </DialogHeader>
               {renderForm({
                 item: dialog.kind === "edit" ? dialog.item : undefined,
-                onSubmit: (v) =>
-                  dialog.kind === "edit"
-                    ? save(v, dialog.item)
-                    : save(v, undefined, dialog.idempotencyKey),
+                onSubmit: submitFor(dialog),
                 onCancel: close,
               })}
             </>

@@ -54,6 +54,7 @@ export function ModelsTab() {
   const makes = useMemo(() => makesQuery.data?.items ?? [], [makesQuery.data]);
   const [makeId, setMakeId] = useState("");
   const make = makes.find((m) => m.id === makeId);
+  const makeHidden = Boolean(make?.hidden_at);
 
   return (
     <VehicleCatalogTable<VehicleModel, ModelInput>
@@ -66,8 +67,9 @@ export function ModelsTab() {
       exportFilename="modelos"
       canCreate={make !== undefined}
       useRows={useVehicleModels}
-      // Sin marca elegida se lista todo: con la búsqueda "toyota hilux" alcanza.
-      scope={{ make_id: makeId || undefined }}
+      // Sin marca elegida se lista todo: con la búsqueda "toyota hilux" alcanza. Con una marca
+      // oculta, sus modelos (que el backend esconde junto con ella) se piden igual.
+      scope={{ make_id: makeId || undefined, ...(makeHidden ? { include_hidden: true } : {}) }}
       extraColumns={
         makeId
           ? modelColumns
@@ -82,20 +84,28 @@ export function ModelsTab() {
             ]
       }
       toolbarExtra={
-        <NativeSelect
-          aria-label="Marca"
-          value={makeId}
-          onChange={(e) => setMakeId(e.target.value)}
-          className="sm:w-52"
-        >
-          <option value="">Todas las marcas</option>
-          {makes.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-              {m.hidden_at ? " (oculta)" : ""}
-            </option>
-          ))}
-        </NativeSelect>
+        <>
+          <NativeSelect
+            aria-label="Marca"
+            value={makeId}
+            onChange={(e) => setMakeId(e.target.value)}
+            className="sm:w-52"
+          >
+            <option value="">Todas las marcas</option>
+            {makes.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+                {m.hidden_at ? " (oculta)" : ""}
+              </option>
+            ))}
+          </NativeSelect>
+          {makeHidden && (
+            <p className="w-full text-sm text-muted-foreground" role="status">
+              {make?.name} está oculta: sus modelos no aparecen al cargar vehículos. Se listan todos
+              para administrarlos.
+            </p>
+          )}
+        </>
       }
       create={(v, key) =>
         vehicleModelsApi.create({ make_id: makeId, name: v.name, body_type: v.body_type }, key)

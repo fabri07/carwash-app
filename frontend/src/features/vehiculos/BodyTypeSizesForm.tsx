@@ -8,11 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { SelectField } from "@/features/configuracion/fields";
-import {
-  useBodyTypeSizes,
-  useVehicleSizesForSuggestion,
-  vehicleKeys,
-} from "@/features/vehiculos/queries";
+import { useBodyTypeSizes, vehicleKeys } from "@/features/vehiculos/queries";
+import { useAllVehicleSizes } from "@/features/configuracion/queries";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { configError, FormSubmitError } from "@/lib/errors";
 import { putBodyTypeSizes } from "@/services/vehicles.service";
@@ -20,10 +17,15 @@ import { toast } from "@/stores/toastStore";
 import type { BodyTypeSize } from "@/types/api";
 import { BODY_TYPES, bodyTypeSizesSchema, type BodyTypeSizesInput } from "@/validation/vehicles";
 
-function toValues(rows: BodyTypeSize[] | undefined): BodyTypeSizesInput {
+/**
+ * Los valores del formulario. Un tamaño que ya no está entre los vivos (se anuló en Tamaños y el
+ * mapa en caché todavía lo trae) se muestra como "Sin sugerencia": mandarlo daría 422.
+ */
+function toValues(rows: BodyTypeSize[] | undefined, live: Set<string>): BodyTypeSizesInput {
   const sizes: BodyTypeSizesInput["sizes"] = {};
   for (const b of BODY_TYPES) {
-    sizes[b.value] = rows?.find((r) => r.body_type === b.value)?.vehicle_size_id ?? "";
+    const id = rows?.find((r) => r.body_type === b.value)?.vehicle_size_id ?? "";
+    sizes[b.value] = live.has(id) ? id : "";
   }
   return { sizes };
 }
@@ -36,16 +38,17 @@ function toValues(rows: BodyTypeSize[] | undefined): BodyTypeSizesInput {
 export function BodyTypeSizesForm() {
   const queryClient = useQueryClient();
   const current = useBodyTypeSizes();
-  const sizesQuery = useVehicleSizesForSuggestion();
+  const sizesQuery = useAllVehicleSizes();
   const sizes = sizesQuery.data?.items ?? [];
   const form = useForm<BodyTypeSizesInput>({
     resolver: zodResolver(bodyTypeSizesSchema),
-    defaultValues: toValues(undefined),
+    defaultValues: toValues(undefined, new Set()),
   });
   const { reset } = form;
+  const liveIds = sizes.map((s) => s.id).join("|");
   useEffect(() => {
-    if (current.data) reset(toValues(current.data));
-  }, [current.data, reset]);
+    if (current.data) reset(toValues(current.data, new Set(liveIds.split("|"))));
+  }, [current.data, liveIds, reset]);
 
   const { onSubmit, formError } = useFormSubmit(form, async (values) => {
     try {

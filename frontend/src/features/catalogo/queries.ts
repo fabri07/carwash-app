@@ -2,14 +2,13 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-import { configKeys } from "@/features/configuracion/queries";
+import { configKeys, useAllVehicleSizes } from "@/features/configuracion/queries";
 import {
   getTemplate,
   serviceCategoriesApi,
   servicesApi,
   type ServiceListParams,
 } from "@/services/catalog.service";
-import { vehicleSizesApi } from "@/services/config.service";
 import type { TemplateKindCode } from "@/types/api";
 
 export const catalogKeys = {
@@ -31,20 +30,13 @@ export function useServices(params: ServiceListParams) {
 }
 
 /**
- * Categorías y tamaños viven bajo `["config", …]`: así la pestaña "Categorías" (`CatalogTab`) y la
+ * Categorías (y tamaños, en `configuracion/queries`) viven bajo `["config", …]`: así la pestaña "Categorías" (`CatalogTab`) y la
  * pantalla de Negocio los invalidan y estas listas se refrescan solas.
  */
 export function useAllCategories() {
   return useQuery({
     queryKey: configKeys.list("service-categories", ALL),
     queryFn: () => serviceCategoriesApi.list(ALL),
-  });
-}
-
-export function useAllVehicleSizes() {
-  return useQuery({
-    queryKey: configKeys.list("vehicle-sizes", ALL),
-    queryFn: () => vehicleSizesApi.list(ALL),
   });
 }
 
@@ -56,3 +48,6 @@ export function useTemplate(kind: TemplateKindCode | null) {
     enabled: kind !== null,
   });
 }
+
+/** Re-exportado: un solo hook de tamaños para servicios y vehículos. */
+export { useAllVehicleSizes };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -15,7 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { configKeys, useCatalogPage } from "@/features/configuracion/queries";
-import { apiErrorCode, configError, FormSubmitError } from "@/lib/errors";
+import { capitalize, useCatalogEditor, useStepBackOnEmptyPage } from "@/hooks/useCatalogEditor";
+import { configError } from "@/lib/errors";
 import type { CrudApi } from "@/services/config.service";
 import { toast } from "@/stores/toastStore";
 
@@ -44,13 +45,9 @@ interface CatalogTabProps<R extends { id: string }, F, C, U> {
   toPatch: (values: F, item: R) => U;
   Form: ComponentType<CatalogFormProps<R, F>>;
   deleteHint: string;
+  /** Otras cachés que dependen de este recurso (p. ej. vehículos, de los tamaños). */
+  alsoInvalidates?: readonly (readonly unknown[])[];
 }
-
-type DialogState<R> =
-  | { kind: "create"; idempotencyKey: string }
-  | { kind: "edit"; item: R }
-  | { kind: "delete"; item: R }
-  | null;
 
 const PAGE_SIZE = 25;
 
@@ -74,43 +71,29 @@ export function CatalogTab<R extends { id: string }, F, C, U>({
   toPatch,
   Form,
   deleteHint,
+  alsoInvalidates = [],
 }: CatalogTabProps<R, F, C, U>) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState({ limit: PAGE_SIZE, offset: 0 });
-  const [dialog, setDialog] = useState<DialogState<R>>(null);
   const query = useCatalogPage(resource, api, page);
+  useStepBackOnEmptyPage(query.data, page.offset, page.limit, (offset) =>
+    setPage((p) => ({ ...p, offset })),
+  );
 
-  // Quitar el último ítem de la última página la deja vacía: retrocede a la última que tenga datos.
-  const loaded = query.data;
-  useEffect(() => {
-    if (loaded && loaded.items.length === 0 && loaded.total > 0 && page.offset > 0) {
-      const lastOffset = Math.floor((loaded.total - 1) / page.limit) * page.limit;
-      setPage((p) => ({ ...p, offset: lastOffset }));
-    }
-  }, [loaded, page.limit, page.offset]);
-
-  const done = feminine ? "creada" : "creado";
-  const doneEdit = feminine ? "actualizada" : "actualizado";
-  const capital = singular.charAt(0).toUpperCase() + singular.slice(1);
-  const close = () => setDialog(null);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: configKeys.resource(resource) });
-
-  async function save(values: F, current?: R, idempotencyKey?: string) {
-    let replay = false;
-    try {
-      if (current) await api.update(current.id, toPatch(values, current));
-      else await api.create(toCreate(values), idempotencyKey);
-    } catch (e) {
-      if (current || apiErrorCode(e) !== "DUPLICATE_IDEMPOTENT") {
-        throw new FormSubmitError(configError(e));
-      }
-      replay = true;
-    }
-    await refresh();
-    close();
-    if (replay) toast.info(`Ese ${singular} ya se había creado. Revisá en la lista cómo quedó.`);
-    else toast.success(`${capital} ${current ? doneEdit : done}.`);
-  }
+  const capital = capitalize(singular);
+  const refresh = () =>
+    Promise.all(
+      [configKeys.resource(resource), ...alsoInvalidates].map((queryKey) =>
+        queryClient.invalidateQueries({ queryKey }),
+      ),
+    );
+  const { dialog, setDialog, close, openCreate, submitFor } = useCatalogEditor<R, F>({
+    singular,
+    feminine,
+    create: (values, idempotencyKey) => api.create(toCreate(values), idempotencyKey),
+    update: (item, values) => api.update(item.id, toPatch(values, item)),
+    refresh,
+  });
 
   async function remove(item: R) {
     try {
@@ -136,10 +119,7 @@ export function CatalogTab<R extends { id: string }, F, C, U>({
         emptyMessage={emptyMessage}
         exportFilename={exportFilename}
         toolbarActions={
-          <Button
-            type="button"
-            onClick={() => setDialog({ kind: "create", idempotencyKey: crypto.randomUUID() })}
-          >
+          <Button type="button" onClick={openCreate}>
             <Plus aria-hidden="true" />
             {`${feminine ? "Nueva" : "Nuevo"} ${singular}`}
           </Button>
@@ -187,11 +167,7 @@ export function CatalogTab<R extends { id: string }, F, C, U>({
               </DialogHeader>
               <Form
                 item={dialog.kind === "edit" ? dialog.item : undefined}
-                onSubmit={(v) =>
-                  dialog.kind === "edit"
-                    ? save(v, dialog.item)
-                    : save(v, undefined, dialog.idempotencyKey)
-                }
+                onSubmit={submitFor(dialog)}
                 onCancel={close}
               />
             </>

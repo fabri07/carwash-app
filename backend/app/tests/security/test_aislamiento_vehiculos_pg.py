@@ -12,6 +12,7 @@ El recorrido genérico de las cuatro tablas nuevas (una fila por tabla, B7/B14) 
 4. **Por HTTP**: lo que suma A no aparece en B (A10) y el 404 ajeno es el de uno inexistente.
 """
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -19,7 +20,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app.domain.vehicle_catalog import load_vehicle_base
+from app.application.services.vehicle_catalog_service import VehicleCatalogService
+from app.domain.vehicle_catalog import VehicleBodyType, load_vehicle_base
 from app.persistence.db.tenant_context import set_tenant_context
 
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
@@ -181,3 +183,41 @@ async def test_la_fk_compuesta_no_cruza_negocios(
                 text("INSERT INTO vehicles (id, tenant_id, model_id) VALUES (:i, :b, :m)"),
                 {"i": uuid.uuid4(), "b": pg_tenant_b, "m": de_a["model"]},
             )
+
+
+async def test_dos_put_del_mapa_a_la_vez_se_serializan(
+    pg_session_factory, pg_admin_engine, pg_tenant_a
+):
+    """§11.7 (4.4-7): en un negocio sin filas en `body_type_sizes`, el segundo `PUT` espera al
+    primero (lock sobre `tenant_settings`) en vez de chocar en el único vivo y dar 500."""
+    size = uuid.uuid4()
+    async with pg_admin_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO vehicle_sizes (id, tenant_id, code, label) "
+                "VALUES (:i, :t, 'AUTO', 'Auto')"
+            ),
+            {"i": size, "t": pg_tenant_a},
+        )
+    mapa = [(VehicleBodyType.SEDAN, size), (VehicleBodyType.SUV, size)]
+
+    primera = pg_session_factory()
+    await primera.begin()
+    await VehicleCatalogService(primera, pg_tenant_a, None).replace_body_type_sizes(mapa)
+
+    async def segunda() -> None:
+        async with pg_session_factory() as s, s.begin():
+            await VehicleCatalogService(s, pg_tenant_a, None).replace_body_type_sizes(mapa)
+
+    tarea = asyncio.create_task(segunda())
+    await asyncio.sleep(0.3)
+    assert not tarea.done()  # espera el lock de la primera
+    await primera.commit()
+    await primera.close()
+    await asyncio.wait_for(tarea, timeout=10)
+    async with pg_admin_engine.connect() as conn:
+        vivas = await conn.scalar(
+            text("SELECT count(*) FROM body_type_sizes WHERE tenant_id = :t AND voided_at IS NULL"),
+            {"t": pg_tenant_a},
+        )
+    assert vivas == 2

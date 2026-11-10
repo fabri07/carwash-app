@@ -9,8 +9,8 @@ import {
   useVehicleColors,
   useVehicleMakes,
   useVehicleModels,
-  useVehicleSizesForSuggestion,
 } from "@/features/vehiculos/queries";
+import { useAllVehicleSizes } from "@/features/configuracion/queries";
 import type { VehicleModel } from "@/types/api";
 import { bodyTypeLabel } from "@/validation/vehicles";
 
@@ -49,13 +49,20 @@ export function VehiclePicker({ value, onChange, onSuggestSize, disabled }: Vehi
     value.make_id !== null,
   );
   const colorsQuery = useVehicleColors({ ...ALL, q: "", include_hidden: false });
-  const sizesQuery = useVehicleSizesForSuggestion();
+  const sizesQuery = useAllVehicleSizes();
 
   const makes = makesQuery.data?.items ?? [];
+  // `keepPreviousData` deja a mano los modelos de la marca anterior mientras llegan los nuevos:
+  // se filtran por la marca elegida para que nunca quede {Toyota, Ranger}.
   const models = useMemo(
-    () => (value.make_id ? (modelsQuery.data?.items ?? []) : []),
+    () =>
+      value.make_id
+        ? (modelsQuery.data?.items ?? []).filter((m) => m.make_id === value.make_id)
+        : [],
     [modelsQuery.data, value.make_id],
   );
+  const loadingModels =
+    value.make_id !== null && (modelsQuery.isPlaceholderData || modelsQuery.isLoading);
   const colors = colorsQuery.data?.items ?? [];
   const model = models.find((m) => m.id === value.model_id) ?? null;
   const suggested = model?.suggested_vehicle_size_id
@@ -69,6 +76,7 @@ export function VehiclePicker({ value, onChange, onSuggestSize, disabled }: Vehi
   }
 
   function changeModel(modelId: string) {
+    // Solo un modelo de la marca elegida (`models` ya viene filtrado): otro id cuenta como ninguno.
     const picked = models.find((m) => m.id === modelId) ?? null;
     onChange({ ...value, model_id: picked?.id ?? null });
     onSuggestSize?.(picked?.suggested_vehicle_size_id ?? null, picked);
@@ -97,11 +105,15 @@ export function VehiclePicker({ value, onChange, onSuggestSize, disabled }: Vehi
         <NativeSelect
           id={`${id}-model`}
           value={value.model_id ?? ""}
-          disabled={disabled || value.make_id === null}
+          disabled={disabled || value.make_id === null || loadingModels}
           onChange={(e) => changeModel(e.target.value)}
         >
           <option value="">
-            {value.make_id === null ? "Primero elegí la marca" : "Elegí el modelo"}
+            {value.make_id === null
+              ? "Primero elegí la marca"
+              : loadingModels
+                ? "Cargando…"
+                : "Elegí el modelo"}
           </option>
           {models.map((m) => (
             <option key={m.id} value={m.id}>

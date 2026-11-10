@@ -24,6 +24,8 @@ import type { BusinessSettings, PaymentMethod, Resource } from "@/types/api";
 jest.mock("@/services/config.service", () => {
   const crud = () => ({ list: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn() });
   return {
+    // La pestaña Vehículos (PR 4.4) arma sus APIs con el `crud` real al importarse.
+    crud: jest.requireActual("@/services/config.service").crud,
     getSettings: jest.fn(),
     patchSettings: jest.fn(),
     vehicleSizesApi: crud(),
@@ -378,5 +380,26 @@ describe("Catálogo", () => {
       expect(offsets[offsets.length - 1]).toBe(0);
     });
     expect(await screen.findByText("Puesto 1")).toBeInTheDocument();
+  });
+});
+
+describe("/configuracion — tamaños y vehículos (PR 4.4)", () => {
+  it("quitar un tamaño invalida también el catálogo de vehículos", async () => {
+    const size = { id: "s9", code: "PICKUP", label: "Pickup", sort_order: 0, ...stamp };
+    (vehicleSizesApi.list as jest.Mock).mockResolvedValue(page([size]));
+    (vehicleSizesApi.remove as jest.Mock).mockResolvedValue(undefined);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = jest.spyOn(qc, "invalidateQueries");
+    render(
+      <QueryClientProvider client={qc}>
+        <ConfigPage />
+      </QueryClientProvider>,
+    );
+    await openTab("Tamaños");
+    await userEvent.click(await screen.findByRole("button", { name: "Quitar tamaño Pickup" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Quitar" }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["vehicles"] }));
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["config", "vehicle-sizes"] });
   });
 });

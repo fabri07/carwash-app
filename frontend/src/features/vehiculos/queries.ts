@@ -2,8 +2,6 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-import { configKeys } from "@/features/configuracion/queries";
-import { vehicleSizesApi } from "@/services/config.service";
 import {
   getBodyTypeSizes,
   vehicleColorsApi,
@@ -53,16 +51,4 @@ export function useVehicleColors(params: VehicleListParams) {
 
 export function useBodyTypeSizes() {
   return useQuery({ queryKey: vehicleKeys.bodyTypeSizes, queryFn: getBodyTypeSizes });
-}
-
-/**
- * Los tamaños del negocio, con la misma clave que usa el resto de la configuración
- * (`["config", "vehicle-sizes", …]`): la pestaña Tamaños los invalida y esta lista se refresca.
- * No se importa de `features/catalogo` para no arrastrar el servicio de servicios.
- */
-export function useVehicleSizesForSuggestion() {
-  return useQuery({
-    queryKey: configKeys.list("vehicle-sizes", ALL),
-    queryFn: () => vehicleSizesApi.list(ALL),
-  });
 }

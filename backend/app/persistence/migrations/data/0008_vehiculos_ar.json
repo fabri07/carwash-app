@@ -1,0 +1,1796 @@
+{
+  "makes": [
+    {
+      "name": "Alfa Romeo",
+      "models": [
+        {
+          "name": "Giulietta",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "MiTo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "159",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Stelvio",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Audi",
+      "models": [
+        {
+          "name": "A1",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "A3",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "A3 Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "A4",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "A4 Avant",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "A5",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "A6",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Q2",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Q3",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Q5",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Q7",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Q8",
+          "body_type": "SUV"
+        },
+        {
+          "name": "TT",
+          "body_type": "SEDAN"
+        }
+      ]
+    },
+    {
+      "name": "Bajaj",
+      "models": [
+        {
+          "name": "Rouser NS 200",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Rouser 220",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Dominar 400",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Rouser 135",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "BMW",
+      "models": [
+        {
+          "name": "Serie 1",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Serie 2",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Serie 3",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Serie 4",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Serie 5",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "X1",
+          "body_type": "SUV"
+        },
+        {
+          "name": "X2",
+          "body_type": "SUV"
+        },
+        {
+          "name": "X3",
+          "body_type": "SUV"
+        },
+        {
+          "name": "X4",
+          "body_type": "SUV"
+        },
+        {
+          "name": "X5",
+          "body_type": "SUV"
+        },
+        {
+          "name": "X6",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Z4",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "G 310 R",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "R 1250 GS",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Chery",
+      "models": [
+        {
+          "name": "QQ",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Tiggo",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiggo 2",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiggo 3",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiggo 4",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiggo 5",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiggo 7",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiggo 8",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Fulwin",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Arrizo 5",
+          "body_type": "SEDAN"
+        }
+      ]
+    },
+    {
+      "name": "Chevrolet",
+      "models": [
+        {
+          "name": "Onix",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Onix Plus",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Prisma",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Cruze",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Cruze 5",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Corsa",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Corsa Classic",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Classic",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Celta",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Agile",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Aveo",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Sonic",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Sonic Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Spin",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Meriva",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Zafira",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Astra",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Vectra",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Captiva",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tracker",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Equinox",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Trailblazer",
+          "body_type": "SUV"
+        },
+        {
+          "name": "S10",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Montana",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Silverado",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Camaro",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Corsa Wagon",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Blazer",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Chrysler",
+      "models": [
+        {
+          "name": "PT Cruiser",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Town & Country",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "300C",
+          "body_type": "SEDAN"
+        }
+      ]
+    },
+    {
+      "name": "Citroën",
+      "models": [
+        {
+          "name": "C3",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "C3 Aircross",
+          "body_type": "SUV"
+        },
+        {
+          "name": "C3 Picasso",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "C4",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "C4 Lounge",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "C4 Cactus",
+          "body_type": "SUV"
+        },
+        {
+          "name": "C4 Picasso",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "C5",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "C5 Aircross",
+          "body_type": "SUV"
+        },
+        {
+          "name": "C-Elysée",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Berlingo",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Jumper",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Jumpy",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Xsara",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Xsara Picasso",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "DS3",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Saxo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Basalt",
+          "body_type": "SUV"
+        },
+        {
+          "name": "C4 Aircross",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Corven",
+      "models": [
+        {
+          "name": "Energy 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Hunter 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Triax 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Mirage 110",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Dodge",
+      "models": [
+        {
+          "name": "Journey",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Fiat",
+      "models": [
+        {
+          "name": "Cronos",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Argo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Mobi",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Uno",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Palio",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Palio Weekend",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Siena",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Grand Siena",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Punto",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Linea",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Idea",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Strada",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Toro",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Titano",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Pulse",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Fastback",
+          "body_type": "SUV"
+        },
+        {
+          "name": "500",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "500X",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Doblò",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Fiorino",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Qubo",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Ducato",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Stilo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Bravo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Freemont",
+          "body_type": "SUV"
+        },
+        {
+          "name": "600",
+          "body_type": "HATCHBACK"
+        }
+      ]
+    },
+    {
+      "name": "Ford",
+      "models": [
+        {
+          "name": "Ranger",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Maverick",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "F-150",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "F-100",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Ka",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Ka Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Ka Freestyle",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Fiesta",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Fiesta Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Focus",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Focus Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Mondeo",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "EcoSport",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Territory",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Kuga",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Bronco Sport",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Bronco",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Explorer",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Escape",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Mustang",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Transit",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Transit Connect",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Courier",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Escort",
+          "body_type": "HATCHBACK"
+        }
+      ]
+    },
+    {
+      "name": "Gilera",
+      "models": [
+        {
+          "name": "Smash 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "VC 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Sahel 150",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Haval",
+      "models": [
+        {
+          "name": "Jolion",
+          "body_type": "SUV"
+        },
+        {
+          "name": "H6",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Honda",
+      "models": [
+        {
+          "name": "Civic",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "City",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Fit",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "HR-V",
+          "body_type": "SUV"
+        },
+        {
+          "name": "CR-V",
+          "body_type": "SUV"
+        },
+        {
+          "name": "WR-V",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Accord",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "ZR-V",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Wave 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "CG 150 Titan",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "XR 150L",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "XR 250 Tornado",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "CB 190R",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "CB 250 Twister",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Biz 125",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Navi",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "XRE 300",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "CB 500F",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Africa Twin",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Elite 125",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "PCX 160",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Hyundai",
+      "models": [
+        {
+          "name": "Tucson",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Creta",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Santa Fe",
+          "body_type": "SUV"
+        },
+        {
+          "name": "i10",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Grand i10",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "i30",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Elantra",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Accent",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "HB20",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Veloster",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "H1",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Kona",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Atos",
+          "body_type": "HATCHBACK"
+        }
+      ]
+    },
+    {
+      "name": "Iveco",
+      "models": [
+        {
+          "name": "Daily",
+          "body_type": "FURGON"
+        }
+      ]
+    },
+    {
+      "name": "Jeep",
+      "models": [
+        {
+          "name": "Renegade",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Compass",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Commander",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Cherokee",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Grand Cherokee",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Wrangler",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Gladiator",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Patriot",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Kawasaki",
+      "models": [
+        {
+          "name": "Ninja 400",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Z400",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Versys 300",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Z900",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Kia",
+      "models": [
+        {
+          "name": "Sportage",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Sorento",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Seltos",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Rio",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Cerato",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Picanto",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Soul",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Carnival",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Stonic",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Carens",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Sonet",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "KTM",
+      "models": [
+        {
+          "name": "Duke 200",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Duke 390",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "390 Adventure",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Land Rover",
+      "models": [
+        {
+          "name": "Defender",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Discovery",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Discovery Sport",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Range Rover",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Range Rover Evoque",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Range Rover Sport",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Freelander",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Mercedes-Benz",
+      "models": [
+        {
+          "name": "Clase A",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Clase B",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Clase C",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Clase E",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "CLA",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "GLA",
+          "body_type": "SUV"
+        },
+        {
+          "name": "GLB",
+          "body_type": "SUV"
+        },
+        {
+          "name": "GLC",
+          "body_type": "SUV"
+        },
+        {
+          "name": "GLE",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Sprinter",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Vito",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Clase X",
+          "body_type": "PICKUP"
+        }
+      ]
+    },
+    {
+      "name": "Mini",
+      "models": [
+        {
+          "name": "Cooper",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Countryman",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Mitsubishi",
+      "models": [
+        {
+          "name": "L200",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Outlander",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Montero",
+          "body_type": "SUV"
+        },
+        {
+          "name": "ASX",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Lancer",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Eclipse Cross",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Nativa",
+          "body_type": "SUV"
+        }
+      ]
+    },
+    {
+      "name": "Motomel",
+      "models": [
+        {
+          "name": "Blitz 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Skua 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Skua 250",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "CG 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Max 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Custom 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Victory 150",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Nissan",
+      "models": [
+        {
+          "name": "Frontier",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Kicks",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Versa",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Sentra",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "March",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Note",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Tiida",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "X-Trail",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Murano",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Pathfinder",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Leaf",
+          "body_type": "HATCHBACK"
+        }
+      ]
+    },
+    {
+      "name": "Peugeot",
+      "models": [
+        {
+          "name": "208",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "2008",
+          "body_type": "SUV"
+        },
+        {
+          "name": "3008",
+          "body_type": "SUV"
+        },
+        {
+          "name": "5008",
+          "body_type": "SUV"
+        },
+        {
+          "name": "206",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "207",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "207 Compact",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "307",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "308",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "408",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "301",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "406",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "407",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "508",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Partner",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Expert",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Boxer",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Hoggar",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Landtrek",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "RCZ",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "206 SW",
+          "body_type": "RURAL"
+        }
+      ]
+    },
+    {
+      "name": "Porsche",
+      "models": [
+        {
+          "name": "Cayenne",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Macan",
+          "body_type": "SUV"
+        },
+        {
+          "name": "911",
+          "body_type": "SEDAN"
+        }
+      ]
+    },
+    {
+      "name": "RAM",
+      "models": [
+        {
+          "name": "1500",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "2500",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Rampage",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "700",
+          "body_type": "PICKUP"
+        }
+      ]
+    },
+    {
+      "name": "Renault",
+      "models": [
+        {
+          "name": "Kangoo",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Sandero",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Sandero Stepway",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Logan",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Clio",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Clio Mío",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Symbol",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Mégane",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Fluence",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Kwid",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Duster",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Oroch",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Captur",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Koleos",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Alaskan",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Arkana",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Master",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Trafic",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Scénic",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Kardian",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Twingo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Laguna",
+          "body_type": "SEDAN"
+        }
+      ]
+    },
+    {
+      "name": "Subaru",
+      "models": [
+        {
+          "name": "Forester",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Outback",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "XV",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Impreza",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Legacy",
+          "body_type": "SEDAN"
+        }
+      ]
+    },
+    {
+      "name": "Suzuki",
+      "models": [
+        {
+          "name": "Swift",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Vitara",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Grand Vitara",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Jimny",
+          "body_type": "SUV"
+        },
+        {
+          "name": "GN 125",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "EN 125",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Gixxer 150",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Toyota",
+      "models": [
+        {
+          "name": "Hilux",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "SW4",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Etios",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Etios Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Etios Cross",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Yaris",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Yaris Sedán",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Corolla",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Corolla Cross",
+          "body_type": "SUV"
+        },
+        {
+          "name": "RAV4",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Camry",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Prius",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Land Cruiser",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Land Cruiser Prado",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Hiace",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "C-HR",
+          "body_type": "SUV"
+        },
+        {
+          "name": "86",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Innova",
+          "body_type": "RURAL"
+        }
+      ]
+    },
+    {
+      "name": "Volkswagen",
+      "models": [
+        {
+          "name": "Gol",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Gol Trend",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Voyage",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Gol Country",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Suran",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Fox",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "CrossFox",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "SpaceFox",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Polo",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Polo Classic",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Polo Track",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Virtus",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Vento",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Bora",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Passat",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "Passat Variant",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Golf",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Golf Variant",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Up!",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "Nivus",
+          "body_type": "SUV"
+        },
+        {
+          "name": "T-Cross",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Taos",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiguan",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Tiguan Allspace",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Touareg",
+          "body_type": "SUV"
+        },
+        {
+          "name": "Amarok",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Saveiro",
+          "body_type": "PICKUP"
+        },
+        {
+          "name": "Sharan",
+          "body_type": "RURAL"
+        },
+        {
+          "name": "Transporter",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Crafter",
+          "body_type": "FURGON"
+        },
+        {
+          "name": "Caddy",
+          "body_type": "UTILITARIO"
+        },
+        {
+          "name": "Scirocco",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "The Beetle",
+          "body_type": "HATCHBACK"
+        },
+        {
+          "name": "New Beetle",
+          "body_type": "HATCHBACK"
+        }
+      ]
+    },
+    {
+      "name": "Volvo",
+      "models": [
+        {
+          "name": "XC40",
+          "body_type": "SUV"
+        },
+        {
+          "name": "XC60",
+          "body_type": "SUV"
+        },
+        {
+          "name": "XC90",
+          "body_type": "SUV"
+        },
+        {
+          "name": "S60",
+          "body_type": "SEDAN"
+        },
+        {
+          "name": "V40",
+          "body_type": "HATCHBACK"
+        }
+      ]
+    },
+    {
+      "name": "Yamaha",
+      "models": [
+        {
+          "name": "YBR 125",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "FZ",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "XTZ 125",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "XTZ 250",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Crypton 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "MT-03",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "YZF-R3",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Fazer 250",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "NMax 155",
+          "body_type": "MOTO"
+        }
+      ]
+    },
+    {
+      "name": "Zanella",
+      "models": [
+        {
+          "name": "ZB 110",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "RX 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Patagonian Eagle 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Styler 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Sapucai 150",
+          "body_type": "MOTO"
+        },
+        {
+          "name": "Due",
+          "body_type": "MOTO"
+        }
+      ]
+    }
+  ],
+  "colors": [
+    "Blanco",
+    "Negro",
+    "Gris",
+    "Gris oscuro",
+    "Plata",
+    "Rojo",
+    "Bordó",
+    "Azul",
+    "Azul oscuro",
+    "Celeste",
+    "Verde",
+    "Beige",
+    "Marrón",
+    "Amarillo",
+    "Naranja",
+    "Dorado"
+  ]
+}

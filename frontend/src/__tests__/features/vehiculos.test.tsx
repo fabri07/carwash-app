@@ -395,4 +395,76 @@ describe("BodyTypeSizesForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Guardar carrocerías" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Revisá los datos ingresados.");
   });
+
+  it("un tamaño que ya no está vivo no se reenvía (evita el 422)", async () => {
+    // El mapa en caché apunta a "s2", pero ese tamaño se anuló: solo queda "s1".
+    (vehicleSizesApi.list as jest.Mock).mockResolvedValue(page([auto]));
+    (putBodyTypeSizes as jest.Mock).mockResolvedValue([]);
+    withClient(<BodyTypeSizesForm />);
+    await waitFor(() => expect(screen.getByLabelText("Pickup")).toHaveValue(""));
+    await userEvent.click(screen.getByRole("button", { name: "Guardar carrocerías" }));
+    await waitFor(() => expect(putBodyTypeSizes).toHaveBeenCalled());
+    const { items } = (putBodyTypeSizes as jest.Mock).mock.calls[0][0] as {
+      items: { body_type: string; vehicle_size_id: string | null }[];
+    };
+    expect(items.every((i) => i.vehicle_size_id === null)).toBe(true);
+  });
+});
+
+describe("hallazgos del /code-review", () => {
+  it("con keepPreviousData no se ofrecen modelos de la marca anterior", async () => {
+    const ford: VehicleMake = { ...toyota, id: "mk3", name: "Ford" };
+    const ranger = model({ id: "md3", name: "Ranger", make_id: "mk3", make_name: "Ford" });
+    (vehicleMakesApi.list as jest.Mock).mockResolvedValue(page([toyota, ford]));
+    let soltarToyota: (v: unknown) => void = () => undefined;
+    (vehicleModelsApi.list as jest.Mock).mockImplementation(({ make_id }: { make_id: string }) =>
+      make_id === "mk3"
+        ? Promise.resolve(page([ranger]))
+        : new Promise((resolve) => {
+            soltarToyota = resolve;
+          }),
+    );
+    const onSuggest = jest.fn();
+    withClient(<PickerHarness onSuggest={onSuggest} />);
+    await screen.findByRole("option", { name: "Ford" });
+    await userEvent.selectOptions(screen.getByLabelText("Marca"), "mk3");
+    await screen.findByRole("option", { name: "Ranger" });
+    // Cambia a Toyota: sus modelos todavía no llegaron y la query guarda los de Ford.
+    await userEvent.selectOptions(screen.getByLabelText("Marca"), "mk1");
+    expect(screen.queryByRole("option", { name: "Ranger" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Modelo")).toBeDisabled();
+    soltarToyota(page([model()]));
+    await screen.findByRole("option", { name: "Hilux" });
+    expect(screen.getByLabelText("Modelo")).toBeEnabled();
+    expect(JSON.parse(screen.getByTestId("seleccion").textContent!).model_id).toBeNull();
+  });
+
+  it("filtrar por una marca oculta lista sus modelos y lo avisa", async () => {
+    (vehicleMakesApi.list as jest.Mock).mockResolvedValue(page([toyota, propia]));
+    withClient(<VehicleCatalogPanel />);
+    await userEvent.click(screen.getByRole("tab", { name: "Modelos" }));
+    await screen.findByRole("option", { name: "Marca Sintética (oculta)" });
+    await userEvent.selectOptions(screen.getByLabelText("Marca"), "mk2");
+    await waitFor(() =>
+      expect(vehicleModelsApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ make_id: "mk2", include_hidden: true }),
+      ),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Marca Sintética está oculta");
+  });
+
+  it("el replay de una marca habla en femenino", async () => {
+    (vehicleMakesApi.create as jest.Mock).mockRejectedValue(apiError(409, "DUPLICATE_IDEMPOTENT"));
+    withClient(<VehicleCatalogPanel />);
+    await screen.findByRole("table", { name: "Marcas" });
+    await userEvent.click(screen.getByRole("button", { name: "Nueva marca" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Nombre"), "Repetida");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear marca" }));
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.at(-1)?.message).toBe(
+        "Esa marca ya se había creado. Revisá en la lista cómo quedó.",
+      ),
+    );
+  });
 });
