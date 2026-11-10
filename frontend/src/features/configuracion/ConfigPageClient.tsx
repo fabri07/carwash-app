@@ -10,6 +10,7 @@ import {
   ResourcesTab,
   VehicleSizesTab,
 } from "@/features/configuracion/CatalogTabs";
+import { BrandingTab } from "@/features/configuracion/BrandingTab";
 import { BusinessTab, DepositTab } from "@/features/configuracion/SettingsTabs";
 import { VehicleCatalogPanel } from "@/features/vehiculos/VehicleCatalogPanel";
 import { useCan, useIsOwner, usePermissionsLoaded } from "@/hooks/usePermission";
@@ -17,7 +18,7 @@ import { useCan, useIsOwner, usePermissionsLoaded } from "@/hooks/usePermission"
 /**
  * `/configuracion` (FASE-4-CONTRATO §7, PR 4.2b): una página con pestañas.
  *
- * Negocio y Seña y reservas son del dueño (`PATCH /settings`). Horarios, puestos,
+ * Negocio, Personalización (PR 4.5) y Seña y reservas son del dueño (`PATCH /settings`). Horarios, puestos,
  * medios de pago, tamaños y vehículos (PR 4.4) los edita quien tiene `CATALOGO_EDITAR`. Ocultar no es
  * autorizar: el backend responde 403 igual si alguien llega por URL.
  */
@@ -57,12 +58,13 @@ export function ConfigPageClient() {
           Configuración
         </h1>
         <p className="text-sm text-muted-foreground">
-          Cómo funciona tu negocio: datos, seña, horarios, puestos y medios de pago.
+          Cómo funciona tu negocio: datos, marca, seña, horarios, puestos y medios de pago.
         </p>
       </div>
       <Tabs defaultValue={first}>
         <TabsList className="h-auto flex-wrap justify-start">
           {isOwner && <TabsTrigger value="negocio">Negocio</TabsTrigger>}
+          {isOwner && <TabsTrigger value="marca">Personalización</TabsTrigger>}
           {isOwner && <TabsTrigger value="sena">Seña y reservas</TabsTrigger>}
           {canCatalog && <TabsTrigger value="horarios">Horarios</TabsTrigger>}
           {canCatalog && <TabsTrigger value="puestos">Puestos</TabsTrigger>}
@@ -73,6 +75,11 @@ export function ConfigPageClient() {
         {isOwner && (
           <TabsContent value="negocio">
             <BusinessTab />
+          </TabsContent>
+        )}
+        {isOwner && (
+          <TabsContent value="marca">
+            <BrandingTab />
           </TabsContent>
         )}
         {isOwner && (

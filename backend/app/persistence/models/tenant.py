@@ -26,7 +26,7 @@ DEFAULT_LATE_CANCEL_THRESHOLD_MIN = 720  # 12 h
 DEFAULT_HOLD_MIN = 30
 DEFAULT_MIN_ADVANCE_MIN = 5  # D-002
 DEFAULT_QUOTE_VALIDITY_HOURS = 24  # D4-16
-#: Hasta que el PR 4.5 defina el catálogo de paletas y tipografías.
+#: El código `default` de los catálogos de `domain/branding.py` (PR 4.5); un test lo verifica.
 DEFAULT_PALETTE = "default"
 DEFAULT_FONT = "default"
 
@@ -151,7 +151,8 @@ class TenantSettings(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     font: Mapped[str] = mapped_column(
         Text, nullable=False, default=DEFAULT_FONT, server_default=DEFAULT_FONT
     )
-    #: Clave del logo en R2 (PR 4.5).
+    #: Clave del logo en R2 (PR 4.5): `logos/<tenant_id>/<sha256>.<ext>` (Y9). La mueve
+    #: `/branding/logo`, no el PATCH de settings.
     logo_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: PR 4.6: el wizard de alta terminó.
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(

@@ -485,3 +485,51 @@ contra un Postgres 16 real embebido (sin `btree_gist`, con un esquema mínimo de
 `vehicle_sizes` y `vehicles` con RLS forzado y dueño no superusuario): upgrade, re-upgrade, RLS del rol
 de runtime, los cortes del downgrade, downgrade limpio y vuelta a subir; y `copy_vehicle_base` más
 `VehicleCatalogService` con el rol de runtime.
+
+---
+
+## 11.8 Adenda del PR 4.5 — personalización: paleta, tipografía y logo (2026-11-10)
+
+Completa §3.5, §4, §7, §8 y A11; donde choque, manda esta subsección. **Sin migración**: usa
+`tenant_settings.palette|font|logo_key`, que ya existen desde la `0005`.
+
+### Catálogo (`app/domain/branding.py`)
+
+| Paleta (`code`) | Nombre | Para |
+|---|---|---|
+| `default` | Agua | el tema actual de la app (azul agua) |
+| `bosque` | Bosque | verde |
+| `oceano` | Océano | azul marino |
+| `terracota` | Terracota | naranja quemado |
+| `competicion` | Rojo competición | rojo |
+| `grafito` | Grafito | logos en blanco y negro |
+
+| Tipografía (`code`) | Familia |
+|---|---|
+| `default` | la del sistema (no descarga nada) |
+| `inter` | Inter |
+| `manrope` | Manrope |
+| `plus_jakarta` | Plus Jakarta Sans |
+| `outfit` | Outfit |
+
+### Decisiones tomadas al construir
+
+| # | Decisión |
+|---|---|
+| 4.5-1 | **Cada paleta trae fondo, primario, secundario y `on_primary`** (el color del texto sobre el primario), en OKLCH. Un test exige contraste WCAG AA (≥ 4.5) de `on_primary` sobre el primario y ≥ 7 del texto del tema sobre el fondo, y que los colores estén dentro de sRGB. Los códigos solo se agregan: renombrar uno deja a los negocios que lo eligieron con un valor que el `PATCH` ya no acepta. |
+| 4.5-2 | **`default` reproduce el tema de `globals.css`, con el primario un punto más oscuro** (`hsl(199 89% 38%)` → `37%`): con texto blanco encima daba 4.44 de contraste, debajo de AA. Es el único cambio visual para quien no personaliza. |
+| 4.5-3 | **El catálogo se expone en `GET /branding/catalog`** (cualquier usuario autenticado, `require_authenticated`), no dentro de `GET /settings`: es igual para todos y el front lo cachea sin vencimiento. Cada color va en dos formas: `oklch(...)` y `hex`. El front usa el hex porque el tema de shadcn está en triplets HSL (`hsl(var(--primary))`); pasar todo el tema a OKLCH queda para cuando haga falta. |
+| 4.5-4 | **`PATCH /settings` valida `palette` y `font` contra el catálogo** (422 `VALIDATION_ERROR` si no existe; mayúsculas se normalizan). La base sigue validando solo el formato (§11.4): agregar una paleta no requiere migración. |
+| 4.5-5 | **`GET /settings` suma `logo_url`** = `R2_PUBLIC_BASE_URL` + `/` + `logo_key`; `null` sin logo o sin esa variable. `logo_key` sigue en la respuesta y **no** se mueve por `PATCH` (lo mueven solo `POST`/`DELETE /branding/logo`). |
+| 4.5-6 | **Validación del logo por contenido, con Pillow** (`application/services/branding_service.py`): PNG, JPEG o WebP (SVG no: puede traer scripts y no tiene píxeles para sugerir); ≤ 2 MB; ≥ 200×200. Contra bombas de descompresión se mira el tamaño **declarado** antes de decodificar y se corta en **4096 píxeles por lado** (una foto de celular entra), y la advertencia de Pillow pasa a error. La decodificación corre en el threadpool y la imagen se achica (`draft` en JPEG, `reduce` en el resto) antes de convertirla a RGBA. La extensión y el `Content-Type` del objeto salen del formato detectado, no de lo que manda el navegador. |
+| 4.5-7 | **Códigos de error nuevos**: `INVALID_IMAGE` (422), `IMAGE_TOO_SMALL` (422), `FILE_TOO_LARGE` (413: archivo > 2 MB, un lado > 4096 o cuerpo HTTP > 2,5 MB, ver 4.5-16) y `STORAGE_UNAVAILABLE` (503). |
+| 4.5-8 | **Sugerencia de paleta**: de una miniatura de 64×64 se descartan los píxeles transparentes; entre los de color (croma ≥ 0,04, ni casi blancos ni casi negros) se agrupa por tono en 12 sectores y se promedia en OKLab el más poblado (un logo azul sobre fondo blanco da azul, no gris). Se elige la paleta cuyo primario está más cerca en OKLab con la claridad a la mitad (un celeste y un azul marino son "la misma marca"). Un color sin croma (logo monocromo) va a la paleta neutra (`grafito`); una imagen toda transparente, a `default`. |
+| 4.5-9 | **`ObjectStorage` en `app/infrastructure/storage.py`**, inyectado con `Depends(get_storage)`: `R2Storage` (boto3) o `None` si falta alguna de las cinco variables → 503; los tests lo reemplazan con `InMemoryStorage` (nunca red). **boto3 y no firma propia con `httpx`**: es el cliente que Cloudflare documenta para R2 y el que ya usa app-gim; una firma SigV4 propia sería criptografía nuestra que solo se prueba contra R2 real. Sus llamadas son síncronas y corren en el threadpool. El cliente es uno por proceso, creado bajo un `threading.Lock` y desde una `boto3.session.Session()` propia (la sesión por defecto de boto3 no es segura entre hilos). Con la configuración a medias (alguna de las cinco variables, no todas) se avisa una vez en el log (`storage.r2_partially_configured`). |
+| 4.5-10 | **Objetos inmutables**: `Cache-Control: public, max-age=31536000, immutable` (la clave lleva el hash). Subir la misma imagen da la misma clave y no duplica. Toda escritura de `logo_key` toma la fila con `FOR UPDATE`. Al **reemplazar o quitar** el logo, el objeto anterior se borra en una tarea de fondo, después de responder, **con la fila tomada** y solo si el logo vigente ya no es esa clave (nunca si la anterior es igual a la nueva). Como la subida guarda la clave **antes** de subir el objeto (4.5-17), en la carrera A → B → A el borrado tardío de A o ve que A volvió (y no borra) o termina antes de que A se guarde, y la subida de A sube el objeto después. Si el borrado falla queda un huérfano público e inofensivo; no hay limpieza de huérfanos (diferido). |
+| 4.5-11 | **`DELETE /branding/logo`** (OWNER, 204) funciona sin R2: la base deja de apuntar al logo; el objeto se borra solo si hay R2. **`POST /branding/suggest-palette`** tampoco necesita R2; el front lo usa como respaldo cuando la subida da 503, para que el dueño reciba la sugerencia igual. |
+| 4.5-12 | **Front**: pestaña propia **Personalización** en `/configuracion` (solo el dueño), en `features/configuracion/` (§7 decía `app/(protected)/configuracion/mi-negocio/`; el 4.2b armó la configuración como una página con pestañas). `lib/branding.ts` escribe las variables (`--background`, `--primary`, `--primary-foreground`, `--ring`, `--brand-secondary`, `--font-brand`) **en `<html>`** para que las vean también diálogos y toasts (se montan en portales); `default` no escribe nada y queda el tema. Se aplica desde el layout protegido y se quita al salir de él. El secundario queda disponible como `--brand-secondary` (clase `brand-secondary`) para la página pública de F5; la app interna no lo usa todavía. |
+| 4.5-13 | **Tipografías con `next/font/google`, `preload: false`**: las cuatro se declaran como variables CSS en `<html>` (layout raíz) y el navegador baja solo la elegida. Un meta-test del backend (`tests/meta/test_tipografias_del_front.py`) exige que cada código del catálogo tenga su fuente en `frontend/src/lib/fonts.ts`. |
+| 4.5-14 | **Dependencias nuevas del backend**: `pillow`, `python-multipart` (formularios multipart de FastAPI) y `boto3`. |
+| 4.5-15 | **Variables de R2** (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`) en `config/settings.py` y `.env.example`, vacías. Las carga el dueño en Railway (staging y producción, cada uno con su bucket o al menos su token); nunca en el repo ni en el chat. |
+| 4.5-16 | **Tope del cuerpo antes de autenticar** (`app/api/body_limit.py`, middleware ASGI puro, por dentro del CORS): FastAPI lee el multipart antes de resolver las dependencias, así que sin esto un anónimo podía mandar gigas. En `/v1/branding/*`, un `Content-Length` > 2,5 MB (o inválido) se rechaza con 413 `FILE_TOO_LARGE` sin leer el cuerpo; sin `Content-Length` (chunked) se cuentan los bytes y al pasar el tope se corta la lectura y la respuesta se reemplaza por el mismo 413. |
+| 4.5-17 | **La subida no retiene una conexión durante la I/O.** La sesión del request no admite seguir después de un `commit` (está dentro de `session.begin()`), así que: se autentica; se hace `commit` de esa sesión (devuelve la conexión al pool) y no se usa más; Pillow corre en el threadpool; la clave se guarda en una transacción corta propia (`get_session_factory`, dependency nueva en `persistence/db/session.py` que los tests apuntan a la sesión del test); recién entonces se sube a R2 sin conexión tomada; si R2 falla, otra transacción corta vuelve al logo anterior (salvo que otro pedido ya lo haya cambiado) y se responde 503. Costo: durante la subida (segundos) `logo_url` apunta a un objeto que todavía no existe. `suggest-palette` también suelta la conexión antes de decodificar. |

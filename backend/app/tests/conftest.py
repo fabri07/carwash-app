@@ -37,7 +37,7 @@ from app.domain.roles import Role  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.persistence.db.base import Base  # noqa: E402
 from app.persistence.db.redis import get_redis  # noqa: E402
-from app.persistence.db.session import get_db_session  # noqa: E402
+from app.persistence.db.session import get_db_session, get_session_factory  # noqa: E402
 from app.persistence.models import (  # noqa: E402
     PermissionProfile,
     Tenant,
@@ -340,6 +340,20 @@ def staff_headers(staff_cookies: dict[str, str]) -> dict[str, str]:
 # ── Cliente HTTP ──────────────────────────────────────────────────────────────
 
 
+class SameSession:
+    """`async with factory() as s` que devuelve la sesión del test y no la cierra: sus `commit`
+    liberan el savepoint y el rollback del final del test deshace todo igual."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> AsyncSession:
+        return self._session
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+
 def _reset_limiter() -> None:
     from app.api.rate_limit import limiter  # noqa: PLC0415
 
@@ -360,6 +374,8 @@ async def client(
         return fake_redis
 
     app.dependency_overrides[get_db_session] = override_session
+    # Las transacciones propias (`get_session_factory`) también van a la sesión del test.
+    app.dependency_overrides[get_session_factory] = lambda: lambda: SameSession(db_session)
     app.dependency_overrides[get_redis] = override_redis
 
     # https: las cookies de sesión son `Secure` fuera de `local`, y el jar de httpx

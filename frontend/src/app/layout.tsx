@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import "@/styles/globals.css";
+import { FONT_VARIABLES } from "@/lib/fonts";
 import { Providers } from "./providers";
 
 const appUrl =
@@ -48,7 +49,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es-AR">
+    // Las variables de las tipografías elegibles (PR 4.5): declararlas no descarga nada.
+    <html lang="es-AR" className={FONT_VARIABLES}>
       <body>
         <Providers>{children}</Providers>
       </body>

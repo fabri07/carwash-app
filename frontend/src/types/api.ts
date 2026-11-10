@@ -89,6 +89,13 @@ export type BodyTypeCode = Schemas["VehicleBodyType"];
 export type BodyTypeSize = Schemas["BodyTypeSizeResponse"];
 export type BodyTypeSizesPayload = Schemas["BodyTypeSizesPut"];
 
+// Personalización (PR 4.5): catálogo de paletas y tipografías, logo y paleta sugerida.
+export type BrandCatalog = Schemas["BrandingCatalog"];
+export type BrandPalette = Schemas["PaletteOut"];
+export type BrandFont = Schemas["FontOut"];
+export type BrandSuggestion = Schemas["PaletteSuggestion"];
+export type LogoUpload = Schemas["LogoResponse"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];

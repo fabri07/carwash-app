@@ -30,6 +30,11 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.19,<3",
     "slowapi>=0.1.9,<0.2",
     "email-validator>=2.2,<3",
+    # PR 4.5 (logo): Pillow valida la imagen por contenido y saca el color dominante;
+    # python-multipart lo exige FastAPI para `UploadFile`; boto3 habla con R2 (API S3).
+    "pillow>=11,<12",
+    "python-multipart>=0.0.18,<0.1",
+    "boto3>=1.35,<2",
 ]
 
 [dependency-groups]

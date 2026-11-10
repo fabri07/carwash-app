@@ -69,6 +69,89 @@
         "title": "BodyTypeSizesPut",
         "type": "object"
       },
+      "Body_suggest_palette_for_v1_branding_suggest_palette_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "PNG, JPEG o WebP; ≤ 2 MB; de 200 a 4096 píxeles de lado.",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_suggest_palette_for_v1_branding_suggest_palette_post",
+        "type": "object"
+      },
+      "Body_upload_logo_v1_branding_logo_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "PNG, JPEG o WebP; ≤ 2 MB; de 200 a 4096 píxeles de lado.",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_logo_v1_branding_logo_post",
+        "type": "object"
+      },
+      "BrandColor": {
+        "properties": {
+          "hex": {
+            "title": "Hex",
+            "type": "string"
+          },
+          "oklch": {
+            "title": "Oklch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "oklch",
+          "hex"
+        ],
+        "title": "BrandColor",
+        "type": "object"
+      },
+      "BrandingCatalog": {
+        "description": "Catálogo fijo (en código): igual para todos los negocios.",
+        "properties": {
+          "default_font": {
+            "title": "Default Font",
+            "type": "string"
+          },
+          "default_palette": {
+            "title": "Default Palette",
+            "type": "string"
+          },
+          "fonts": {
+            "items": {
+              "$ref": "#/components/schemas/FontOut"
+            },
+            "title": "Fonts",
+            "type": "array"
+          },
+          "palettes": {
+            "items": {
+              "$ref": "#/components/schemas/PaletteOut"
+            },
+            "title": "Palettes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "palettes",
+          "fonts",
+          "default_palette",
+          "default_font"
+        ],
+        "title": "BrandingCatalog",
+        "type": "object"
+      },
       "BusinessHoursCreate": {
         "properties": {
           "closes_at": {
@@ -227,6 +310,10 @@
           "SLUG_TAKEN",
           "SLUG_RESERVED",
           "PASSWORD_CHANGE_REQUIRED",
+          "INVALID_IMAGE",
+          "IMAGE_TOO_SMALL",
+          "FILE_TOO_LARGE",
+          "STORAGE_UNAVAILABLE",
           "CONFLICT",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
@@ -274,6 +361,41 @@
           "detail"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "FontOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "family",
+          "description"
+        ],
+        "title": "FontOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -337,6 +459,35 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "LogoResponse": {
+        "properties": {
+          "logo_key": {
+            "title": "Logo Key",
+            "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "suggestion": {
+            "$ref": "#/components/schemas/PaletteSuggestion"
+          }
+        },
+        "required": [
+          "logo_key",
+          "logo_url",
+          "suggestion"
+        ],
+        "title": "LogoResponse",
         "type": "object"
       },
       "MeResponse": {
@@ -816,6 +967,65 @@
           "has_more"
         ],
         "title": "PaginatedResponse[VehicleSizeResponse]",
+        "type": "object"
+      },
+      "PaletteOut": {
+        "properties": {
+          "background": {
+            "$ref": "#/components/schemas/BrandColor"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "on_primary": {
+            "$ref": "#/components/schemas/BrandColor"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/BrandColor"
+          },
+          "secondary": {
+            "$ref": "#/components/schemas/BrandColor"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "background",
+          "primary",
+          "secondary",
+          "on_primary"
+        ],
+        "title": "PaletteOut",
+        "type": "object"
+      },
+      "PaletteSuggestion": {
+        "properties": {
+          "dominant_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dominant Color"
+          },
+          "palette": {
+            "title": "Palette",
+            "type": "string"
+          }
+        },
+        "required": [
+          "palette",
+          "dominant_color"
+        ],
+        "title": "PaletteSuggestion",
         "type": "object"
       },
       "PaymentMethodCreate": {
@@ -1786,6 +1996,17 @@
             ],
             "title": "Logo Key"
           },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
           "min_advance_min": {
             "title": "Min Advance Min",
             "type": "integer"
@@ -1869,6 +2090,7 @@
           "palette",
           "font",
           "logo_key",
+          "logo_url",
           "onboarding_completed_at"
         ],
         "title": "SettingsResponse",
@@ -3527,6 +3749,272 @@
         "summary": "Replace Body Type Sizes",
         "tags": [
           "Vehículos"
+        ]
+      }
+    },
+    "/v1/branding/catalog": {
+      "get": {
+        "operationId": "get_catalog_v1_branding_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Get Catalog",
+        "tags": [
+          "Personalización"
+        ]
+      }
+    },
+    "/v1/branding/logo": {
+      "delete": {
+        "description": "Funciona sin R2 (la base deja de apuntar al logo); el objeto se borra solo si hay R2.",
+        "operationId": "delete_logo_v1_branding_logo_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Delete Logo",
+        "tags": [
+          "Personalización"
+        ]
+      },
+      "post": {
+        "operationId": "upload_logo_v1_branding_logo_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_logo_v1_branding_logo_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Upload Logo",
+        "tags": [
+          "Personalización"
+        ]
+      }
+    },
+    "/v1/branding/suggest-palette": {
+      "post": {
+        "operationId": "suggest_palette_for_v1_branding_suggest_palette_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_suggest_palette_for_v1_branding_suggest_palette_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaletteSuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Suggest Palette For",
+        "tags": [
+          "Personalización"
         ]
       }
     },

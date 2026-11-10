@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { useTenantBranding } from "@/lib/branding";
 import { CHANGE_PASSWORD_PATH } from "@/lib/routes";
 import { getMeRequest } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/authStore";
@@ -23,12 +24,16 @@ import { useAuthStore } from "@/stores/authStore";
  * Con `must_change_password` (FASE-4-CONTRATO §2.3) no se muestra ninguna
  * pantalla del shell: se manda a `/cambiar-clave`. El servidor ya responde 403
  * a todo lo demás; esto evita pintar una pantalla que solo mostraría errores.
+ *
+ * La paleta y la tipografía del negocio (PR 4.5) se aplican acá, con sesión
+ * utilizable; al salir del shell vuelve el tema por defecto.
  */
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const router = useRouter();
   const setSession = useAuthStore((s) => s.setSession);
   const mustChangePassword = useAuthStore((s) => s.mustChangePassword);
+  const hasUser = useAuthStore((s) => s.user !== null);
 
   const { data: me } = useQuery({
     queryKey: ["auth", "me"],
@@ -39,6 +44,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     refetchOnWindowFocus: true,
     retry: false,
   });
+
+  useTenantBranding(hasUser && !mustChangePassword);
 
   useEffect(() => {
     if (me) setSession(me);
