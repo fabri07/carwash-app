@@ -12,11 +12,16 @@ import { cn } from "@/lib/utils";
 export interface StepperStep {
   id: string;
   label: string;
+  /**
+   * Hecho según quien arma el wizard (p. ej. el servidor). Sin el dato, se da por hecho todo
+   * paso anterior al actual.
+   */
+  done?: boolean;
 }
 
 interface StepperProps {
   steps: StepperStep[];
-  /** Índice (desde 0) del paso actual. Los anteriores se marcan como hechos. */
+  /** Índice (desde 0) del paso actual. */
   current: number;
   className?: string;
 }
@@ -25,8 +30,8 @@ export function Stepper({ steps, current, className }: StepperProps) {
   return (
     <ol aria-label="Pasos" className={cn("flex flex-wrap items-center gap-2", className)}>
       {steps.map((step, i) => {
-        const done = i < current;
         const active = i === current;
+        const done = !active && (step.done ?? i < current);
         return (
           <li
             key={step.id}

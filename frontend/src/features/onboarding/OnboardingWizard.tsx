@@ -17,13 +17,14 @@ import {
   ResourcesTab,
   VehicleSizesTab,
 } from "@/features/configuracion/CatalogTabs";
+import { configKeys } from "@/features/configuracion/queries";
 import { BusinessTab, DepositTab } from "@/features/configuracion/SettingsTabs";
 import { StaffTab } from "@/features/equipo/StaffTab";
 import { onboardingKeys, useOnboardingStatus } from "@/features/onboarding/queries";
-import { missingMessage, stepIndex, WIZARD_STEPS } from "@/features/onboarding/steps";
+import { missingMessage, stepIndex, stepLabel, WIZARD_STEPS } from "@/features/onboarding/steps";
 import { BodyTypeSizesForm } from "@/features/vehiculos/BodyTypeSizesForm";
-import { useIsOwner } from "@/hooks/usePermission";
-import { onboardingError, onboardingMissing } from "@/lib/errors";
+import { useIsOwner, usePermissionsLoaded } from "@/hooks/usePermission";
+import { genericMessage, onboardingMissing } from "@/lib/errors";
 import { HOME_PATH } from "@/lib/routes";
 import { completeOnboarding } from "@/services/onboarding.service";
 import { useAuthStore } from "@/stores/authStore";
@@ -32,19 +33,29 @@ import type { OnboardingMissingItem, OnboardingStepCode } from "@/types/api";
 
 const NEXT_LABEL = "Guardar y seguir";
 
+/** Raíces de caché que no son datos del negocio: su refetch no cambia el estado del alta. */
+const NOT_BUSINESS_DATA = new Set<unknown>(["onboarding", "auth"]);
+
 /**
  * Wizard de alta (FASE-4-CONTRATO §6, PR 4.6): los mismos formularios y listas de Configuración,
  * Catálogo y Equipo, uno por paso. Nada se guarda "al final": cada paso escribe en el servidor
  * (los formularios al tocar "Guardar y seguir", las listas en cada alta), así que cortar a mitad y
  * volver no pierde nada y repetir un paso no duplica (las plantillas son idempotentes).
  *
- * Al entrar se reanuda en el paso que dice `GET /onboarding/status`. Un paso con requisito no deja
- * avanzar hasta cumplirlo; los opcionales se pueden saltar. "Terminar" llama a
- * `POST /onboarding/complete`: si falta algo (409), muestra la lista y lleva al primer paso que
- * falta.
+ * Al entrar se reanuda en el paso que dice `GET /onboarding/status`. Un paso obligatorio (lo dice el
+ * servidor en `steps[].required`) no deja avanzar hasta cumplirlo; los opcionales se pueden saltar.
+ * "Terminar" llama a `POST /onboarding/complete`: si falta algo (409), lleva al primer paso que
+ * falta, muestra ahí lo suyo y ofrece ir a los otros.
  */
 export function OnboardingWizard() {
   const isOwner = useIsOwner();
+  // El usuario persistido puede no estar (localStorage vacío) o estar viejo: hasta que llega la
+  // sesión del servidor no se sabe si es el dueño. Mismo dato en el servidor y en el primer render
+  // del cliente (no se persiste), así que tampoco hay desajuste de hidratación.
+  const loaded = usePermissionsLoaded();
+  if (!loaded) {
+    return <p className="text-sm text-muted-foreground">Cargando…</p>;
+  }
   if (!isOwner) {
     return (
       <section aria-labelledby="onboarding-title" className="rounded-xl border bg-card">
@@ -63,15 +74,42 @@ export function OnboardingWizard() {
   return <OwnerWizard />;
 }
 
+/**
+ * El estado del alta cambia con lo que se guarda dentro de cada paso (un tamaño, el logo, la
+ * paleta…). Las pestañas reusadas no avisan al wizard; en cambio todas escriben su resultado en la
+ * caché de React Query. Ante cualquier dato del negocio que se actualiza, se relee el estado (con
+ * una pausa corta para juntar varias actualizaciones).
+ */
+function useRefreshStatusOnBusinessData() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || event.action.type !== "success") return;
+      if (NOT_BUSINESS_DATA.has(event.query.queryKey[0])) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: onboardingKeys.status });
+      }, 250);
+    });
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [queryClient]);
+}
+
 function OwnerWizard() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const setOnboardingCompleted = useAuthStore((s) => s.setOnboardingCompleted);
   const status = useOnboardingStatus();
   const [index, setIndex] = useState<number | null>(null);
+  /** Faltantes a mostrar: los del paso actual en el paso; los demás, como enlaces a su paso. */
   const [problems, setProblems] = useState<OnboardingMissingItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useRefreshStatusOnBusinessData();
 
   const data = status.data;
   // Se reanuda una sola vez, al llegar el primer estado: después manda la navegación del usuario.
@@ -85,29 +123,35 @@ function OwnerWizard() {
   if (status.isError || !data || index === null) {
     return (
       <p role="alert" className="text-sm font-medium text-destructive">
-        {status.isError ? onboardingError(status.error) : "No se pudo cargar el alta."}
+        {status.isError ? genericMessage(status.error) : "No se pudo cargar el alta."}
       </p>
     );
   }
 
   const step = WIZARD_STEPS[index]!;
   const isLast = index === WIZARD_STEPS.length - 1;
+  const serverSteps = new Map(data.steps.map((s) => [s.step, s]));
+  const required = serverSteps.get(step.id)?.required ?? false;
+  const stepDone = serverSteps.get(step.id)?.done ?? false;
+  const here = problems.filter((m) => m.step === step.id);
+  const elsewhere = [...new Set(problems.filter((m) => m.step !== step.id).map((m) => m.step))];
 
-  function goTo(i: number) {
-    setProblems([]);
+  /** `keepProblems`: ir a otro paso desde la lista de faltantes del 409, sin perderla. */
+  function goTo(i: number, keepProblems = false) {
+    if (!keepProblems) setProblems([]);
     setError(null);
     setIndex(Math.max(0, Math.min(WIZARD_STEPS.length - 1, i)));
     if (typeof window !== "undefined") window.scrollTo?.({ top: 0 });
   }
 
-  /** Avanza si el paso actual quedó hecho en el servidor; si no, dice qué falta. */
+  /** Avanza si el paso quedó hecho en el servidor; si no, dice qué le falta. */
   async function next(from: OnboardingStepCode = step.id) {
     setBusy(true);
     setError(null);
     try {
       const fresh = await status.refetch();
       if (fresh.isError || !fresh.data) {
-        setError(onboardingError(fresh.error));
+        setError(genericMessage(fresh.error));
         return;
       }
       const current = fresh.data.steps.find((s) => s.step === from);
@@ -133,7 +177,7 @@ function OwnerWizard() {
         setIndex(stepIndex(missing[0]!.step));
         setProblems(missing);
       } else {
-        setError(onboardingError(e));
+        setError(genericMessage(e));
       }
       setBusy(false);
       return;
@@ -142,13 +186,11 @@ function OwnerWizard() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["auth", "me"] }),
       queryClient.invalidateQueries({ queryKey: onboardingKeys.status }),
-      queryClient.invalidateQueries({ queryKey: ["config", "settings"] }),
+      queryClient.invalidateQueries({ queryKey: configKeys.settings }),
     ]);
     toast.success("¡Listo! Tu negocio quedó configurado.");
     router.replace(HOME_PATH);
   }
-
-  const done = new Map(data.steps.map((s) => [s.step, s.done]));
 
   return (
     <section aria-labelledby="onboarding-title" className="space-y-6">
@@ -161,31 +203,57 @@ function OwnerWizard() {
           donde quedaste.
         </p>
       </div>
-      <Stepper steps={WIZARD_STEPS.map(({ id, label }) => ({ id, label }))} current={index} />
+      <Stepper
+        steps={WIZARD_STEPS.map(({ id, label }) => ({
+          id,
+          label,
+          done: serverSteps.get(id)?.done ?? false,
+        }))}
+        current={index}
+      />
 
       <div className="space-y-4 rounded-xl border bg-card p-4 sm:p-6">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold">
             {step.title}
-            {step.optional && (
+            {!required && (
               <span className="ml-2 text-sm font-normal text-muted-foreground">(opcional)</span>
             )}
           </h2>
           <p className="text-sm text-muted-foreground">{step.description}</p>
         </div>
 
-        {problems.length > 0 && (
+        {(here.length > 0 || elsewhere.length > 0) && (
           <div
             role="alert"
             aria-label="Falta completar"
-            className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
+            className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
           >
-            <p className="font-medium text-destructive">Para seguir falta:</p>
-            <ul className="mt-1 list-disc pl-5">
-              {problems.map((m) => (
-                <li key={m.requirement}>{missingMessage(m)}</li>
-              ))}
-            </ul>
+            {here.length > 0 && (
+              <>
+                <p className="font-medium text-destructive">Para seguir falta:</p>
+                <ul className="list-disc pl-5">
+                  {here.map((m) => (
+                    <li key={m.requirement}>{missingMessage(m)}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {elsewhere.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span>También falta completar:</span>
+                {elsewhere.map((id) => (
+                  <Button
+                    key={id}
+                    variant="link"
+                    className="h-auto p-0"
+                    onClick={() => goTo(stepIndex(id), true)}
+                  >
+                    {stepLabel(id)}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {error && (
@@ -202,12 +270,12 @@ function OwnerWizard() {
           Atrás
         </Button>
         <div className="flex flex-wrap gap-2">
-          {step.optional && !isLast && (
+          {!required && !isLast && (
             <Button variant="ghost" onClick={() => goTo(index + 1)} disabled={busy}>
-              {done.get(step.id) ? "Seguir sin cambios" : "Saltar este paso"}
+              {stepDone ? "Seguir sin cambios" : "Saltar este paso"}
             </Button>
           )}
-          {!step.optional && (
+          {required && !isLast && (
             <Button onClick={() => next()} disabled={busy}>
               {busy ? "Revisando…" : "Siguiente"}
             </Button>

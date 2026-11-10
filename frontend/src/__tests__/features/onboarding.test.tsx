@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   AxiosError,
@@ -9,7 +9,7 @@ import {
 
 import ProtectedLayout from "@/app/(protected)/layout";
 import OnboardingPage from "@/app/(protected)/onboarding/page";
-import { missingMessage, stepIndex, WIZARD_STEPS } from "@/features/onboarding/steps";
+import { missingMessage, stepIndex, stepLabel, WIZARD_STEPS } from "@/features/onboarding/steps";
 import { api } from "@/lib/api";
 import { onboardingMissing } from "@/lib/errors";
 import { getMeRequest } from "@/services/auth.service";
@@ -120,6 +120,9 @@ const catalog = {
 
 const page = (items: unknown[] = []) => ({ items, total: items.length, limit: 50, offset: 0 });
 
+/** Lo que el servidor marca como obligatorio (el front no lo sabe por su cuenta). */
+const REQUIRED: OnboardingStepCode[] = ["SIZES", "SERVICES", "SCHEDULE", "PAYMENTS"];
+
 function status(resume: OnboardingStepCode, notDone: OnboardingStepCode[] = []): OnboardingStatus {
   const until = stepIndex(resume);
   return {
@@ -128,7 +131,7 @@ function status(resume: OnboardingStepCode, notDone: OnboardingStepCode[] = []):
     resume_step: resume,
     steps: WIZARD_STEPS.map((s, i) => ({
       step: s.id,
-      required: !s.optional,
+      required: REQUIRED.includes(s.id),
       done: i < until && !notDone.includes(s.id),
     })),
     missing: [],
@@ -188,6 +191,53 @@ describe("wizard de alta", () => {
     expect(api.get).toHaveBeenCalledWith("/onboarding/status");
   });
 
+  it("el indicador marca hecho lo que dice el servidor, no todo lo anterior", async () => {
+    // Personalización sin hacer aunque se esté más adelante (se saltó).
+    current = status("SCHEDULE", ["BRANDING"]);
+    renderWizard();
+    await screen.findByRole("heading", { level: 2, name: /Puestos y horarios/ });
+    const items = within(screen.getByRole("list", { name: "Pasos" })).getAllByRole("listitem");
+    const hecho = (label: string) =>
+      items.find((li) => li.textContent?.includes(label))!.textContent!.includes("(hecho)");
+    expect(hecho("Negocio")).toBe(true);
+    expect(hecho("Personalización")).toBe(false);
+    expect(hecho("Tamaños")).toBe(true);
+  });
+
+  it("si un paso obligatorio lo marca opcional el servidor, se puede saltar", async () => {
+    current = status("PAYMENTS");
+    current.steps = current.steps.map((s) =>
+      s.step === "PAYMENTS" ? { ...s, required: false } : s,
+    );
+    renderWizard();
+    await screen.findByRole("heading", { level: 2, name: /Medios de pago/ });
+    expect(screen.getByText("(opcional)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Saltar este paso" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Siguiente" })).toBeNull();
+  });
+
+  it("guardar algo dentro del paso relee el estado (la etiqueta deja de decir «Saltar»)", async () => {
+    current = status("BRANDING");
+    const { qc } = renderWizard();
+    await screen.findByRole("heading", { level: 2, name: /Personalización/ });
+    expect(screen.getByRole("button", { name: "Saltar este paso" })).toBeInTheDocument();
+    // Subir el logo escribe en la caché de la configuración y no llama a `onSaved`:
+    current = status("SIZES");
+    act(() => {
+      qc.setQueryData(["config", "settings"], { ...settings, logo_key: "logos/t1/abc.png" });
+    });
+    expect(await screen.findByRole("button", { name: "Seguir sin cambios" })).toBeInTheDocument();
+    expect(activeStep()).toHaveTextContent("Personalización");
+  });
+
+  it("hasta que llega la sesión del servidor no decide si es el dueño", () => {
+    useAuthStore.setState({ user: null, permissionsLoaded: false });
+    renderWizard();
+    expect(screen.getByText("Cargando…")).toBeInTheDocument();
+    expect(screen.queryByText(/El alta la hace el dueño/)).toBeNull();
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
   it("negocio: «Guardar y seguir» guarda en el servidor y pasa al paso siguiente", async () => {
     renderWizard();
     await screen.findByRole("heading", { level: 2, name: /Tu negocio/ });
@@ -233,7 +283,7 @@ describe("wizard de alta", () => {
     expect(screen.queryByRole("alert", { name: "Falta completar" })).toBeNull();
   });
 
-  it("«Terminar» con faltantes (409) los muestra y lleva al primer paso que falta", async () => {
+  it("«Terminar» con faltantes (409) lleva al primer paso y ofrece ir a los otros", async () => {
     current = status("STAFF");
     (api.post as jest.Mock).mockRejectedValue(
       apiError(409, {
@@ -251,9 +301,15 @@ describe("wizard de alta", () => {
     await screen.findByRole("heading", { level: 2, name: /Empleados/ });
     await userEvent.click(screen.getByRole("button", { name: "Terminar" }));
     await screen.findByRole("heading", { level: 2, name: /Medios de pago/ });
-    const alert = screen.getByRole("alert", { name: "Falta completar" });
-    expect(alert).toHaveTextContent("Medios de pago: Cargá al menos un medio de pago para cobrar.");
+    let alert = screen.getByRole("alert", { name: "Falta completar" });
+    // En el paso, solo lo suyo; lo de otros pasos, como enlace.
+    expect(alert).toHaveTextContent("Cargá al menos un medio de pago para cobrar.");
+    expect(alert).not.toHaveTextContent("servicios sin precio");
+    await userEvent.click(within(alert).getByRole("button", { name: "Servicios" }));
+    await screen.findByRole("heading", { level: 2, name: /^Servicios/ });
+    alert = screen.getByRole("alert", { name: "Falta completar" });
     expect(alert).toHaveTextContent("(2 servicios)");
+    expect(within(alert).getByRole("button", { name: "Medios de pago" })).toBeInTheDocument();
     expect(api.post).toHaveBeenCalledWith("/onboarding/complete");
     expect(nav.router.replace).not.toHaveBeenCalled();
     expect(useAuthStore.getState().onboardingCompleted).toBe(false);
@@ -298,14 +354,18 @@ describe("wizard de alta", () => {
 });
 
 describe("textos y errores del alta", () => {
-  it("cada faltante dice en qué paso se resuelve", () => {
+  it("textos de los faltantes y de los pasos", () => {
     expect(missingMessage({ requirement: "RESOURCE", step: "SCHEDULE", service_ids: [] })).toBe(
-      "Puestos y horarios: Creá al menos un puesto.",
+      "Creá al menos un puesto.",
     );
     expect(
       missingMessage({ requirement: "SERVICE_PRICES", step: "SERVICES", service_ids: ["s1"] }),
     ).toMatch(/\(1 servicio\)$/);
+    expect(
+      missingMessage({ requirement: "SERVICE_PRICES", step: "SERVICES", service_ids: [] }),
+    ).not.toMatch(/\(/);
     expect(stepIndex("STAFF")).toBe(WIZARD_STEPS.length - 1);
+    expect(stepLabel("SCHEDULE")).toBe("Puestos y horarios");
   });
 
   it("onboardingMissing solo lee el 409 del alta", () => {

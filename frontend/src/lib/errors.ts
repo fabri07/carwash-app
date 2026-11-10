@@ -62,7 +62,7 @@ export function authErrorMessage(e: unknown, context: "login" | "register"): str
 }
 
 /** Mensaje genérico por estado, para cuando el código no tiene uno propio. */
-function genericMessage(e: unknown): string {
+export function genericMessage(e: unknown): string {
   if (!axios.isAxiosError(e)) return "Ocurrió un error inesperado. Probá de nuevo.";
   if (!e.response) return "No hay conexión con el servidor. Revisá tu internet y probá de nuevo.";
   const { status } = e.response;
@@ -240,9 +240,4 @@ export function onboardingMissing(e: unknown): OnboardingMissingItem[] | null {
   if (apiErrorCode(e) !== "ONBOARDING_INCOMPLETE" || !axios.isAxiosError(e)) return null;
   const detail = (e.response?.data as Partial<OnboardingIncomplete> | undefined)?.detail;
   return Array.isArray(detail?.missing) ? detail.missing : [];
-}
-
-/** Error del wizard que no es un faltante (sin conexión, 403, 5xx). */
-export function onboardingError(e: unknown): string {
-  return genericMessage(e);
 }
