@@ -254,6 +254,24 @@ def test_el_catalogo_de_vehiculos_tiene_la_autorizacion_del_contrato():
     assert vistas == 3 * 4 + 2
 
 
+def test_la_agenda_tiene_la_autorizacion_del_contrato():
+    """FASE-5-CONTRATO §2 (PR 5.1): leer la agenda con `AGENDA_VER`; bloquear y abrir (alta y
+    anulación) con `TURNOS_GESTIONAR`. Sin permisos nuevos (Z3)."""
+    app = create_app()
+    vistas = 0
+    for ruta in app.routes:
+        if not (isinstance(ruta, APIRoute) and ruta.path.startswith("/v1/agenda")):
+            continue
+        permiso = Permission.AGENDA_VER if ruta.methods == {"GET"} else Permission.TURNOS_GESTIONAR
+        assert _autorizaciones(ruta.dependant) == {("permission", frozenset({permiso}))}, (
+            ruta.methods,
+            ruta.path,
+        )
+        vistas += 1
+    # bloqueos y aperturas x (lista, alta, anular) + disponibilidad
+    assert vistas == 2 * 3 + 1
+
+
 def _mini_app(*dependencias: Callable[..., Any]) -> FastAPI:
     router = APIRouter()
 

@@ -59,6 +59,10 @@ EDITABLE_FIELDS: frozenset[str] = frozenset(
         "quote_validity_hours",
         "palette",
         "font",
+        # F5 (FASE-5-CONTRATO §3.4).
+        "booking_horizon_days",
+        "slot_step_min",
+        "deposit_instructions",
     }
 )
 

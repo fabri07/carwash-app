@@ -26,10 +26,14 @@ from typing import Any
 
 from app.application import services as paquete_servicios
 from app.application.services._base import ServiceBase
+from app.application.services.agenda_service import LocalRange
 from app.domain.enums import BookingSource, Channel, DepositStatus, PricingMode
 from app.tests.application._armado import AHORA, PRECIO_FIJO, SENA, Lavadero, T
 
 Ids = dict[str, uuid.UUID]
+
+#: Un día sin turnos sembrados para los bloqueos y aperturas de la agenda (F5).
+DIA_AGENDA = LocalRange((T + timedelta(days=30)).date())
 
 
 def k() -> str:
@@ -114,6 +118,8 @@ async def armar_a(lv: Lavadero) -> Ids:
     ids["booking_vencido"] = await vencido_con_sena(lv)
     ids["booking_perdido"] = await perdido(lv)
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
+    ids["bloqueo"] = (await lv.agenda.create_block(DIA_AGENDA, resource_id=lv.puesto)).block.id
+    ids["apertura"] = (await lv.agenda.create_opening(DIA_AGENDA)).id
 
     async def cotizacion() -> Any:
         return await lv.cotizaciones.create(
@@ -449,6 +455,53 @@ INTENTOS: dict[str, Intento] = {
             starts_at=T, ends_at=T + timedelta(hours=1), resource_id=x
         ),
         "BookingService.add_block",
+    ),
+    # ── AgendaService (F5) ──
+    "agenda.create_block": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.agenda.create_block(DIA_AGENDA, resource_id=x),
+        "AgendaService.create_block",
+    ),
+    "agenda.void_block": Intento(
+        "bloqueo",
+        "schedule_blocks",
+        lambda lv, ib, x: lv.agenda.void_block(x),
+        "AgendaService.void_block",
+    ),
+    "agenda.create_opening": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.agenda.create_opening(DIA_AGENDA, resource_id=x),
+        "AgendaService.create_opening",
+    ),
+    "agenda.void_opening": Intento(
+        "apertura",
+        "schedule_openings",
+        lambda lv, ib, x: lv.agenda.void_opening(x),
+        "AgendaService.void_opening",
+    ),
+    "agenda.availability.vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: lv.agenda.availability(
+            day=T.date(), vehicle_size_id=x, service_ids=[ib["lavado"]], now=AHORA
+        ),
+        "AgendaService.availability",
+    ),
+    "agenda.availability.service": Intento(
+        "lavado",
+        "services",
+        lambda lv, ib, x: lv.agenda.availability(
+            day=T.date(), vehicle_size_id=ib["auto"], service_ids=[x], now=AHORA
+        ),
+        "AgendaService.availability",
+    ),
+    "agenda.count_incidents": Intento(
+        "cliente",
+        "customers",
+        lambda lv, ib, x: lv.agenda.count_incidents(x, now=AHORA),
+        "AgendaService.count_incidents",
     ),
     # ── QuoteService ──
     "quote.quote": Intento(

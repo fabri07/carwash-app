@@ -41,6 +41,7 @@ from app.persistence.models.catalog import ServiceCategory
 from app.persistence.models.user import User
 from app.schemas.common import PaginatedResponse
 from app.schemas.services import (
+    ScheduleRuleResponse,
     ServiceCategoryCreate,
     ServiceCategoryResponse,
     ServiceCategoryUpdate,
@@ -82,6 +83,8 @@ def _to_response(view: ServiceView) -> ServiceResponse:
         category_id=s.category_id,
         glossary_code=s.glossary_code,
         deposit_bps=s.deposit_bps,
+        booking_mode=s.booking_mode,
+        schedule_rules=[ScheduleRuleResponse.model_validate(r) for r in view.rules],
         prices=[ServicePriceResponse.model_validate(p) for p in view.prices],
         missing_price_size_ids=view.missing_price_size_ids,
     )
@@ -217,6 +220,8 @@ async def create_service(
             notes=body.notes,
             category_id=body.category_id,
             deposit_bps=body.deposit_bps,
+            booking_mode=body.booking_mode,
+            schedule_rules=[r.to_input() for r in body.schedule_rules],
         ),
         _name_taken(),
     )
@@ -244,6 +249,12 @@ async def update_service(
                 clear_notes="notes" in fields and body.notes is None,
                 category_id=body.category_id,
                 clear_category="category_id" in fields and body.category_id is None,
+                booking_mode=body.booking_mode,
+                schedule_rules=(
+                    None
+                    if body.schedule_rules is None
+                    else [r.to_input() for r in body.schedule_rules]
+                ),
             ),
             _name_taken(),
         )

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services import (
+    AgendaService,
     BookingService,
     CatalogService,
     CustomerService,
@@ -68,6 +69,10 @@ class Lavadero:
     @property
     def catalogo(self) -> CatalogService:
         return CatalogService(self.session, self.tenant_id, self.owner_id)
+
+    @property
+    def agenda(self) -> AgendaService:
+        return AgendaService(self.session, self.tenant_id, self.owner_id)
 
     @property
     def turnos(self) -> BookingService:

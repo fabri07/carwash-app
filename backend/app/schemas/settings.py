@@ -22,6 +22,11 @@ from pydantic import (
 
 from app.domain.branding import FONTS, PALETTES, is_font, is_palette
 from app.domain.slug import SLUG_MAX, SLUG_MIN
+from app.persistence.models.tenant import (
+    BOOKING_HORIZON_DAYS_RANGE,
+    DEPOSIT_INSTRUCTIONS_MAX,
+    SLOT_STEP_MIN_RANGE,
+)
 from app.schemas.auth import _sin_nul
 from app.schemas.common import CamelModel
 
@@ -118,11 +123,22 @@ class SettingsUpdate(BaseModel):
     quote_validity_hours: Annotated[int, Field(gt=0, le=24 * 30)] | None = None
     palette: PaletteCode | None = None
     font: FontCode | None = None
+    #: F5 (FASE-5-CONTRATO §3.4): "Seña y reservas".
+    booking_horizon_days: (
+        Annotated[int, Field(ge=BOOKING_HORIZON_DAYS_RANGE[0], le=BOOKING_HORIZON_DAYS_RANGE[1])]
+        | None
+    ) = None
+    slot_step_min: (
+        Annotated[int, Field(ge=SLOT_STEP_MIN_RANGE[0], le=SLOT_STEP_MIN_RANGE[1])] | None
+    ) = None
+    #: Alias/CBU/titular: texto libre que se muestra en el turnero. `null` o vacío lo borra.
+    deposit_instructions: Annotated[Text, Field(max_length=DEPOSIT_INSTRUCTIONS_MAX)] | None = None
 
     @field_validator(
         "address",
         "welcome_text",
         "cancellation_policy",
+        "deposit_instructions",
         "whatsapp_e164",
         "instagram_url",
         mode="before",
@@ -153,6 +169,8 @@ _REQUIRED = (
     "quote_validity_hours",
     "palette",
     "font",
+    "booking_horizon_days",
+    "slot_step_min",
 )
 
 
@@ -179,3 +197,6 @@ class SettingsResponse(CamelModel):
     #: URL pública del logo en R2 (`R2_PUBLIC_BASE_URL` + `logo_key`); `null` sin logo o sin R2.
     logo_url: str | None
     onboarding_completed_at: datetime | None
+    booking_horizon_days: int
+    slot_step_min: int
+    deposit_instructions: str | None
