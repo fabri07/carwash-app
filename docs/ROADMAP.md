@@ -16,7 +16,12 @@ Decisiones tomadas por el usuario en esta sesión:
 - **Alcance de la primera entrega:** núcleo operativo — turnero público, agenda, operación rápida, caja,
   clientes/vehículos — **más un mínimo de costos** (gastos, retiros, empleados y el resultado operativo),
   porque sin eso un negocio no puede dejar su planilla. Comisiones automáticas, liquidaciones, analytics de empleados,
-  dashboard avanzado, WhatsApp y Mercado Pago quedan fuera (v2, alimentados por el uso real).
+  dashboard avanzado y Mercado Pago quedan fuera (v2, alimentados por el uso real).
+- **Relevamiento del 2026-11-10** (planilla de Sola, 27 pestañas): la operación real sumó fidelidad,
+  propinas, avisos automáticos por WhatsApp, reglas horarias por servicio, bloqueos de agenda, lista de
+  espera y carga retrospectiva. El dueño decidió que **todo eso entra en la primera entrega** (fidelidad
+  y WhatsApp en la F7C nueva). Quedan para después: TyC versionados con comprobante y la analítica de
+  horarios pico.
 - **Stack:** base Véktor (FastAPI + Next.js, Railway + Vercel).
 - **Fuente de la spec:** la planilla de Drive, que yo extraigo.
 - **Modo de trabajo:** equipos de agentes por fase, con checkpoint de aprobación humana al cierre de cada una.
@@ -28,7 +33,7 @@ de que Sola la use: puede ser uno de los negocios beta, no es requisito. El MVP 
 terminado porque "la app funciona".
 
 **Orden de ejecución:**
-`F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero → F6 Operación → F7 Caja/CRM → F7B Costos → F8 Go-live beta → F9 Productos y ventas`
+`F1 Spec → F2 Infra → F3 Dominio → F4 Onboarding → F5 Turnero → F6 Operación → F7 Caja/CRM → F7B Costos → F7C Fidelidad y WhatsApp → F8 Go-live beta → F9 Productos y ventas`
 
 No se escribe un modelo SQL ni una pantalla hasta que `docs/spec/02-reglas-negocio.md` esté congelado:
 ese archivo decide prácticamente todo lo que viene después.
@@ -205,8 +210,8 @@ recurso por recurso. Sin UI todavía.
 **Puntos finos que salen de la spec, no del sentido común:**
 - `bookings` y `jobs` son **dos tablas**, no una. El Sheet ya distingue `TUR-` de `REG-`: un ingreso
   `SIN_TURNO` crea un job sin booking. Colapsarlas obliga a inventar turnos fantasma.
-- **La ocupación se modela como intervalo sobre un recurso, no como slot.** Los servicios duran 60, 90, 120
-  o 300 minutos y puede haber varios puestos de lavado. `bookings` lleva `resource_id` + `[start_at, end_at)`
+- **La ocupación se modela como intervalo sobre un recurso, no como slot.** Cada servicio define su
+  duración (en Sola van de 60 a 300 minutos; un camión, 240) y puede haber varios puestos de lavado. `bookings` lleva `resource_id` + `[start_at, end_at)`
   y la garantía la da Postgres con una **restricción de exclusión por solapamiento**:
 
   ```sql
@@ -285,8 +290,9 @@ Decisiones del dueño (2026-10-07):
 - **Admin y subcuentas:** el `OWNER` crea empleados con usuario y contraseña y les asigna un **perfil de
   permisos editable** (Encargado, Cajero, Lavador vienen armados; cajero y lavador suelen ser la misma
   persona, y Cajero incluye a Lavador). El empleado ve precios aunque no los edite.
-- **Seña global:** un interruptor en Configuración la activa o desactiva para todos los servicios, con
-  un único % (sugerido 20%). Sin pagar, el auto se recibe igual y la seña queda en el saldo.
+- **Seña:** un interruptor en Configuración la activa o desactiva para todos los servicios, con un %
+  general (sugerido 20%). **Cada servicio puede tener su propio %, que pisa al general** (decisión del
+  2026-11-10: en Sola el camión paga 30 %). Sin pagar, el auto se recibe igual y la seña queda en el saldo.
 - **Todo servicio tiene precio base por tamaño.** Los "a cotizar" muestran "desde $X"; la cotización
   fija el final y la seña se calcula sobre el acordado. No hay plantillas sin precio. Un turno a cotizar
   **no reserva horario** hasta que el cliente acepta.
@@ -299,12 +305,13 @@ Decisiones del dueño (2026-10-07):
   vista previa en vivo. **Registros** (tablas, filtros, CSV) con el patrón de Véktor, desde F7.
 
 **PRs:** 4.1 base de front + cuentas y permisos → 4.2 configuración, seña global y precio base →
-4.3 servicios, glosario y búsqueda ‖ 4.4 base de vehículos ‖ 4.5 personalización → 4.6 wizard de alta.
+4.3 servicios, glosario y búsqueda → 4.3c seña propia por servicio ‖ 4.4 base de vehículos ‖ 4.5
+personalización → 4.6 wizard de alta. Mergeados: 4.1, 4.2 (a y b), 4.3 (a y b).
 
 **Checkpoint:** alta de un lavadero y de un taller de detailing con el wizard; 5 servicios con precio;
 logo con paleta sugerida; un "Cajero" que entra con usuario, cambia la clave y ve el menú según su
 perfil (que no pueda anular cobros se prueba automático hasta que exista la pantalla de cobro);
-prender y apagar la seña; cargar un auto por marca y modelo con tamaño sugerido;
+prender y apagar la seña; un servicio con seña propia del 30 % y otro que usa la general; cargar un auto por marca y modelo con tamaño sugerido;
 buscar "ceramico", "ppf" y "sacar rayas".
 
 ---
@@ -320,14 +327,37 @@ Flujo: elegir vehículo → servicio → fecha → horario disponible → datos 
 (`DEVOLUCION_PENDIENTE`, `EN_REVISION`). Es la parte del sistema con mayor exposición legal: maneja
 plata de terceros y su devolución. La clasificación es una regla temporal — se testea con reloj congelado.
 
+La cancelación web la valida el número de turno **más** el WhatsApp con el que se reservó (como hoy en
+Sola). Una cancelación operativa (la decide el negocio) **no** cuenta como incidencia del cliente.
+
 **Y por D-006: servicios a cotizar.** Un servicio puede no tener precio fijo; el cliente pide turno y el
-precio se define después. Queda por resolver de dónde sale la duración de un servicio sin precio, porque
-el motor de disponibilidad la necesita para ocupar el intervalo.
+precio se define después. Su duración sale del servicio, como la de cualquier otro (F4: todo servicio
+tiene precio base y duración); el turno a cotizar no reserva horario hasta que el cliente acepta.
+
+**Reglas horarias por servicio** (relevamiento 2026-11-10). En Sola cada servicio trae su regla: una grilla
+de mañana y tarde con **último inicio propio por servicio** (los que duran más arrancan antes), días
+permitidos distintos (el camión solo viernes y sábado) y servicios que **no se reservan en el turnero**
+sino solo a mano (motor, Full, service, tapizado: se cotizan y los agenda el dueño). En la app esto es
+**configuración genérica de cada servicio** — días habilitados, ventanas, último inicio y la bandera
+"solo a mano" —; nunca "camión" ni nombres de servicio en el código.
+
+**Bloqueos y disponibilidad especial.** El dueño cierra un día o una franja con motivo (mantenimiento,
+feriado) y abre horarios fuera de la grilla habitual (en Sola, `BLOQUEOS` y `DISPONIBILIDAD_SEMANAL`).
+Un bloqueo ocupa como un turno: el motor de disponibilidad lo resta igual.
+
+**Anticipación mínima: 5 minutos** (`tenant_settings.min_advance_min`, editable). El 15 que figura en
+textos de ayuda de la planilla está desactualizado.
+
+**Lista de espera con aprobación manual.** Un cliente con **2 o más incidencias en 90 días** no reserva
+directo: su pedido queda en revisión, **sin cobrar seña ni bloquear el horario**, y el dueño lo aprueba o
+lo rechaza. Cuenta como incidencia: una cancelación `TARDIA` o `POSTERIOR`, un `CANCELADO_DEMORA`
+(llegó tarde o no vino) y la marca manual del dueño en la ficha del cliente. Sin datos reales que la
+respalden (`LISTA_ESPERA` está vacía): reglas solo del código.
 
 **Lo difícil de esta fase es la disponibilidad**, no la UI. El motor de slots parte de los horarios del
-negocio, resta las ocupaciones vigentes por recurso y proyecta los huecos donde entra la duración del
-servicio elegido — que no es constante: 60, 90, 120 o 300 minutos. Un lavadero con 3 puestos ofrece 3
-reservas simultáneas; uno con 1 puesto, una.
+negocio y de la regla del servicio, resta las ocupaciones vigentes por recurso y los bloqueos, y proyecta
+los huecos donde entra la duración del servicio elegido, que define cada servicio. Un lavadero con 3
+puestos ofrece 3 reservas simultáneas; uno con 1 puesto, una.
 
 Dos clientes reservando franjas que se solapan al mismo tiempo es la condición de carrera central, y se
 resuelve **en la base** con la restricción de exclusión `EXCLUDE USING gist` definida en la Fase 3, nunca
@@ -339,7 +369,8 @@ que Véktor no contempla porque nunca la necesitó.
 La granularidad de presentación (mostrar horarios cada 30 min) es una decisión de UI sobre un modelo
 continuo, no una discretización del modelo de datos.
 
-Señas: se calcula el monto según el % configurado y se registra el estado. **La pasarela de pago
+Señas: se calcula el monto con el % propio del servicio o, si no tiene, con el general, y se registra el
+estado. **La pasarela de pago
 (Mercado Pago) queda fuera de esta entrega** — la seña se marca como pagada/pendiente manualmente. Modelar
 `payments` desde ahora pensando en la integración evita el refactor de la Fase 9 del plan original.
 
@@ -347,10 +378,12 @@ Señas: se calcula el monto según el % configurado y se registra el estado. **L
 | T | Agente | Dueño de |
 |---|---|---|
 | T1 | Contrato-turnero | algoritmo de disponibilidad documentado + casos borde |
-| T2 | Backend-disponibilidad ‖ Frontend-público ‖ Tester-concurrencia | motor de slots sobre intervalos ‖ `app/(public)/[slug]/` ‖ reservas solapadas simultáneas, servicios de distinta duración, 1 vs N puestos |
-| T3 | Tester-aislamiento ‖ Revisor-adversarial | el turnero es **público**: superficie de abuso (rate limit, enumeración de slugs, spam de reservas) | |
+| T2 | Backend-disponibilidad ‖ Frontend-público ‖ Tester-concurrencia | motor de slots sobre intervalos, reglas por servicio, bloqueos, lista de espera ‖ `app/(public)/[slug]/` ‖ reservas solapadas simultáneas, servicios de distinta duración, 1 vs N puestos, reglas de días y último inicio con reloj congelado |
+| T3 | Tester-aislamiento ‖ Revisor-adversarial | el turnero es **público**: superficie de abuso (rate limit, enumeración de slugs, spam de reservas, cancelar un turno ajeno) | |
 
-**Checkpoint:** reservás desde el celular en la URL pública real y el turno aparece en la base.
+**Checkpoint:** reservás desde el celular en la URL pública real y el turno aparece en la base; un servicio
+de viernes y sábado no ofrece horarios un martes; uno "solo a mano" no aparece; un día bloqueado no ofrece
+nada; un cliente con 2 incidencias queda en lista de espera sin seña.
 
 ---
 
@@ -361,7 +394,12 @@ Señas: se calcula el monto según el % configurado y se registra el estado. **L
 KPI de producto, medido en test: **menos de 10 segundos para registrar una acción operativa.**
 `LLEGÓ` = 1 toque · `INICIAR` = 1 toque · `FINALIZAR` = 1 toque · `COBRAR` = 2 toques.
 
-Alcance: vista de agenda diaria con estados · pantalla operativa de botones grandes · recepción completa
+Alcance: vista de agenda diaria con estados · **agenda interna del dueño**: turnos que carga él para los
+servicios "solo a mano" de F5 (en Sola, los `INT-` de lunes a jueves), con seña y estado de pago ·
+**carga retrospectiva**: registrar un trabajo ya hecho con cliente, vehículo, servicio, inicio, fin y si
+quedó cobrado o pendiente (en Sola ~1 de cada 10 ingresos se carga así). Los eventos llevan la hora
+real del trabajo en `occurred_at` y quedan marcados como carga manual, para no confundirlos con toques en
+vivo · pantalla operativa de botones grandes · recepción completa
 (la de la Fase 1: suciedad, daños, objetos, fotos, adicionales) como **camino opcional y secundario** —
 el Sheet ya aprendió eso y lo dice explícitamente: *"el flujo normal es RECEPCION → Guardar ingreso →
 Marcar inicio; no hace falta completar estas verificaciones"* · la regla de `CANCELADO_DEMORA` a los 20 min.
@@ -382,7 +420,8 @@ Marcar inicio; no hace falta completar estas verificaciones"* · la regla de `CA
 
 **Checkpoint:** en el celular, con modo avión activado, registrás un lavado completo; al volver la señal
 aparece en la base **una sola vez**, y la línea de tiempo de `job_events` muestra los cuatro toques con la
-hora real en que los hiciste, no la hora en que se sincronizaron.
+hora real en que los hiciste, no la hora en que se sincronizaron. Además, cargás un lavado de ayer
+con su hora real y aparece en la agenda de ayer, no en la de hoy.
 
 ---
 
@@ -393,6 +432,12 @@ hora real en que los hiciste, no la hora en que se sincronizaron.
 Caja: registrar seña, saldo, medio de pago (efectivo, transferencia, tarjeta, Mercado Pago, pendiente),
 comisión del medio como costo interno, cobro parcial y posterior. Cálculo de facturado / cobrado /
 pendiente / caja del día.
+
+**Propinas** (relevamiento 2026-11-10; en Sola, 4 de cada ~90 cobros). Se registran con **su propio medio
+de pago**, que puede no ser el del servicio, y "cobrar y entregar" es un solo paso. La propina **no suma al
+total del servicio** (no cambia lo facturado ni el saldo) pero **sí entra a la caja** y paga la comisión de
+su medio. Va a una **bolsa común** del período, que el dueño reparte a mano (en F7B queda como pago a
+empleados); no se asigna al que hizo el trabajo.
 
 CRM: ficha de cliente con sus vehículos y su historial (cantidad de lavados, facturado, última visita).
 Búsqueda por patente y por teléfono — es como el operario realmente busca.
@@ -407,7 +452,8 @@ Fuera de la entrega por completo: comisiones automáticas, liquidaciones y analy
 | T2 | Backend-pagos ‖ Frontend-caja ‖ Frontend-CRM | ‖ ‖ |
 | T3 | Tester-contable ‖ Revisor-adversarial | cuadratura con datos generados ‖ redondeo, concurrencia, anulaciones | |
 
-**Checkpoint:** cargás un día completo de lavados y el total de caja coincide con la suma manual.
+**Checkpoint:** cargás un día completo de lavados, uno con propina por transferencia y el servicio en
+efectivo, y el total de caja, lo facturado y la bolsa de propinas coinciden con la suma manual.
 
 ---
 
@@ -448,6 +494,47 @@ ocurre desde la Fase 6, así que la materia prima para automatizarlo en v2 se ac
 
 **Checkpoint:** cargás una semana real de gastos y un pago a un empleado, y el resultado operativo coincide
 con tu cálculo a mano.
+
+---
+
+## Fase 7C — Fidelidad y avisos por WhatsApp
+
+**Por qué está en la primera entrega:** decisión del dueño (2026-11-10). Sola ya opera con tarjeta de
+sellos (44 tarjetas, 3 lavados de regalo al relevar) y es de lo primero que pregunta un cliente; un
+negocio beta que la use tendría que salir de la app para seguirla.
+
+**Fidelidad:**
+- Una **tarjeta por cliente** (por `customer_id`, nunca por teléfono: ver la trampa de identidad del
+  legacy), con **ciclos**: N lavados cobrados dan el siguiente de regalo. **Configurable por negocio**:
+  N (Sola: 4 + 1), qué servicios cuentan y **en cuántos días vence** una tarjeta.
+- El lavado de regalo es un cobro de **$0 que no suma sello**; un servicio marcado como excluido no cuenta.
+- Se deriva de los jobs cobrados (append-only, como `job_events`), no se reconstruye borrando y
+  recalculando (la trampa de `CLIENTES`). Anular un cobro descuenta su sello.
+- La tarjeta se ve como imagen y se manda por WhatsApp.
+
+**Avisos salientes por WhatsApp (Cloud API de Meta):**
+- **Un número por negocio:** cada negocio conecta su número y aprueba sus plantillas en Meta. Las
+  credenciales van por tenant, cifradas, nunca en logs ni en Sentry.
+- Plantillas aprobadas (tarjeta, premio); registro en `notification_log` con estado por intento.
+- **Idempotencia por (cliente, ciclo, plantilla):** un premio se avisa una vez.
+- **Reintentos con tope y espera creciente.** La trampa del legacy: el disparador de cada 30 minutos
+  reintentó la misma plantilla sin límite (383 errores contra 1 envío bueno en `AVISOS_LOG`). Después
+  del tope, el aviso queda en error visible para el dueño, que puede reenviarlo a mano.
+- **Consentimiento** del cliente para recibir WhatsApp, guardado con fecha. Sin consentimiento no sale
+  nada; el enlace manual a WhatsApp (abrir el chat) sigue disponible.
+- El alta en Meta y la aprobación de plantillas llevan días: se arrancan con el negocio beta mientras
+  corren F7 y F7B.
+
+**Equipo:**
+| T | Agente | Dueño de |
+|---|---|---|
+| T1 | Contrato-fidelidad | ciclos, canje, vencimiento y anulación; máquina de estados del aviso |
+| T2 | Backend-fidelidad ‖ Backend-avisos ‖ Frontend-fidelidad | sellos y tarjeta ‖ cliente de la API de Meta, cola con tope y backoff ‖ ficha del cliente, configuración |
+| T3 | Tester-aislamiento ‖ Revisor-adversarial | credenciales de Meta de un tenant nunca visibles a otro ‖ doble aviso, reintento infinito, anulaciones | |
+
+**Checkpoint:** un cliente con 4 lavados cobrados recibe por WhatsApp la tarjeta con el premio una sola
+vez; el 5.º se cobra $0 y no suma sello; con la API de Meta caída, el aviso se reintenta hasta el tope y
+queda en error visible, sin seguir intentando.
 
 ---
 
@@ -550,6 +637,7 @@ marcados `postgres` en secuencial (`-n 0`) — las dos lecciones caras heredadas
 - F6: **lavado completo en modo avión**, sincronizado sin duplicar.
 - F7: día completo cargado, caja cuadrada contra suma manual.
 - F7B: semana de gastos + un pago a empleado; resultado operativo coincide con tu cálculo a mano.
+- F7C: premio de fidelidad avisado por WhatsApp una sola vez; con Meta caída, reintentos hasta el tope.
 - F8: reporte de reconciliación en cero diferencias + una semana de operación real.
 - F9: stock, caja y saldo con proveedor cuadrados contra la cuenta a mano.
 
@@ -564,18 +652,20 @@ marcados `postgres` en secuencial (`-n 0`) — las dos lecciones caras heredadas
 
 ## Archivos y rutas clave
 
-- **Proyecto nuevo:** `/Users/fabriziosola/carwash.app/` (vacío hoy) → `backend/`, `frontend/`, `docs/`.
+- **Proyecto:** `~/carwash-app/carwash-app/` → `backend/`, `frontend/`, `docs/`.
 - **Fuente de infraestructura:** `~/dev/vektor/Vektor/backend/` y `~/dev/vektor/Vektor/frontend/`
   (referencia de solo lectura — **nunca se modifica**).
-- **Fuente de dominio:** Sheet `«ID-PRIVADO»` (+ `.gs` exportados a
-  `docs/legacy/appsscript/` si los conseguís).
+- **Fuente de dominio:** Sheet `«ID-PRIVADO»`. Código del turnero copiado de las celdas
+  `TURNERO_PUBLICO!B14..B37` (export del 2026-11-10) a `docs/legacy/appsscript/turnero_publico/`
+  (local, no versionado); el código desplegado no coincide del todo y falta exportarlo.
 - **Spec generada:** `docs/spec/01..04`, decisiones en `docs/adr/`.
 
 ## Lo que este plan deja explícitamente afuera
 
 Comisiones automáticas y liquidaciones · analytics de empleados (productividad, tiempos promedio) ·
-dashboard avanzado (ticket promedio, recurrencia, márgenes por servicio) · Mercado Pago ·
-WhatsApp Cloud API · fotos antes/después · multi-sucursal · planes y facturación del SaaS · app nativa.
+dashboard avanzado (ticket promedio, recurrencia, márgenes por servicio) · analítica de horarios pico
+por vehículo y servicio · Mercado Pago · TyC versionados con comprobante PDF por email ·
+fotos antes/después · multi-sucursal · planes y facturación del SaaS · app nativa.
 
 Todo eso entra en v2 **guiado por el uso real de Sola CleanCars y del segundo lavadero**, no por supuestos.
 El modelo de datos se deja preparado para que ninguno requiera una migración destructiva: `resources` ya
