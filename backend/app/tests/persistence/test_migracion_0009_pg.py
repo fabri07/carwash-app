@@ -127,7 +127,7 @@ async def test_marca_solo_a_los_que_cumplen(pg_admin_engine, pg_clean):
         )
 
         _alembic("upgrade", "head")
-        assert await _version(pg_admin_engine) == head_de_alembic() == ESTA
+        assert await _version(pg_admin_engine) == head_de_alembic()
 
         marcada = await _completado(pg_admin_engine, completo)
         assert marcada is not None

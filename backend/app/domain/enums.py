@@ -27,6 +27,8 @@ DEPOSIT_STATUS_ENUM = "deposit_status"
 PAYMENT_KIND_ENUM = "payment_kind"
 CASH_DIRECTION_ENUM = "cash_direction"
 CASH_MOVEMENT_KIND_ENUM = "cash_movement_kind"
+#: F5 (FASE-5-CONTRATO §3.1). Lo crea la migración 0010, no la 0003.
+SERVICE_BOOKING_MODE_ENUM = "service_booking_mode"
 
 
 class PricingMode(StrEnum):
@@ -34,6 +36,15 @@ class PricingMode(StrEnum):
 
     PRECIO_FIJO = "PRECIO_FIJO"
     A_COTIZAR = "A_COTIZAR"
+
+
+class ServiceBookingMode(StrEnum):
+    """FASE-5-CONTRATO §3.1: `SOLO_A_MANO` no se ofrece ni se acepta en el turnero (lo agenda el
+    negocio). Un servicio `A_COTIZAR` se muestra en el turnero pero no se reserva (D5-5),
+    independientemente de este modo."""
+
+    TURNERO = "TURNERO"
+    SOLO_A_MANO = "SOLO_A_MANO"
 
 
 class Channel(StrEnum):
@@ -65,7 +76,7 @@ class BookingSource(StrEnum):
 
 
 class BookingStatus(StrEnum):
-    """§2.1. Los cuatro primeros bloquean el intervalo del puesto."""
+    """§2.1. Los que bloquean el intervalo del puesto: `BLOCKING_BOOKING_STATUSES`."""
 
     PENDIENTE_SENA = "PENDIENTE_SEÑA"
     PENDIENTE_COTIZACION = "PENDIENTE_COTIZACION"
@@ -78,6 +89,10 @@ class BookingStatus(StrEnum):
     CANCELADO_OPERATIVO = "CANCELADO_OPERATIVO"
     CANCELADO_DEMORA = "CANCELADO_DEMORA"
     NO_ASISTIO = "NO_ASISTIO"
+    #: F5 (FASE-5-CONTRATO §3.5, D5-9): lista de espera. No ocupa el puesto ni tiene hold. Van al
+    #: final, en el orden en que la migración 0010 los agrega al tipo (`ADD VALUE` los apila).
+    PENDIENTE_REVISION = "PENDIENTE_REVISION"
+    RECHAZADO = "RECHAZADO"
 
 
 class JobStatus(StrEnum):

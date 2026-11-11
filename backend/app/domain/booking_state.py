@@ -23,9 +23,10 @@ BLOCKING_BOOKING_STATUSES: frozenset[BookingStatus] = frozenset(
 )
 
 #: Desde donde el cliente o el negocio pueden cancelar. **[corregir] R-T-036**: ni desde
-#: `VENCIDO` ni desde estados cerrados; el negocio tampoco desde `RECIBIDO`.
+#: `VENCIDO` ni desde estados cerrados; el negocio tampoco desde `RECIBIDO`. F5 (§3.5) suma
+#: `PENDIENTE_REVISION`: el cliente en lista de espera también puede bajarse.
 _ACTIVE: frozenset[BookingStatus | None] = frozenset(
-    {_S.PENDIENTE_SENA, _S.PENDIENTE_COTIZACION, _S.CONFIRMADO}
+    {_S.PENDIENTE_SENA, _S.PENDIENTE_COTIZACION, _S.CONFIRMADO, _S.PENDIENTE_REVISION}
 )
 
 
@@ -47,6 +48,12 @@ class BookingAction(StrEnum):
     RECEIVE = "RECEIVE"  # llega el auto: el job emite JOB_RECEIVED
     JOB_FINISHED = "JOB_FINISHED"  # el job pasa a FINALIZADO (misma transacción)
     JOB_CANCELLED_DELAY = "JOB_CANCELLED_DELAY"  # el job pasa a CANCELADO_DEMORA
+    # F5 (FASE-5-CONTRATO §3.5, D5-9): lista de espera.
+    CREATE_FOR_REVIEW = "CREATE_FOR_REVIEW"  # alta de un cliente con ≥ 2 incidencias
+    APPROVE_REVIEW_WITH_DEPOSIT = "APPROVE_REVIEW_WITH_DEPOSIT"  # aprobado, pide seña (hold nuevo)
+    APPROVE_REVIEW_CONFIRMED = "APPROVE_REVIEW_CONFIRMED"  # aprobado, sin seña
+    REJECT_REVIEW = "REJECT_REVIEW"  # el negocio lo rechaza
+    EXPIRE_REVIEW = "EXPIRE_REVIEW"  # pasó `start_at` sin decisión
 
 
 _A = BookingAction
@@ -73,6 +80,13 @@ BOOKING_TRANSITIONS = freeze(
         _A.RECEIVE: Transition(frozenset({_S.CONFIRMADO, _S.PENDIENTE_SENA}), _S.RECIBIDO),
         _A.JOB_FINISHED: Transition(frozenset({_S.RECIBIDO}), _S.ATENDIDO),
         _A.JOB_CANCELLED_DELAY: Transition(frozenset({_S.RECIBIDO}), _S.CANCELADO_DEMORA),
+        _A.CREATE_FOR_REVIEW: Transition(frozenset({None}), _S.PENDIENTE_REVISION),
+        _A.APPROVE_REVIEW_WITH_DEPOSIT: Transition(
+            frozenset({_S.PENDIENTE_REVISION}), _S.PENDIENTE_SENA
+        ),
+        _A.APPROVE_REVIEW_CONFIRMED: Transition(frozenset({_S.PENDIENTE_REVISION}), _S.CONFIRMADO),
+        _A.REJECT_REVIEW: Transition(frozenset({_S.PENDIENTE_REVISION}), _S.RECHAZADO),
+        _A.EXPIRE_REVIEW: Transition(frozenset({_S.PENDIENTE_REVISION}), _S.VENCIDO),
     }
 )
 

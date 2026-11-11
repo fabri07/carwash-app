@@ -5,6 +5,7 @@ tests (el filtro es gratis y no se saca).
 """
 
 import uuid
+from collections.abc import Collection
 
 from sqlalchemy import select
 
@@ -15,6 +16,7 @@ from app.persistence.models.catalog import (
     Service,
     ServiceCategory,
     ServicePrice,
+    ServiceScheduleRule,
     VehicleSize,
 )
 from app.persistence.repositories.base import BaseRepository, one_or_none
@@ -75,3 +77,28 @@ class PaymentMethodRepository(BaseRepository[PaymentMethod]):
             self._session,
             select(PaymentMethod).where(PaymentMethod.code == code, *self._scope(tenant_id, False)),
         )
+
+
+class ServiceScheduleRuleRepository(BaseRepository[ServiceScheduleRule]):
+    model = ServiceScheduleRule
+
+    async def list_for_services(
+        self, service_ids: Collection[uuid.UUID], tenant_id: uuid.UUID
+    ) -> list[ServiceScheduleRule]:
+        """Reglas vivas de esos servicios, por día y hora (FASE-5-CONTRATO §3.2)."""
+        if not service_ids:
+            return []
+        result = await self._session.scalars(
+            select(ServiceScheduleRule)
+            .where(
+                ServiceScheduleRule.service_id.in_(tuple(service_ids)),
+                *self._scope(tenant_id, False),
+            )
+            .order_by(
+                ServiceScheduleRule.weekday,
+                ServiceScheduleRule.window_start,
+                ServiceScheduleRule.last_start,
+                ServiceScheduleRule.id,
+            )
+        )
+        return list(result.all())
