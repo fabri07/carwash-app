@@ -1,6 +1,11 @@
 import axios from "axios";
 
-import type { ApiError, ApiErrorCode } from "@/types/api";
+import type {
+  ApiError,
+  ApiErrorCode,
+  OnboardingIncomplete,
+  OnboardingMissingItem,
+} from "@/types/api";
 
 /** Código de error del envelope único (`{detail: {code}}`), si vino. */
 export function apiErrorCode(e: unknown): ApiErrorCode | undefined {
@@ -57,7 +62,7 @@ export function authErrorMessage(e: unknown, context: "login" | "register"): str
 }
 
 /** Mensaje genérico por estado, para cuando el código no tiene uno propio. */
-function genericMessage(e: unknown): string {
+export function genericMessage(e: unknown): string {
   if (!axios.isAxiosError(e)) return "Ocurrió un error inesperado. Probá de nuevo.";
   if (!e.response) return "No hay conexión con el servidor. Revisá tu internet y probá de nuevo.";
   const { status } = e.response;
@@ -225,4 +230,14 @@ export function safeNextPath(next: string | null | undefined, fallback = "/dashb
   }
   if (url.origin !== origin) return fallback;
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
+ * Faltantes del 409 `ONBOARDING_INCOMPLETE` de `POST /onboarding/complete` (§6): el envelope de
+ * siempre más `detail.missing`. `null` si el error es otro.
+ */
+export function onboardingMissing(e: unknown): OnboardingMissingItem[] | null {
+  if (apiErrorCode(e) !== "ONBOARDING_INCOMPLETE" || !axios.isAxiosError(e)) return null;
+  const detail = (e.response?.data as Partial<OnboardingIncomplete> | undefined)?.detail;
+  return Array.isArray(detail?.missing) ? detail.missing : [];
 }

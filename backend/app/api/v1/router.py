@@ -6,6 +6,7 @@ from app.api.v1 import (
     auth,
     branding,
     catalog,
+    onboarding,
     permission_profiles,
     services,
     settings,
@@ -36,3 +37,4 @@ api_router.include_router(
     vehicles_catalog.body_type_sizes, prefix="/body-type-sizes", tags=["Vehículos"]
 )
 api_router.include_router(branding.router, prefix="/branding", tags=["Personalización"])
+api_router.include_router(onboarding.router, prefix="/onboarding", tags=["Alta"])

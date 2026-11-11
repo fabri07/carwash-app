@@ -14,13 +14,19 @@ import { depositSchema, type DepositInput } from "@/validation/settings";
 interface DepositFormProps {
   settings: BusinessSettings;
   onSubmit: (values: DepositInput) => Promise<void>;
+  /** Texto del botón (el wizard de alta lo cambia por "Guardar y seguir"). */
+  submitLabel?: string;
 }
 
 /**
  * Seña global y reglas de las reservas (D4-4). El porcentaje de seña cambia solo las
  * reservas futuras: cada turno guarda el que regía cuando se hizo.
  */
-export function DepositForm({ settings, onSubmit }: DepositFormProps) {
+export function DepositForm({
+  settings,
+  onSubmit,
+  submitLabel = "Guardar cambios",
+}: DepositFormProps) {
   const form = useForm<DepositInput>({
     resolver: zodResolver(depositSchema),
     defaultValues: {
@@ -91,7 +97,7 @@ export function DepositForm({ settings, onSubmit }: DepositFormProps) {
           </p>
         )}
         <Button type="submit" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? "Guardando…" : "Guardar cambios"}
+          {form.formState.isSubmitting ? "Guardando…" : submitLabel}
         </Button>
       </form>
     </Form>

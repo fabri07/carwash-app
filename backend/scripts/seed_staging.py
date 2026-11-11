@@ -66,6 +66,10 @@ from app.application.services import (  # noqa: E402
     QuoteService,
     VehicleService,
 )
+from app.application.services.onboarding_service import (  # noqa: E402
+    OnboardingIncompleteError,
+    OnboardingService,
+)
 from app.application.services.service_catalog_service import (  # noqa: E402
     ServiceCatalogService,
 )
@@ -174,6 +178,8 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
             _p(f"{spec['name']}: dominio sembrado")
         if Role.OWNER in por_rol and await _seed_vehicles(session, existing, por_rol[Role.OWNER]):
             _p(f"{spec['name']}: catálogo de vehículos completado")
+        if Role.OWNER in por_rol:
+            await _seed_onboarding(session, existing, por_rol[Role.OWNER], str(spec["name"]))
         return
 
     # El mismo camino que el registro: tenant, OWNER y perfiles por defecto.
@@ -197,7 +203,21 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
     await session.flush()
     await _seed_domain(session, tenant.id, provisioned.owner.id, staff.id)
     await _seed_vehicles(session, tenant.id, provisioned.owner.id)
+    await _seed_onboarding(session, tenant.id, provisioned.owner.id, str(spec["name"]))
     _p(f"{spec['name']}: creado (2 usuarios, 3 perfiles, dominio sembrado)")
+
+
+async def _seed_onboarding(
+    session: AsyncSession, tenant_id: uuid.UUID, owner_id: uuid.UUID, name: str
+) -> None:
+    """Deja el alta terminada (PR 4.6): el catálogo del seed cumple los requisitos de §6 (tamaños,
+    servicios con precio para cada uno, puestos, franjas y un medio de cobro). Idempotente: con el
+    alta ya terminada no cambia la fecha. Si algún día el seed dejara de cumplir, lo dice y sigue:
+    el dueño de prueba pasaría por el wizard."""
+    try:
+        await OnboardingService(session, tenant_id, owner_id).complete()
+    except OnboardingIncompleteError as exc:
+        _p(f"{name}: alta sin terminar ({exc})")
 
 
 #: Qué tamaño del seed sugiere cada carrocería (PR 4.4); el resto queda sin sugerencia.

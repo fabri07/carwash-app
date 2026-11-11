@@ -89,6 +89,16 @@ class ServiceView:
 
 
 @dataclass(frozen=True)
+class PriceCoverage:
+    """Cobertura de precios de todo el catálogo vivo (la usa el alta, FASE-4-CONTRATO §6)."""
+
+    size_ids: tuple[uuid.UUID, ...]
+    service_ids: tuple[uuid.UUID, ...]
+    #: Servicios con algún `missing_price_size_ids`: la misma regla que `ServiceView`.
+    unpriced_service_ids: tuple[uuid.UUID, ...]
+
+
+@dataclass(frozen=True)
 class ServiceIndex:
     """Los servicios vivos del negocio, por `glossary_code` y por `search_key` (nombre)."""
 
@@ -175,6 +185,28 @@ class ServiceCatalogService(CatalogService):
         for price in rows:
             grouped[price.service_id].append(price)
         return grouped
+
+    async def price_coverage(self) -> PriceCoverage:
+        """Tamaños y servicios vivos, y qué servicios no tienen precio para algún tamaño vivo.
+
+        Tres consultas: tamaños, servicios y precios, con los mismos `_live_sizes`,
+        `_prices_by_service` y `_missing_sizes` que arman `missing_price_size_ids`.
+        """
+        await self._enter()
+        live = await self._live_sizes()
+        ids = list(
+            await self._session.scalars(
+                select(Service.id)
+                .where(Service.tenant_id == self._tenant_id, Service.voided_at.is_(None))
+                .order_by(Service.name, Service.id)
+            )
+        )
+        prices = await self._prices_by_service(ids)
+        return PriceCoverage(
+            size_ids=tuple(live),
+            service_ids=tuple(ids),
+            unpriced_service_ids=tuple(i for i in ids if self._missing_sizes(live, prices[i])),
+        )
 
     async def _view(self, service: Service) -> ServiceView:
         prices = (await self._prices_by_service([service.id]))[service.id]

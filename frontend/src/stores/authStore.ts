@@ -15,7 +15,8 @@ import type { AuthResponse, PermissionCode, Tenant, User } from "@/types/api";
  * `permissions` y `mustChangePassword` (FASE-4-CONTRATO §2.3) se guardan en
  * memoria y NO se persisten: el backend los lee de la base en cada request y
  * pueden cambiar entre una visita y otra (el dueño edita el perfil). Llegan
- * frescos con cada `/auth/me`, que el shell pide al montar.
+ * frescos con cada `/auth/me`, que el shell pide al montar. `onboardingCompleted`
+ * (PR 4.6), igual: el dueño termina el alta y cambia sin que este navegador se entere.
  */
 interface AuthState {
   user: User | null;
@@ -24,6 +25,11 @@ interface AuthState {
   permissions: PermissionCode[];
   /** Mientras sea `true`, la única pantalla útil es `/cambiar-clave`. */
   mustChangePassword: boolean;
+  /**
+   * El negocio terminó el wizard de alta (FASE-4-CONTRATO §6). `null` hasta que llega una sesión
+   * del servidor: antes no se sabe, y no hay que redirigir ni avisar.
+   */
+  onboardingCompleted: boolean | null;
   /** `true` cuando ya llegó una sesión del servidor: antes, `permissions` vacío no significa "sin permisos". */
   permissionsLoaded: boolean;
   _hasHydrated: boolean;
@@ -32,6 +38,8 @@ interface AuthState {
   setHasHydrated: (state: boolean) => void;
   /** Lo marca un 403 `PASSWORD_CHANGE_REQUIRED` de cualquier request (`lib/api.ts`). */
   setMustChangePassword: (value: boolean) => void;
+  /** Lo marca el wizard al terminar el alta, sin esperar al próximo `/auth/me`. */
+  setOnboardingCompleted: (value: boolean) => void;
   /** Limpia el estado local. No habla con el backend: eso es `auth.service.logout`. */
   clear: () => void;
 }
@@ -55,20 +63,24 @@ export const useAuthStore = create<AuthState>()(
       tenant: null,
       permissions: [],
       mustChangePassword: false,
+      onboardingCompleted: null,
       permissionsLoaded: false,
       _hasHydrated: false,
-      setSession: ({ user, tenant, permissions, must_change_password }) => {
+      setSession: ({ user, tenant, permissions, must_change_password, onboarding_completed }) => {
         syncSentryContext(user);
         set({
           user,
           tenant,
           permissions,
           mustChangePassword: must_change_password,
+          // Una respuesta sin el campo (no debería) no se lee como "sin terminar".
+          onboardingCompleted: onboarding_completed ?? null,
           permissionsLoaded: true,
         });
       },
       setHasHydrated: (state) => set({ _hasHydrated: state }),
       setMustChangePassword: (value) => set({ mustChangePassword: value }),
+      setOnboardingCompleted: (value) => set({ onboardingCompleted: value }),
       clear: () => {
         syncSentryContext(null);
         set({
@@ -76,6 +88,7 @@ export const useAuthStore = create<AuthState>()(
           tenant: null,
           permissions: [],
           mustChangePassword: false,
+          onboardingCompleted: null,
           permissionsLoaded: false,
         });
       },

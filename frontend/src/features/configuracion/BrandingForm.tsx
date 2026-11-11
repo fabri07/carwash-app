@@ -16,6 +16,8 @@ interface BrandingFormProps {
   catalog: BrandCatalog;
   settings: BusinessSettings;
   onSubmit: (values: BrandingInput) => Promise<void>;
+  /** Texto del botón (el wizard de alta lo cambia por "Guardar y seguir"). */
+  submitLabel?: string;
 }
 
 /** Tres círculos: fondo, primario y secundario de la paleta. */
@@ -38,7 +40,12 @@ export function PaletteSwatches({ palette }: { palette: BrandPalette }) {
  * así el texto sobre los botones siempre se lee. La vista previa muestra cómo queda antes de
  * guardar; al guardar se repinta toda la app.
  */
-export function BrandingForm({ catalog, settings, onSubmit }: BrandingFormProps) {
+export function BrandingForm({
+  catalog,
+  settings,
+  onSubmit,
+  submitLabel = "Guardar personalización",
+}: BrandingFormProps) {
   const form = useForm<BrandingInput>({
     resolver: zodResolver(brandingSchema),
     defaultValues: { palette: settings.palette, font: settings.font },
@@ -134,7 +141,7 @@ export function BrandingForm({ catalog, settings, onSubmit }: BrandingFormProps)
           </p>
         )}
         <Button type="submit" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? "Guardando…" : "Guardar personalización"}
+          {form.formState.isSubmitting ? "Guardando…" : submitLabel}
         </Button>
       </form>
     </Form>

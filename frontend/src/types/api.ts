@@ -96,6 +96,15 @@ export type BrandFont = Schemas["FontOut"];
 export type BrandSuggestion = Schemas["PaletteSuggestion"];
 export type LogoUpload = Schemas["LogoResponse"];
 
+// Wizard de alta (PR 4.6): estado por paso, faltantes y el 409 de `/onboarding/complete`.
+export type OnboardingStatus = Schemas["OnboardingStatusResponse"];
+/** `OnboardingStep` es el nombre del schema. */
+export type OnboardingStepCode = Schemas["OnboardingStep"];
+/** `OnboardingRequirement` es el nombre del schema. */
+export type OnboardingRequirementCode = Schemas["OnboardingRequirement"];
+export type OnboardingMissingItem = Schemas["OnboardingMissing"];
+export type OnboardingIncomplete = Schemas["OnboardingIncompleteResponse"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];

@@ -13,10 +13,16 @@ import { businessSchema, type BusinessInput } from "@/validation/settings";
 interface BusinessFormProps {
   settings: BusinessSettings;
   onSubmit: (values: BusinessInput) => Promise<void>;
+  /** Texto del botón (el wizard de alta lo cambia por "Guardar y seguir"). */
+  submitLabel?: string;
 }
 
 /** Datos del negocio: la dirección pública, cómo contactarlo y lo que ve el cliente al reservar. */
-export function BusinessForm({ settings, onSubmit }: BusinessFormProps) {
+export function BusinessForm({
+  settings,
+  onSubmit,
+  submitLabel = "Guardar cambios",
+}: BusinessFormProps) {
   const form = useForm<BusinessInput>({
     resolver: zodResolver(businessSchema),
     defaultValues: {
@@ -73,7 +79,7 @@ export function BusinessForm({ settings, onSubmit }: BusinessFormProps) {
           </p>
         )}
         <Button type="submit" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? "Guardando…" : "Guardar cambios"}
+          {form.formState.isSubmitting ? "Guardando…" : submitLabel}
         </Button>
       </form>
     </Form>

@@ -263,6 +263,40 @@ export interface paths {
         patch: operations["update_business_hours_v1_business_hours__id__patch"];
         trace?: never;
     };
+    "/v1/onboarding/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete */
+        post: operations["complete_v1_onboarding_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/onboarding/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_v1_onboarding_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/payment-methods": {
         parameters: {
             query?: never;
@@ -864,7 +898,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
+        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             code: components["schemas"]["ErrorCode"];
@@ -940,6 +974,67 @@ export interface components {
             permissions: components["schemas"]["Permission"][];
             tenant: components["schemas"]["TenantResponse"];
             user: components["schemas"]["UserResponse"];
+        };
+        /** OnboardingIncompleteDetail */
+        OnboardingIncompleteDetail: {
+            /**
+             * Code
+             * @constant
+             */
+            code: "ONBOARDING_INCOMPLETE";
+            /** Message */
+            message: string;
+            /** Missing */
+            missing: components["schemas"]["OnboardingMissing"][];
+        };
+        /**
+         * OnboardingIncompleteResponse
+         * @description El 409 de `POST /onboarding/complete`: el envelope de siempre con la lista de faltantes.
+         */
+        OnboardingIncompleteResponse: {
+            detail: components["schemas"]["OnboardingIncompleteDetail"];
+        };
+        /** OnboardingMissing */
+        OnboardingMissing: {
+            requirement: components["schemas"]["OnboardingRequirement"];
+            /**
+             * Service Ids
+             * @default []
+             */
+            service_ids: string[];
+            step: components["schemas"]["OnboardingStep"];
+        };
+        /**
+         * OnboardingRequirement
+         * @description Lo que exige `POST /onboarding/complete` (§6). Cada uno se resuelve en un paso.
+         * @enum {string}
+         */
+        OnboardingRequirement: "VEHICLE_SIZE" | "SERVICE" | "SERVICE_PRICES" | "RESOURCE" | "BUSINESS_HOURS" | "PAYMENT_METHOD";
+        /** OnboardingStatusResponse */
+        OnboardingStatusResponse: {
+            /** Completed */
+            completed: boolean;
+            /** Completed At */
+            completed_at: string | null;
+            /** Missing */
+            missing: components["schemas"]["OnboardingMissing"][];
+            resume_step: components["schemas"]["OnboardingStep"];
+            /** Steps */
+            steps: components["schemas"]["OnboardingStepStatus"][];
+        };
+        /**
+         * OnboardingStep
+         * @description Pasos del wizard, en el orden de §6.
+         * @enum {string}
+         */
+        OnboardingStep: "BUSINESS" | "BRANDING" | "SIZES" | "SERVICES" | "SCHEDULE" | "PAYMENTS" | "DEPOSIT" | "STAFF";
+        /** OnboardingStepStatus */
+        OnboardingStepStatus: {
+            /** Done */
+            done: boolean;
+            /** Required */
+            required: boolean;
+            step: components["schemas"]["OnboardingStep"];
         };
         /** PaginatedResponse[BodyTypeSizeResponse] */
         PaginatedResponse_BodyTypeSizeResponse_: {
@@ -2927,6 +3022,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_v1_onboarding_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStatusResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingIncompleteResponse"];
+                };
+            };
+        };
+    };
+    get_status_v1_onboarding_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStatusResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
