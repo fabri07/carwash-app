@@ -318,6 +318,8 @@ buscar "ceramico", "ppf" y "sacar rayas".
 
 ## Fase 5 — Turnero público y señas
 
+**Contrato:** `docs/adr/FASE-5-CONTRATO.md` (PRs 5.0–5.3).
+
 **Objetivo:** `app.com/solacleancars` funcionando. El cliente reserva sin instalar nada.
 
 Flujo: elegir vehículo → servicio → fecha → horario disponible → datos → reservar. Sin login del cliente.
@@ -330,9 +332,9 @@ plata de terceros y su devolución. La clasificación es una regla temporal — 
 La cancelación web la valida el número de turno **más** el WhatsApp con el que se reservó (como hoy en
 Sola). Una cancelación operativa (la decide el negocio) **no** cuenta como incidencia del cliente.
 
-**Y por D-006: servicios a cotizar.** Un servicio puede no tener precio fijo; el cliente pide turno y el
-precio se define después. Su duración sale del servicio, como la de cualquier otro (F4: todo servicio
-tiene precio base y duración); el turno a cotizar no reserva horario hasta que el cliente acepta.
+**Servicios a cotizar (D-006, acotado por D5-5).** El turnero los muestra con "desde $X" y un botón
+"Consultar por WhatsApp"; **no se reservan desde la web**. El dueño los agenda a mano (F6). Las pantallas de
+cotización (enviar precio, aceptar) sobre el `QuoteService` de F3/F4 quedan para una fase posterior.
 
 **Reglas horarias por servicio** (relevamiento 2026-11-10). En Sola cada servicio trae su regla: una grilla
 de mañana y tarde con **último inicio propio por servicio** (los que duran más arrancan antes), días
@@ -362,9 +364,8 @@ puestos ofrece 3 reservas simultáneas; uno con 1 puesto, una.
 Dos clientes reservando franjas que se solapan al mismo tiempo es la condición de carrera central, y se
 resuelve **en la base** con la restricción de exclusión `EXCLUDE USING gist` definida en la Fase 3, nunca
 con un `SELECT` previo de disponibilidad. Cuando salta, Postgres devuelve un `ExclusionViolation`;
-`_savepoint.py` de Véktor es la herramienta para atraparlo dentro de un SAVEPOINT sin abortar la transacción
-externa — hay que **extender su `unique_violation_classifier` para cubrir también la violación de exclusión**,
-que Véktor no contempla porque nunca la necesitó.
+`_savepoint.py` lo atrapa dentro de un SAVEPOINT sin abortar la transacción externa; el clasificador por
+nombre de constraint **ya cubre** la violación de exclusión desde la F3 (`SlotTakenError`).
 
 La granularidad de presentación (mostrar horarios cada 30 min) es una decisión de UI sobre un modelo
 continuo, no una discretización del modelo de datos.
