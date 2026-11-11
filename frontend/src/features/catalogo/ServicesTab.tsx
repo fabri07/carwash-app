@@ -17,7 +17,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { durationSummary, MODE_LABELS, priceSummary } from "@/features/catalogo/format";
+import {
+  depositLabel,
+  durationSummary,
+  MODE_LABELS,
+  priceSummary,
+} from "@/features/catalogo/format";
 import {
   catalogKeys,
   useAllCategories,
@@ -30,10 +35,12 @@ import { ServicePricesForm } from "@/features/catalogo/ServicePricesForm";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useCan } from "@/hooks/usePermission";
 import { apiErrorCode, FormSubmitError, serviceError } from "@/lib/errors";
+import { useSettings } from "@/features/configuracion/queries";
 import { servicesApi } from "@/services/catalog.service";
 import { toast } from "@/stores/toastStore";
 import type { Service } from "@/types/api";
 import {
+  toDepositBps,
   toPriceItems,
   type ServiceCreateInput,
   type ServiceEditInput,
@@ -76,6 +83,8 @@ export function ServicesTab() {
   const query = useServices(params);
   const categoriesQuery = useAllCategories();
   const sizesQuery = useAllVehicleSizes();
+  // Para avisar en la tabla si la seña está apagada (la lectura no pide permiso).
+  const depositEnabled = useSettings().data?.deposit_enabled;
   const categories = useMemo(() => categoriesQuery.data?.items ?? [], [categoriesQuery.data]);
   const sizes = useMemo(() => sizesQuery.data?.items ?? [], [sizesQuery.data]);
   const categoryName = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
@@ -132,6 +141,13 @@ export function ServicesTab() {
       cell: (s) => durationSummary(s),
       csvValue: (s) => durationSummary(s),
     },
+    {
+      key: "deposit",
+      header: "Seña",
+      cell: (s) => depositLabel(s, depositEnabled),
+      // Igual que en pantalla: con la seña del negocio apagada el CSV lo dice, no muestra un % que no se cobra.
+      csvValue: (s) => depositLabel(s, depositEnabled),
+    },
     { key: "notes", header: "Notas", defaultVisible: false },
   ];
 
@@ -149,6 +165,7 @@ export function ServicesTab() {
           pricing_mode: values.pricing_mode,
           notes: values.notes === "" ? null : values.notes,
           category_id: values.category_id === "" ? null : values.category_id,
+          deposit_bps: toDepositBps(values.deposit_percent),
           prices: toPriceItems(values.prices),
         },
         idempotencyKey,
@@ -180,9 +197,13 @@ export function ServicesTab() {
   }
 
   async function savePrices(item: Service, values: ServicePricesInput) {
+    const deposit = toDepositBps(values.deposit_percent);
     try {
       await servicesApi.replacePrices(item.id, {
         pricing_mode: values.pricing_mode,
+        // Solo si cambió: ausente no la toca en el servidor, así un formulario abierto con datos
+        // viejos no pisa la seña que otro acaba de fijar. Vacía (`null`) vuelve a la general.
+        ...(deposit !== item.deposit_bps && { deposit_bps: deposit }),
         prices: toPriceItems(values.prices),
       });
     } catch (e) {

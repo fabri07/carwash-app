@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { parsePercent } from "@/lib/percent";
+import { percentText } from "@/validation/percent";
 
 /**
  * Schemas del catálogo configurable (PR 4.2b): tamaños, puestos, franjas y medios
@@ -47,14 +47,7 @@ export const paymentMethodSchema = z
   .object({
     code,
     label,
-    commission_percent: z
-      .string()
-      .trim()
-      .refine((v) => parsePercent(v) !== null, "Poné un porcentaje, por ejemplo 3 o 1,5")
-      .refine((v) => {
-        const p = parsePercent(v);
-        return p === null || p <= 100;
-      }, "Entre 0 % y 100 %"),
+    commission_percent: percentText({ min: 0, example: "3 o 1,5" }),
     settlement_account: z.string().trim().max(60, "Máximo 60 caracteres"),
     for_income: z.boolean(),
     for_expense: z.boolean(),

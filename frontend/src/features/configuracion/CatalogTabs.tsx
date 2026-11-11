@@ -8,7 +8,7 @@ import { PaymentMethodForm } from "@/features/configuracion/PaymentMethodForm";
 import { ResourceForm } from "@/features/configuracion/ResourceForm";
 import { VehicleSizeForm } from "@/features/configuracion/VehicleSizeForm";
 import { hhmm } from "@/lib/time";
-import { bpsToPercent, formatPercent, parsePercent, percentToBps } from "@/lib/percent";
+import { bpsToPercent, formatPercent, inputToBps } from "@/lib/percent";
 import {
   businessHoursApi,
   paymentMethodsApi,
@@ -171,7 +171,7 @@ const methodColumns: SmartColumn<PaymentMethod>[] = [
 ];
 
 function commissionBps(input: string): number {
-  return percentToBps(parsePercent(input) ?? 0);
+  return inputToBps(input) ?? 0;
 }
 
 export function PaymentMethodsTab() {

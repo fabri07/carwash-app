@@ -4,7 +4,8 @@
   `CATALOGO_EDITAR`. **Precios** con `PRECIOS_EDITAR`: `PUT /services/{id}/prices` lo exige;
   `POST /services` y `DELETE /services/{id}` piden **los dos** permisos (§2.3): un servicio
   nace con precios y al anularlo se anulan también.
-  `PATCH /services/{id}` no acepta campos de precio.
+  `PATCH /services/{id}` no acepta campos de precio ni la seña propia (D4-17), que cambia lo que
+  paga el cliente: va por `POST` y `PUT .../prices`.
 - `GET /services/search?q=`: búsqueda tolerante (sin tildes, sinónimos del glosario, errores de
   tipeo, defectos). Autenticado.
 - `/templates`: solo el `OWNER`. `POST /templates/apply` es idempotente por `glossary_code` (no
@@ -80,6 +81,7 @@ def _to_response(view: ServiceView) -> ServiceResponse:
         notes=s.notes,
         category_id=s.category_id,
         glossary_code=s.glossary_code,
+        deposit_bps=s.deposit_bps,
         prices=[ServicePriceResponse.model_validate(p) for p in view.prices],
         missing_price_size_ids=view.missing_price_size_ids,
     )
@@ -214,6 +216,7 @@ async def create_service(
             [p.to_input() for p in body.prices],
             notes=body.notes,
             category_id=body.category_id,
+            deposit_bps=body.deposit_bps,
         ),
         _name_taken(),
     )
@@ -254,7 +257,11 @@ async def replace_service_prices(
     return _to_response(
         await guard(
             _service(session, user).replace_prices(
-                id, [p.to_input() for p in body.prices], pricing_mode=body.pricing_mode
+                id,
+                [p.to_input() for p in body.prices],
+                pricing_mode=body.pricing_mode,
+                deposit_bps=body.deposit_bps,
+                set_deposit="deposit_bps" in body.model_fields_set,
             )
         )
     )

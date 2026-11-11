@@ -4,8 +4,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Form } from "@/components/ui/form";
+import { OwnDepositField } from "@/features/catalogo/OwnDepositField";
 import { PriceFields } from "@/features/catalogo/PriceFields";
 import { DialogFormFooter } from "@/features/configuracion/fields";
+import { bpsToInput } from "@/lib/percent";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import type { Service, VehicleSize } from "@/types/api";
 import { servicePricesSchema, type ServicePricesInput } from "@/validation/services";
@@ -18,7 +20,7 @@ interface ServicePricesFormProps {
 }
 
 /**
- * Precios y modalidad de un servicio (`PRECIOS_EDITAR`). Siempre se mandan los de todos los tamaños
+ * Precios, modalidad y seña propia de un servicio (`PRECIOS_EDITAR`). Siempre se mandan los de todos los tamaños
  * vivos: los que faltan (un tamaño creado después) arrancan vacíos y hay que completarlos.
  */
 export function ServicePricesForm({ service, sizes, onSubmit, onCancel }: ServicePricesFormProps) {
@@ -26,6 +28,7 @@ export function ServicePricesForm({ service, sizes, onSubmit, onCancel }: Servic
     resolver: zodResolver(servicePricesSchema),
     defaultValues: {
       pricing_mode: service.pricing_mode,
+      deposit_percent: service.deposit_bps == null ? "" : bpsToInput(service.deposit_bps),
       prices: sizes.map((s) => {
         const current = service.prices.find((p) => p.vehicle_size_id === s.id);
         return {
@@ -40,6 +43,7 @@ export function ServicePricesForm({ service, sizes, onSubmit, onCancel }: Servic
   return (
     <Form {...form}>
       <form onSubmit={submit} noValidate className="space-y-4">
+        <OwnDepositField control={form.control} />
         <PriceFields sizes={sizes} />
         <DialogFormFooter
           formError={formError}

@@ -14,6 +14,11 @@ export function percentToBps(percent: number): number {
   return Math.round(percent * 100);
 }
 
+/** `1250` → `"12,5"`: el valor inicial de un campo de porcentaje (coma decimal, sin `%`). */
+export function bpsToInput(bps: number): string {
+  return String(bpsToPercent(bps)).replace(".", ",");
+}
+
 /** `1250` → `"12,5 %"`, `2000` → `"20 %"` (formato argentino). */
 export function formatPercent(bps: number): string {
   const text = bpsToPercent(bps).toLocaleString("es-AR", { maximumFractionDigits: 2 });
@@ -28,4 +33,10 @@ export function parsePercent(input: string): number | null {
   const text = input.trim().replace("%", "").trim();
   if (!/^\d{1,3}([.,]\d{1,2})?$/.test(text)) return null;
   return Number(text.replace(",", "."));
+}
+
+/** Lo que escribe el usuario → bps: `"12,5"` → `1250`; `null` si está vacío o no se puede leer. */
+export function inputToBps(input: string): number | null {
+  const percent = parsePercent(input);
+  return percent === null ? null : percentToBps(percent);
 }

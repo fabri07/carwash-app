@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { inputToBps } from "@/lib/percent";
+import { percentText } from "@/validation/percent";
 import type { ServicePriceItem } from "@/types/api";
 
 /**
@@ -78,11 +80,20 @@ const categoryId = z.string();
 
 const prices = z.array(priceRowSchema).min(1, "Primero cargá al menos un tamaño de vehículo");
 
+/** Seña propia del servicio (D4-17): `""` = usa la general del negocio. */
+const ownDeposit = percentText({ min: 0.01, example: "30 o 12,5", optional: true });
+
+/** `""` → `null` (usa la del negocio); `"30"` → `3000`. */
+export function toDepositBps(value: string): number | null {
+  return inputToBps(value);
+}
+
 export const serviceCreateSchema = z.object({
   name: searchableName(MAX_SERVICE_NAME),
   category_id: categoryId,
   notes,
   pricing_mode: pricingMode,
+  deposit_percent: ownDeposit,
   prices,
 });
 export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
@@ -95,7 +106,11 @@ export const serviceEditSchema = z.object({
 });
 export type ServiceEditInput = z.infer<typeof serviceEditSchema>;
 
-export const servicePricesSchema = z.object({ pricing_mode: pricingMode, prices });
+export const servicePricesSchema = z.object({
+  pricing_mode: pricingMode,
+  deposit_percent: ownDeposit,
+  prices,
+});
 export type ServicePricesInput = z.infer<typeof servicePricesSchema>;
 
 /** Una fila por servicio elegido de la plantilla; `name` es solo para mostrarlo. */

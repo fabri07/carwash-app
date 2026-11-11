@@ -1200,6 +1200,19 @@
             ],
             "title": "Category Id"
           },
+          "deposit_bps": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Bps"
+          },
           "name": {
             "maxLength": 80,
             "title": "Name",
@@ -1297,8 +1310,21 @@
         "type": "object"
       },
       "ServicePricesPut": {
-        "description": "Los precios de **todos** los tamaños vivos; `pricing_mode` opcional cambia la modalidad.",
+        "description": "Los precios de **todos** los tamaños vivos; `pricing_mode` opcional cambia la modalidad.\n\n`deposit_bps` opcional: si viene, fija el % de seña propio; `null` explícito lo borra (vuelve al\ndel negocio); ausente no lo toca (D4-17).",
         "properties": {
+          "deposit_bps": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Bps"
+          },
           "prices": {
             "items": {
               "$ref": "#/components/schemas/ServicePriceInput"
@@ -1342,6 +1368,17 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "deposit_bps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Bps"
           },
           "glossary_code": {
             "anyOf": [
@@ -1413,6 +1450,7 @@
           "notes",
           "category_id",
           "glossary_code",
+          "deposit_bps",
           "prices",
           "missing_price_size_ids"
         ],

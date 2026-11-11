@@ -1,5 +1,6 @@
 import { formatDuration } from "@/lib/time";
 import { formatARS } from "@/lib/money";
+import { formatPercent } from "@/lib/percent";
 import type { PricingModeCode, Service, ServiceCategory } from "@/types/api";
 
 export const MODE_LABELS: Record<PricingModeCode, string> = {
@@ -49,3 +50,16 @@ export const categoryOptions = (categories: ServiceCategory[]) => [
   { value: "", label: "Sin categoría" },
   ...categories.map((c) => ({ value: c.id, label: c.name })),
 ];
+
+/**
+ * Seña de un servicio en la tabla: su % propio o «General» (D4-17). Con la seña apagada en el negocio
+ * no se cobra ninguna, aunque el servicio tenga % propio: se dice, para no prometer una seña que el
+ * sistema no va a pedir.
+ */
+export function depositLabel(
+  service: Pick<Service, "deposit_bps">,
+  depositEnabled: boolean | undefined,
+): string {
+  const own = service.deposit_bps == null ? "General" : formatPercent(service.deposit_bps);
+  return depositEnabled === false ? `${own} (seña apagada)` : own;
+}

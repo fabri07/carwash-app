@@ -1037,6 +1037,8 @@ export interface components {
         ServiceCreate: {
             /** Category Id */
             category_id?: string | null;
+            /** Deposit Bps */
+            deposit_bps?: number | null;
             /** Name */
             name: string;
             /** Notes */
@@ -1080,8 +1082,13 @@ export interface components {
         /**
          * ServicePricesPut
          * @description Los precios de **todos** los tamaños vivos; `pricing_mode` opcional cambia la modalidad.
+         *
+         *     `deposit_bps` opcional: si viene, fija el % de seña propio; `null` explícito lo borra (vuelve al
+         *     del negocio); ausente no lo toca (D4-17).
          */
         ServicePricesPut: {
+            /** Deposit Bps */
+            deposit_bps?: number | null;
             /** Prices */
             prices: components["schemas"]["ServicePriceInput"][];
             pricing_mode?: components["schemas"]["PricingMode"] | null;
@@ -1095,6 +1102,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Deposit Bps */
+            deposit_bps: number | null;
             /** Glossary Code */
             glossary_code: string | null;
             /**
