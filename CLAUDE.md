@@ -21,10 +21,12 @@ salir de la app para hacerlo?* Si sí, entra. Si no, va a v2.
 httpOnly, RLS en todas las tablas, el dominio de turnos, jobs, cobros y cotizaciones con su aislamiento
 probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA).
 
-**Fase 4 en curso** (contrato: `docs/adr/FASE-4-CONTRATO.md`). Mergeados: 4.1 cuentas de empleados y
-perfiles de permisos, 4.2 configuración del negocio y seña global, 4.3 servicios, categorías, plantillas
-y búsqueda (back y front). Siguen 4.3c seña propia por servicio → 4.4 vehículos ‖ 4.5 personalización →
-4.6 wizard.
+**Fase 4 completa** (contrato: `docs/adr/FASE-4-CONTRATO.md`): cuentas de empleados y perfiles de
+permisos, configuración y seña (global y por servicio), servicios con plantillas y búsqueda, catálogo de
+vehículos, personalización y wizard de alta; checkpoint en staging hecho el 2026-11-11.
+
+**Fase 5 en curso** (contrato: `docs/adr/FASE-5-CONTRATO.md`): 5.0 contrato → 5.1 motor de
+disponibilidad y configuración de agenda → 5.2 turnero público ‖ 5.3 bandeja del dueño.
 
 El **relevamiento de la planilla del 2026-11-10** sumó al MVP fidelidad y avisos por WhatsApp (F7C nueva),
 propinas (F7), reglas horarias por servicio, bloqueos y lista de espera (F5) y carga retrospectiva (F6).
