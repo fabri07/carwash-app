@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
 
+    #: Logo del negocio en Cloudflare R2 (FASE-4-CONTRATO Y9, §8). Las carga el dueño en Railway;
+    #: nunca en el repo. Con alguna vacía, `POST /branding/logo` responde 503
+    #: `STORAGE_UNAVAILABLE` y el resto de la app funciona igual.
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = ""
+    #: URL pública del bucket (dominio propio o `https://pub-<hash>.r2.dev`), sin `/` final.
+    R2_PUBLIC_BASE_URL: str = ""
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
@@ -110,6 +120,29 @@ class Settings(BaseSettings):
             if url.startswith(prefix):
                 return "postgresql+asyncpg://" + url[len(prefix) :]
         return url
+
+    @property
+    def r2_values(self) -> tuple[str, str, str, str, str]:
+        return (
+            self.R2_ACCOUNT_ID,
+            self.R2_ACCESS_KEY_ID,
+            self.R2_SECRET_ACCESS_KEY,
+            self.R2_BUCKET,
+            self.R2_PUBLIC_BASE_URL,
+        )
+
+    @property
+    def r2_configured(self) -> bool:
+        """Las cinco variables de R2 cargadas. Con una sola vacía el logo no se puede subir (o
+        se subiría a un lugar que nadie puede leer): se trata como "sin almacenamiento"."""
+        return all(value.strip() for value in self.r2_values)
+
+    def public_url(self, key: str | None) -> str | None:
+        """URL pública de un objeto de R2, o `None` sin clave o sin `R2_PUBLIC_BASE_URL`."""
+        base = self.R2_PUBLIC_BASE_URL.strip().rstrip("/")
+        if not key or not base:
+            return None
+        return f"{base}/{key}"
 
     @property
     def is_sqlite(self) -> bool:

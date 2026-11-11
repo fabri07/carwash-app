@@ -13,8 +13,9 @@ export const configKeys = {
   resource: (resource: string) => ["config", resource] as const,
 };
 
-export function useSettings() {
-  return useQuery({ queryKey: configKeys.settings, queryFn: getSettings });
+/** También la usa el layout protegido para pintar la marca (`lib/branding.ts`). */
+export function useSettings(enabled = true) {
+  return useQuery({ queryKey: configKeys.settings, queryFn: getSettings, enabled });
 }
 
 /** Página de un recurso del catálogo; `keepPreviousData` evita el parpadeo al paginar. */

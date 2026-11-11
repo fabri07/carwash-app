@@ -154,6 +154,23 @@ export function serviceError(e: unknown, context?: "prices"): FieldError {
   return configError(e);
 }
 
+/**
+ * Errores del logo (A11). El servidor valida por contenido: aunque el cliente ya filtró tipo y
+ * peso, un archivo renombrado o roto llega acá.
+ */
+const BRANDING_ERRORS: Partial<Record<ApiErrorCode, string>> = {
+  INVALID_IMAGE: "El archivo no es una imagen PNG, JPG o WebP válida.",
+  IMAGE_TOO_SMALL: "El logo tiene que medir al menos 200×200 píxeles.",
+  FILE_TOO_LARGE: "El logo puede pesar hasta 2 MB y medir hasta 4096 píxeles de lado.",
+  STORAGE_UNAVAILABLE:
+    "Ahora no se pueden guardar logos. El resto de la configuración funciona; probá más tarde.",
+};
+
+export function brandingError(e: unknown): string {
+  const code = apiErrorCode(e);
+  return (code && BRANDING_ERRORS[code]) || genericMessage(e);
+}
+
 /** Errores del cambio de clave propio (`POST /auth/change-password`). */
 export function changePasswordError(e: unknown): FieldError {
   const code = apiErrorCode(e);

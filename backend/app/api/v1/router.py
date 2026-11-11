@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    branding,
     catalog,
     permission_profiles,
     services,
@@ -34,3 +35,4 @@ api_router.include_router(vehicles_catalog.colors, prefix="/vehicle-colors", tag
 api_router.include_router(
     vehicles_catalog.body_type_sizes, prefix="/body-type-sizes", tags=["Vehículos"]
 )
+api_router.include_router(branding.router, prefix="/branding", tags=["Personalización"])

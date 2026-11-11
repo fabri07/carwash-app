@@ -171,6 +171,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/branding/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Catalog */
+        get: operations["get_catalog_v1_branding_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/branding/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Logo */
+        post: operations["upload_logo_v1_branding_logo_post"];
+        /**
+         * Delete Logo
+         * @description Funciona sin R2 (la base deja de apuntar al logo); el objeto se borra solo si hay R2.
+         */
+        delete: operations["delete_logo_v1_branding_logo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/branding/suggest-palette": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggest Palette For */
+        post: operations["suggest_palette_for_v1_branding_suggest_palette_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/business-hours": {
         parameters: {
             query?: never;
@@ -702,6 +757,43 @@ export interface components {
             /** Items */
             items: components["schemas"]["BodyTypeSizeInput"][];
         };
+        /** Body_suggest_palette_for_v1_branding_suggest_palette_post */
+        Body_suggest_palette_for_v1_branding_suggest_palette_post: {
+            /**
+             * File
+             * @description PNG, JPEG o WebP; ≤ 2 MB; de 200 a 4096 píxeles de lado.
+             */
+            file: string;
+        };
+        /** Body_upload_logo_v1_branding_logo_post */
+        Body_upload_logo_v1_branding_logo_post: {
+            /**
+             * File
+             * @description PNG, JPEG o WebP; ≤ 2 MB; de 200 a 4096 píxeles de lado.
+             */
+            file: string;
+        };
+        /** BrandColor */
+        BrandColor: {
+            /** Hex */
+            hex: string;
+            /** Oklch */
+            oklch: string;
+        };
+        /**
+         * BrandingCatalog
+         * @description Catálogo fijo (en código): igual para todos los negocios.
+         */
+        BrandingCatalog: {
+            /** Default Font */
+            default_font: string;
+            /** Default Palette */
+            default_palette: string;
+            /** Fonts */
+            fonts: components["schemas"]["FontOut"][];
+            /** Palettes */
+            palettes: components["schemas"]["PaletteOut"][];
+        };
         /** BusinessHoursCreate */
         BusinessHoursCreate: {
             /**
@@ -772,7 +864,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
+        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             code: components["schemas"]["ErrorCode"];
@@ -787,6 +879,17 @@ export interface components {
          */
         ErrorResponse: {
             detail: components["schemas"]["ErrorDetail"];
+        };
+        /** FontOut */
+        FontOut: {
+            /** Code */
+            code: string;
+            /** Description */
+            description: string;
+            /** Family */
+            family: string | null;
+            /** Name */
+            name: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -810,6 +913,14 @@ export interface components {
             identifier: string;
             /** Password */
             password: string;
+        };
+        /** LogoResponse */
+        LogoResponse: {
+            /** Logo Key */
+            logo_key: string;
+            /** Logo Url */
+            logo_url: string | null;
+            suggestion: components["schemas"]["PaletteSuggestion"];
         };
         /**
          * MeResponse
@@ -985,6 +1096,24 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /** PaletteOut */
+        PaletteOut: {
+            background: components["schemas"]["BrandColor"];
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            on_primary: components["schemas"]["BrandColor"];
+            primary: components["schemas"]["BrandColor"];
+            secondary: components["schemas"]["BrandColor"];
+        };
+        /** PaletteSuggestion */
+        PaletteSuggestion: {
+            /** Dominant Color */
+            dominant_color: string | null;
+            /** Palette */
+            palette: string;
         };
         /** PaymentMethodCreate */
         PaymentMethodCreate: {
@@ -1369,6 +1498,8 @@ export interface components {
             late_cancel_threshold_min: number;
             /** Logo Key */
             logo_key: string | null;
+            /** Logo Url */
+            logo_url: string | null;
             /** Min Advance Min */
             min_advance_min: number;
             /** Name */
@@ -2233,6 +2364,245 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_catalog_v1_branding_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingCatalog"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload_logo_v1_branding_logo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_logo_v1_branding_logo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_logo_v1_branding_logo_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    suggest_palette_for_v1_branding_suggest_palette_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_suggest_palette_for_v1_branding_suggest_palette_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaletteSuggestion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

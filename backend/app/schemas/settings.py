@@ -20,6 +20,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.domain.branding import FONTS, PALETTES, is_font, is_palette
 from app.domain.slug import SLUG_MAX, SLUG_MIN
 from app.schemas.auth import _sin_nul
 from app.schemas.common import CamelModel
@@ -77,7 +78,24 @@ SlugField = Annotated[
     BeforeValidator(_lower),
     Field(min_length=SLUG_MIN, max_length=SLUG_MAX, pattern=r"^[a-z0-9-]+$"),
 ]
+
+
+def _palette(value: str) -> str:
+    if not is_palette(value):
+        raise ValueError(f"unknown palette; expected one of {sorted(PALETTES)}")
+    return value
+
+
+def _font(value: str) -> str:
+    if not is_font(value):
+        raise ValueError(f"unknown font; expected one of {sorted(FONTS)}")
+    return value
+
+
+#: El formato lo vuelve a exigir el CHECK de la base; la lista, el catálogo en código (PR 4.5).
 StyleCode = Annotated[str, BeforeValidator(_lower), Field(pattern=_CODE.pattern)]
+PaletteCode = Annotated[StyleCode, AfterValidator(_palette)]
+FontCode = Annotated[StyleCode, AfterValidator(_font)]
 
 
 class SettingsUpdate(BaseModel):
@@ -98,8 +116,8 @@ class SettingsUpdate(BaseModel):
     hold_min: Minutes | None = None
     min_advance_min: Annotated[int, Field(ge=0, le=_MAX_MINUTES)] | None = None
     quote_validity_hours: Annotated[int, Field(gt=0, le=24 * 30)] | None = None
-    palette: StyleCode | None = None
-    font: StyleCode | None = None
+    palette: PaletteCode | None = None
+    font: FontCode | None = None
 
     @field_validator(
         "address",
@@ -158,4 +176,6 @@ class SettingsResponse(CamelModel):
     palette: str
     font: str
     logo_key: str | None
+    #: URL pública del logo en R2 (`R2_PUBLIC_BASE_URL` + `logo_key`); `null` sin logo o sin R2.
+    logo_url: str | None
     onboarding_completed_at: datetime | None

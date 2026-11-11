@@ -13,7 +13,7 @@ import type { BusinessSettingsPatch } from "@/types/api";
 import type { BusinessInput, DepositInput } from "@/validation/settings";
 
 /** Guarda y deja el resultado en la caché: el formulario se vuelve a armar con lo guardado. */
-function useSave() {
+export function useSave() {
   const queryClient = useQueryClient();
   return async (patch: BusinessSettingsPatch, message: string) => {
     try {
@@ -26,7 +26,7 @@ function useSave() {
   };
 }
 
-function SettingsState({
+export function SettingsState({
   children,
 }: {
   children: (s: NonNullable<ReturnType<typeof useSettings>["data"]>) => React.ReactNode;

@@ -15,6 +15,7 @@ from app.application.services.settings_service import (
     SlugReservedError,
     SlugTakenError,
 )
+from app.config.settings import get_settings as get_app_settings
 from app.domain.errors import ErrorCode
 from app.domain.exceptions import InvalidParameterError
 from app.schemas.settings import SettingsResponse, SettingsUpdate
@@ -44,6 +45,7 @@ def to_response(current: BusinessSettings) -> SettingsResponse:
         palette=settings.palette,
         font=settings.font,
         logo_key=settings.logo_key,
+        logo_url=get_app_settings().public_url(settings.logo_key),
         onboarding_completed_at=settings.onboarding_completed_at,
     )
 

@@ -10,8 +10,9 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    /* Azul agua: primario de carwash.app */
-    --primary: 199 89% 38%;
+    /* Azul agua: primario de carwash.app (paleta `default` de `domain/branding.py`).
+       37% y no 38%: con texto blanco encima llega a contraste AA (4.5). */
+    --primary: 199 89% 37%;
     --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 94%;
     --secondary-foreground: 222 47% 11%;
@@ -23,12 +24,18 @@
     --destructive-foreground: 0 0% 100%;
     --border: 214 32% 88%;
     --input: 214 32% 80%;
-    --ring: 199 89% 38%;
+    --ring: 199 89% 37%;
     --radius: 0.625rem;
     --sidebar: 222 47% 11%;
     --sidebar-foreground: 210 40% 96%;
     --sidebar-accent: 217 33% 20%;
     --sidebar-border: 217 33% 22%;
+    /* Marca del negocio (PR 4.5): `lib/branding.ts` las pisa en <html> según la paleta y la
+       tipografía elegidas; estas son las de `default`. */
+    --brand-secondary: oklch(80% 0.15 75);
+    --font-brand:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+      sans-serif;
   }
 
   * {

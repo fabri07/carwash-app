@@ -57,3 +57,10 @@ export const depositSchema = z.object({
   quote_validity_hours: wholeNumber(1, 24 * 30, "Vigencia de la cotización"),
 });
 export type DepositInput = z.infer<typeof depositSchema>;
+
+/** Personalización (PR 4.5): los códigos los valida el backend contra su catálogo. */
+export const brandingSchema = z.object({
+  palette: z.string().min(1, "Elegí una paleta"),
+  font: z.string().min(1, "Elegí una tipografía"),
+});
+export type BrandingInput = z.infer<typeof brandingSchema>;

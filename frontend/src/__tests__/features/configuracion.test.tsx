@@ -90,6 +90,7 @@ const settings: BusinessSettings = {
   palette: "default",
   font: "default",
   logo_key: null,
+  logo_url: null,
   onboarding_completed_at: null,
 };
 

@@ -16,6 +16,7 @@ falla si una ruta usa la sesión sin `CurrentUser` y no está en la lista blanca
 
 import uuid
 from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -64,3 +65,15 @@ def make_session_dependency(
 
 
 get_db_session = make_session_dependency(async_session_factory)
+
+
+#: Abre una sesión propia (sin `app.tenant_id`: el servicio que la usa lo fija con `_enter`).
+SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+def get_session_factory() -> SessionFactory:
+    """Dependency para quien necesita transacciones **cortas y propias** además de la del
+    request: soltar la conexión antes de una I/O de red larga (subir el logo a R2) o trabajar
+    en una tarea de fondo, cuando la transacción del request ya terminó (PR 4.5, §11.8).
+    Los tests la reemplazan para que use la sesión del test."""
+    return async_session_factory

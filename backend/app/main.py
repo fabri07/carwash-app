@@ -34,7 +34,9 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.body_limit import BodyLimitMiddleware
 from app.api.rate_limit import limiter
+from app.application.services.branding_service import MAX_UPLOAD_BODY_BYTES
 from app.bootstrap import shutdown, startup
 from app.config.settings import get_settings
 from app.domain.errors import ErrorCode
@@ -186,6 +188,12 @@ def create_app() -> FastAPI:
     # ── Rate limiter ──────────────────────────────────────────────────────────
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
+
+    # ── Tope del cuerpo de las subidas (PR 4.5) ───────────────────────────────
+    # Por dentro del CORS (se registra antes): el 413 sale con sus cabeceras.
+    app.add_middleware(
+        BodyLimitMiddleware, prefixes=("/v1/branding/",), max_bytes=MAX_UPLOAD_BODY_BYTES
+    )
 
     # ── CSRF: Origin en métodos mutadores (ADR-0009) ─────────────────────────
     allowed_origins = frozenset(settings.CORS_ORIGINS)

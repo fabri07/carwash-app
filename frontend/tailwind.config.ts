@@ -18,7 +18,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // La tipografía del negocio (PR 4.5): `--font-brand` la define `globals.css` y la pisa
+      // `lib/branding.ts`. Preflight la aplica a `html`, así que llega a toda la app.
+      fontFamily: { sans: ["var(--font-brand)"] },
       colors: {
+        "brand-secondary": "var(--brand-secondary)",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
