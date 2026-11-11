@@ -30,8 +30,9 @@ Decisiones por defecto (las fija este contrato; el dueño las puede cambiar en e
 
 | # | Decisión |
 |---|---|
-| D5-6 | **El puesto lo asigna el sistema**: el primer puesto libre por `sort_order`; si el `EXCLUDE` choca, prueba el siguiente. El cliente no elige puesto. |
-| D5-7 | **Grilla de presentación de 30 min** (`slot_step_min`, editable). Es UI sobre un modelo continuo: los inicios se ofrecen cada `slot_step_min` desde el comienzo de cada ventana. |
+| D5-6 | **El puesto lo asigna el sistema**: el primer puesto libre por `sort_order`; si el `EXCLUDE` choca, prueba el siguiente. El cliente no elige puesto. **El orden es editable** por el dueño (orden de los puestos en Configuración → Puestos), y el puesto de cada turno también (D5-10). |
+| D5-7 | **Grilla de presentación de 30 min** (`slot_step_min`, **editable** en "Seña y reservas"). Es UI sobre un modelo continuo: los inicios se ofrecen cada `slot_step_min` desde el comienzo de cada ventana. |
+| D5-10 | **La agenda es editable (2026-11-11, dueño):** desde la bandeja, el negocio **reprograma** un turno (otro día/hora) y/o lo **cambia de puesto**. El `EXCLUDE` decide si entra (409 `SLOT_TAKEN` si no). El dueño puede salir de las reglas del servicio y del horario del negocio (es una decisión suya, la pantalla avisa), pero no de un bloqueo. |
 | D5-8 | **Cancelación web = código del turno + WhatsApp con el que se reservó** (como hoy en Sola). Sin los dos, la respuesta es la misma que para un turno inexistente. |
 | D5-9 | **Lista de espera (D-014):** con 2 o más incidencias en 90 días, el pedido queda `PENDIENTE_REVISION`, sin seña y sin ocupar el horario; el dueño lo aprueba (pasa al flujo normal **en la misma fila**, y el `EXCLUDE` decide si el horario sigue libre) o lo rechaza. |
 
@@ -194,7 +195,14 @@ que pasó a reservado.
 | 5.3 | `POST /bookings/{id}/approve`, `POST /bookings/{id}/reject` (`reason`) | `TURNOS_GESTIONAR` |
 | 5.3 | `POST /bookings/{id}/cancel` (operativa, `reason`), `POST /bookings/{id}/no-show` | `TURNOS_GESTIONAR` |
 | 5.3 | `POST /bookings/{id}/incident-marks`, `DELETE /incident-marks/{id}` | `TURNOS_GESTIONAR` |
+| 5.3 | `POST /bookings/{id}/reschedule` (`start_at` y/o `resource_id`) — D5-10 | `TURNOS_GESTIONAR` |
 | 5.3 | `POST /cancellations/{id}/resolve` (`DEVUELTA`/`RETENIDA`/`REPROGRAMADA`, `reason`) | `COBROS_REGISTRAR` |
+
+**Reprogramar (D5-10):** permitido en `PENDIENTE_SEÑA`, `CONFIRMADO` y `PENDIENTE_REVISION`. `end_at = start_at +
+duration_min` (snapshot, no el catálogo actual). No cambia estado, seña ni `hold_expires_at`. Corre dentro de
+`guarded_savepoint` (choque → 409 `SLOT_TAKEN`); un bloqueo que lo pisa → 409 `BLOCKED`. Fuera de reglas u horario
+del negocio se acepta y la respuesta lo marca (`outside_rules: true`) para que la pantalla lo avise. El
+historial de cambios de la agenda (quién movió qué) es de F6.
 
 `confirm-deposit` usa `confirm_deposit`; si el turno ya está `VENCIDO`, `confirm_late(payment=…)`
 (el `EXCLUDE` decide; si el horario ya no está: 409 `SLOT_TAKEN` y el caso queda como hoy, A16 de F3).
@@ -350,7 +358,7 @@ rebasea después de mergear 5.2.
 | B8 | Concurrencia: dos `POST` simultáneos al mismo horario; 1 puesto → uno 201 y otro 409; 2 puestos → dos 201 en puestos distintos. | test PG |
 | B9 | Cancelar: código + WhatsApp correcto cancela con la clasificación D-005; WhatsApp ajeno o código inexistente → 404 idéntico; repetir es idempotente. | `tests/api/` |
 | B10 | Incidencias: TARDIA, POSTERIOR, CANCELADO_DEMORA, NO_ASISTIO y marca manual cuentan; OPERATIVA, anuladas y > 90 días no. | `tests/application/` |
-| B11 | Bandeja: confirmar seña (también tardía con horario libre y con horario tomado → 409), aprobar (con y sin horario libre), rechazar, no asistió, resolver seña. | `tests/application/`, `tests/api/` |
+| B11 | Bandeja: reprogramar y cambiar de puesto (libre → OK; ocupado → 409; bloqueo → 409; fuera de reglas → OK con aviso); confirmar seña (también tardía con horario libre y con horario tomado → 409), aprobar (con y sin horario libre), rechazar, no asistió, resolver seña. | `tests/application/`, `tests/api/` |
 | B12 | Rutas: cada carpeta de primer nivel del front es slug reservado; `/turnos` protegida. | `frontend` + `tests/meta/` |
 | B13 | Front: flujo público completo con mocks (tamaño → … → confirmación, "Mi turno", cancelar); bandeja con sus acciones. | `frontend` (jest) |
 
@@ -364,9 +372,10 @@ rebasea después de mergear 5.2.
 6. El hold vencido libera el horario; confirmar la seña antes de que venza lo confirma.
 7. Cancelar con código y WhatsApp funciona; con otro WhatsApp, no.
 8. Un tercer turno con el mismo WhatsApp se rechaza.
-9. El wizard y la configuración existentes siguen andando igual (regresión de F4).
+9. Cambiar un turno de horario y de puesto desde la bandeja; cambiar el orden de los puestos y el intervalo de la grilla, y ver que el turnero lo respeta.
+10. El wizard y la configuración existentes siguen andando igual (regresión de F4).
 
 ## 10. Respuestas del dueño
 
-D5-1 a D5-5 (2026-11-11). D5-6 a D5-9 son decisiones por defecto de este contrato: se confirman o se
+D5-1 a D5-5 y D5-10 (2026-11-11). D5-6 a D5-9 son decisiones por defecto de este contrato: se confirman o se
 cambian en el checkpoint.
