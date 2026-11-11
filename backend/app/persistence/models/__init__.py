@@ -19,8 +19,15 @@ from app.persistence.models.permission_profile import PermissionProfile
 from app.persistence.models.quote import Quote
 from app.persistence.models.tenant import Tenant, TenantSettings
 from app.persistence.models.user import User
+from app.persistence.models.vehicle_catalog import (
+    BodyTypeSize,
+    VehicleColor,
+    VehicleMake,
+    VehicleModel,
+)
 
 __all__ = [
+    "BodyTypeSize",
     "Booking",
     "BookingItem",
     "BusinessHours",
@@ -46,5 +53,8 @@ __all__ = [
     "TenantSettings",
     "User",
     "Vehicle",
+    "VehicleColor",
+    "VehicleMake",
+    "VehicleModel",
     "VehicleSize",
 ]

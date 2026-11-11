@@ -2,7 +2,15 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, catalog, permission_profiles, services, settings, staff
+from app.api.v1 import (
+    auth,
+    catalog,
+    permission_profiles,
+    services,
+    settings,
+    staff,
+    vehicles_catalog,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -20,3 +28,9 @@ api_router.include_router(
 api_router.include_router(services.categories, prefix="/service-categories", tags=["Servicios"])
 api_router.include_router(services.services, prefix="/services", tags=["Servicios"])
 api_router.include_router(services.templates, prefix="/templates", tags=["Servicios"])
+api_router.include_router(vehicles_catalog.makes, prefix="/vehicle-makes", tags=["Vehículos"])
+api_router.include_router(vehicles_catalog.models, prefix="/vehicle-models", tags=["Vehículos"])
+api_router.include_router(vehicles_catalog.colors, prefix="/vehicle-colors", tags=["Vehículos"])
+api_router.include_router(
+    vehicles_catalog.body_type_sizes, prefix="/body-type-sizes", tags=["Vehículos"]
+)

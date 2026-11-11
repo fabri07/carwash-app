@@ -74,6 +74,21 @@ export type TemplateApplyItemPayload = Schemas["TemplateApplyItem"];
 export type TemplateApplyResult = Schemas["TemplateApplyResponse"];
 export type TemplateSkipped = Schemas["TemplateSkippedResponse"];
 
+// Catálogo de vehículos (PR 4.4): marcas, modelos, colores y carrocería → tamaño.
+export type VehicleMake = Schemas["VehicleMakeResponse"];
+export type VehicleMakePayload = Schemas["VehicleMakeCreate"];
+export type VehicleMakePatch = Schemas["VehicleMakeUpdate"];
+export type VehicleModel = Schemas["VehicleModelResponse"];
+export type VehicleModelPayload = Schemas["VehicleModelCreate"];
+export type VehicleModelPatch = Schemas["VehicleModelUpdate"];
+export type VehicleColor = Schemas["VehicleColorResponse"];
+export type VehicleColorPayload = Schemas["VehicleColorCreate"];
+export type VehicleColorPatch = Schemas["VehicleColorUpdate"];
+/** `VehicleBodyType` es el nombre del schema. */
+export type BodyTypeCode = Schemas["VehicleBodyType"];
+export type BodyTypeSize = Schemas["BodyTypeSizeResponse"];
+export type BodyTypeSizesPayload = Schemas["BodyTypeSizesPut"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];

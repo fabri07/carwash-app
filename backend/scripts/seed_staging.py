@@ -70,6 +70,10 @@ from app.application.services.service_catalog_service import (  # noqa: E402
     ServiceCatalogService,
 )
 from app.application.services.tenant_provisioning import provision_tenant  # noqa: E402
+from app.application.services.vehicle_catalog_service import (  # noqa: E402
+    VehicleCatalogService,
+    copy_vehicle_base,
+)
 from app.domain.enums import (  # noqa: E402
     BookingSource,
     Channel,
@@ -78,11 +82,13 @@ from app.domain.enums import (  # noqa: E402
     PricingMode,
 )
 from app.domain.roles import Role  # noqa: E402
+from app.domain.vehicle_catalog import VehicleBodyType  # noqa: E402
 from app.persistence.models.agenda import Booking  # noqa: E402
 from app.persistence.models.catalog import VehicleSize  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
 from app.persistence.models.tenant import TenantSettings  # noqa: E402
 from app.persistence.models.user import User  # noqa: E402
+from app.persistence.models.vehicle_catalog import BodyTypeSize, VehicleMake  # noqa: E402
 from app.utils.security import hash_password  # noqa: E402
 
 #: Nombre de la variable con la contraseña de los usuarios sintéticos. NO hay
@@ -166,6 +172,8 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
             and await _seed_domain(session, existing, por_rol[Role.OWNER], por_rol[Role.STAFF])
         ):
             _p(f"{spec['name']}: dominio sembrado")
+        if Role.OWNER in por_rol and await _seed_vehicles(session, existing, por_rol[Role.OWNER]):
+            _p(f"{spec['name']}: catálogo de vehículos completado")
         return
 
     # El mismo camino que el registro: tenant, OWNER y perfiles por defecto.
@@ -188,7 +196,52 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
     session.add(IdempotencyKey(tenant_id=tenant.id, key=f"seed-{tenant.id}", action="seed"))
     await session.flush()
     await _seed_domain(session, tenant.id, provisioned.owner.id, staff.id)
+    await _seed_vehicles(session, tenant.id, provisioned.owner.id)
     _p(f"{spec['name']}: creado (2 usuarios, 3 perfiles, dominio sembrado)")
+
+
+#: Qué tamaño del seed sugiere cada carrocería (PR 4.4); el resto queda sin sugerencia.
+_SEED_BODY_TYPES = {
+    VehicleBodyType.SEDAN: "AUTO",
+    VehicleBodyType.HATCHBACK: "AUTO",
+    VehicleBodyType.RURAL: "AUTO",
+    VehicleBodyType.SUV: "SUV",
+    VehicleBodyType.PICKUP: "SUV",
+}
+
+
+async def _seed_vehicles(session: AsyncSession, tenant_id: uuid.UUID, owner_id: uuid.UUID) -> bool:
+    """Catálogo de vehículos (PR 4.4): copia la base si el negocio no tiene marcas (staging
+    sembrado antes de la `0008`) y carga el mapa carrocería → tamaño si está vacío.
+
+    `False` si no hizo nada.
+    """
+    hizo = False
+    marcas = await session.scalar(
+        select(func.count()).select_from(VehicleMake).where(VehicleMake.tenant_id == tenant_id)
+    )
+    if not marcas:
+        await copy_vehicle_base(session, tenant_id)
+        hizo = True
+    mapa = await session.scalar(
+        select(func.count())
+        .select_from(BodyTypeSize)
+        .where(BodyTypeSize.tenant_id == tenant_id, BodyTypeSize.voided_at.is_(None))
+    )
+    if not mapa:
+        tamanos = {
+            size.code: size.id
+            for size in await session.scalars(
+                select(VehicleSize).where(
+                    VehicleSize.tenant_id == tenant_id, VehicleSize.voided_at.is_(None)
+                )
+            )
+        }
+        pares = [(bt, tamanos[code]) for bt, code in _SEED_BODY_TYPES.items() if code in tamanos]
+        if pares:
+            await VehicleCatalogService(session, tenant_id, owner_id).replace_body_type_sizes(pares)
+            hizo = True
+    return hizo
 
 
 def _en(minutos: int) -> datetime:
