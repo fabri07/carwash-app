@@ -18,7 +18,10 @@ SLUG_PATTERN = r"^[a-z0-9-]{3,40}$"
 _SLUG_RE = re.compile(SLUG_PATTERN)
 
 #: Lo que el slug no puede ser: chocaría con una ruta del propio sistema, o confundiría al
-#: cliente ("admin", "api"…). Se guarda en minúscula.
+#: cliente ("admin", "api"…). Se guarda en minúscula. F5 (FASE-5-CONTRATO §3.8) suma `catalogo`,
+#: `register` e `icons`, que eran rutas o carpetas públicas reales del front: cada carpeta de primer
+#: nivel de `frontend/src/app/(grupo)/` y de `frontend/public/` tiene que estar acá (lo verifica
+#: `tests/meta/test_slugs_reservados.py`). La migración 0010 congela esta lista.
 RESERVED_SLUGS: frozenset[str] = frozenset(
     {
         "admin",
@@ -26,14 +29,17 @@ RESERVED_SLUGS: frozenset[str] = frozenset(
         "app",
         "auth",
         "cambiar-clave",
+        "catalogo",
         "configuracion",
         "dashboard",
         "debug",
         "health",
+        "icons",
         "login",
         "logout",
         "onboarding",
         "ready",
+        "register",
         "registro",
         "reservas",
         "static",

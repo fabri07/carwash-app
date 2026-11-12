@@ -6,6 +6,12 @@ la transacción del llamador y levantan excepciones del dominio o de `errors.py`
 """
 
 from app.application.services._payments import PaymentInput
+from app.application.services.agenda_service import (
+    AgendaService,
+    Availability,
+    BlockCreated,
+    LocalRange,
+)
 from app.application.services.booking_service import BookingService, DepositConfirmation
 from app.application.services.catalog_service import CatalogService, check_price
 from app.application.services.customer_service import (
@@ -19,6 +25,10 @@ from app.application.services.job_service import JobService
 from app.application.services.quote_service import QuoteService
 
 __all__ = [
+    "AgendaService",
+    "Availability",
+    "BlockCreated",
+    "LocalRange",
     "BookingService",
     "CatalogService",
     "CustomerResolution",

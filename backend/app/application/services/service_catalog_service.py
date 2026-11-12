@@ -16,7 +16,8 @@ Reglas que viven acá:
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import time
 
 from sqlalchemy import func, select
 
@@ -27,14 +28,26 @@ from app.application.services.errors import (
     GlossaryCodeTakenError,
     InUseError,
 )
-from app.domain.enums import BookingStatus, JobStatus, PricingMode, QuoteStatus
+from app.domain.booking_state import ACTIVE_BOOKING_STATUSES
+from app.domain.enums import (
+    JobStatus,
+    PricingMode,
+    QuoteStatus,
+    ServiceBookingMode,
+)
 from app.domain.exceptions import InvalidAmountError
 from app.domain.glossary import load_glossary
 from app.domain.search import match_tier, normalize
 from app.domain.void import VoidReason
 from app.persistence.db._savepoint import SavepointConflictError, guarded_savepoint
 from app.persistence.models.agenda import Booking, BookingItem
-from app.persistence.models.catalog import Service, ServiceCategory, ServicePrice, VehicleSize
+from app.persistence.models.catalog import (
+    Service,
+    ServiceCategory,
+    ServicePrice,
+    ServiceScheduleRule,
+    VehicleSize,
+)
 from app.persistence.models.job import Job, JobItem
 from app.persistence.models.quote import Quote
 from app.persistence.repositories.base import Page
@@ -42,6 +55,7 @@ from app.persistence.repositories.catalog import (
     ServiceCategoryRepository,
     ServicePriceRepository,
     ServiceRepository,
+    ServiceScheduleRuleRepository,
 )
 from app.utils.datetime_utils import utcnow
 
@@ -62,14 +76,34 @@ class PriceInput:
     duration_min: int
 
 
+@dataclass(frozen=True)
+class RuleInput:
+    """Una fila de regla horaria (FASE-5-CONTRATO §3.2): el servicio puede **arrancar** en
+    `[window_start, last_start]` del día ISO `weekday`. Hora local del negocio."""
+
+    weekday: int
+    window_start: time
+    last_start: time
+
+
+#: Tope de filas de regla por servicio: varias ventanas por día alcanzan de sobra.
+MAX_RULE_ROWS = 50
+
+
+def check_rules(rules: Sequence[RuleInput]) -> None:
+    """Forma de cada fila (el schema ya la validó; esto es la defensa del servicio)."""
+    if len(rules) > MAX_RULE_ROWS:
+        raise InvalidAmountError(f"at most {MAX_RULE_ROWS} schedule rule rows per service")
+    for rule in rules:
+        if not 1 <= rule.weekday <= 7:
+            raise InvalidAmountError(f"weekday must be ISO 1..7: {rule.weekday}")
+        if rule.last_start < rule.window_start:
+            raise InvalidAmountError("a schedule rule must end (last start) after it starts")
+
+
 #: Quién "usa" un servicio y por eso no se puede anular (como `void_resource` con los puestos):
 #: turnos que todavía no cerraron, cotizaciones sin resolver y jobs abiertos (sin retirar).
-OPEN_BOOKING_STATUSES = (
-    BookingStatus.PENDIENTE_SENA,
-    BookingStatus.PENDIENTE_COTIZACION,
-    BookingStatus.CONFIRMADO,
-    BookingStatus.RECIBIDO,
-)
+OPEN_BOOKING_STATUSES = ACTIVE_BOOKING_STATUSES
 OPEN_QUOTE_STATUSES = (QuoteStatus.PENDIENTE, QuoteStatus.COTIZADO)
 OPEN_JOB_STATUSES = (
     JobStatus.PRESENTE,
@@ -86,6 +120,8 @@ class ServiceView:
     #: Tamaños vivos sin precio vivo (se sumó un tamaño después de cargar el servicio): la UI
     #: los marca. Reservar con ese tamaño falla hasta cargar el precio (§6).
     missing_price_size_ids: list[uuid.UUID]
+    #: Reglas horarias vivas (F5), por día y hora. Vacía = todo el horario del negocio.
+    rules: list[ServiceScheduleRule] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -208,9 +244,42 @@ class ServiceCatalogService(CatalogService):
             unpriced_service_ids=tuple(i for i in ids if self._missing_sizes(live, prices[i])),
         )
 
+    async def _rules_by_service(
+        self, service_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, list[ServiceScheduleRule]]:
+        grouped: dict[uuid.UUID, list[ServiceScheduleRule]] = {i: [] for i in service_ids}
+        for rule in await ServiceScheduleRuleRepository(self._session).list_for_services(
+            service_ids, self._tenant_id
+        ):
+            grouped[rule.service_id].append(rule)
+        return grouped
+
+    async def _replace_rules(self, service_id: uuid.UUID, rules: Sequence[RuleInput]) -> None:
+        """Reemplazo de la lista completa (§3.2): se anulan las vivas y se crean las nuevas, en
+        la misma transacción. El servicio ya está bloqueado o recién creado."""
+        check_rules(rules)
+        repo = ServiceScheduleRuleRepository(self._session)
+        for rule in await repo.list_for_services([service_id], self._tenant_id):
+            rule.voided_at = utcnow()
+            rule.void_reason = VoidReason.PEDIDO_DEL_USUARIO
+        self._session.add_all(
+            ServiceScheduleRule(
+                tenant_id=self._tenant_id,
+                service_id=service_id,
+                weekday=r.weekday,
+                window_start=r.window_start,
+                last_start=r.last_start,
+            )
+            for r in rules
+        )
+        await self._session.flush()
+
     async def _view(self, service: Service) -> ServiceView:
         prices = (await self._prices_by_service([service.id]))[service.id]
-        return ServiceView(service, prices, self._missing_sizes(await self._live_sizes(), prices))
+        rules = (await self._rules_by_service([service.id]))[service.id]
+        return ServiceView(
+            service, prices, self._missing_sizes(await self._live_sizes(), prices), rules
+        )
 
     async def _insert_service(self, service: Service) -> Service:
         try:
@@ -373,9 +442,11 @@ class ServiceCatalogService(CatalogService):
             total = len(ranked)
             page = [service for _, service in ranked[offset : offset + limit]]
         prices = await self._prices_by_service([s.id for s in page])
+        rules = await self._rules_by_service([s.id for s in page])
         live = await self._live_sizes()
         return [
-            ServiceView(s, prices[s.id], self._missing_sizes(live, prices[s.id])) for s in page
+            ServiceView(s, prices[s.id], self._missing_sizes(live, prices[s.id]), rules[s.id])
+            for s in page
         ], total
 
     async def get_service(self, id: uuid.UUID) -> ServiceView:
@@ -391,19 +462,23 @@ class ServiceCatalogService(CatalogService):
         notes: str | None = None,
         category_id: uuid.UUID | None = None,
         deposit_bps: int | None = None,
+        booking_mode: ServiceBookingMode = ServiceBookingMode.TURNERO,
+        schedule_rules: Sequence[RuleInput] = (),
     ) -> ServiceView:
         """Alta con precio para cada tamaño vivo (D4-6): todo o nada, en la transacción.
 
-        `deposit_bps`: % de seña propio (D4-17); `None` usa el del negocio.
+        `deposit_bps`: % de seña propio (D4-17); `None` usa el del negocio. `booking_mode` y
+        `schedule_rules` (F5, §3.1–3.2): sin reglas, el servicio arranca en todo el horario.
 
         El `glossary_code` no entra por acá: solo lo fija la plantilla (`TemplateService`).
         """
         await self._enter()
         live = await self._live_sizes()
         self._check_coverage(prices, live)
+        check_rules(schedule_rules)
         if category_id is not None:
             await self._require(ServiceCategoryRepository(self._session), category_id)
-        return await self.insert_priced(
+        view = await self.insert_priced(
             Service(
                 tenant_id=self._tenant_id,
                 name=name,
@@ -412,9 +487,14 @@ class ServiceCatalogService(CatalogService):
                 notes=notes,
                 category_id=category_id,
                 deposit_bps=deposit_bps,
+                booking_mode=booking_mode,
             ),
             self.sorted_by_size(prices, live),
         )
+        if not schedule_rules:
+            return view
+        await self._replace_rules(view.service.id, schedule_rules)
+        return await self._view(view.service)
 
     async def update_service(
         self,
@@ -425,10 +505,19 @@ class ServiceCatalogService(CatalogService):
         clear_notes: bool = False,
         category_id: uuid.UUID | None = None,
         clear_category: bool = False,
+        booking_mode: ServiceBookingMode | None = None,
+        schedule_rules: Sequence[RuleInput] | None = None,
     ) -> ServiceView:
-        """Nombre, notas y categoría. **No** precios ni modalidad (§2.3): ver `replace_prices`."""
+        """Nombre, notas, categoría y (F5) modo de reserva y reglas horarias. **No** precios ni
+        modalidad (§2.3): ver `replace_prices`.
+
+        `schedule_rules` reemplaza la lista completa (§3.2); `None` no la toca y `[]` la vacía
+        (el servicio vuelve a arrancar en todo el horario del negocio).
+        """
         await self._enter()
         service = await self._lock(ServiceRepository(self._session), id)
+        if schedule_rules is not None:
+            check_rules(schedule_rules)
         if category_id is not None:
             await self._require(ServiceCategoryRepository(self._session), category_id)
         try:
@@ -444,8 +533,12 @@ class ServiceCatalogService(CatalogService):
                     service.category_id = None
                 elif category_id is not None:
                     service.category_id = category_id
+                if booking_mode is not None:
+                    service.booking_mode = booking_mode
         except SavepointConflictError as exc:
             raise AlreadyExistsError("services: ('name',) already taken") from exc
+        if schedule_rules is not None:
+            await self._replace_rules(service.id, schedule_rules)
         return await self._view(service)
 
     async def replace_prices(
@@ -565,6 +658,11 @@ class ServiceCatalogService(CatalogService):
         ):
             price.voided_at = utcnow()
             price.void_reason = VoidReason.PEDIDO_DEL_USUARIO
+        for rule in await ServiceScheduleRuleRepository(self._session).list_for_services(
+            [id], self._tenant_id
+        ):
+            rule.voided_at = utcnow()
+            rule.void_reason = VoidReason.PEDIDO_DEL_USUARIO
         await self._void(ServiceRepository(self._session), id)
 
     async def live_service_index(self) -> ServiceIndex:

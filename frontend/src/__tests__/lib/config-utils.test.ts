@@ -93,6 +93,9 @@ describe("validación de configuración", () => {
     late_cancel_threshold_min: "120",
     min_advance_min: "0",
     quote_validity_hours: "24",
+    booking_horizon_days: "14",
+    slot_step_min: "30",
+    deposit_instructions: "",
   };
 
   it("seña: porcentaje 0,01–100 y minutos enteros", () => {

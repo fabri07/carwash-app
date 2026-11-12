@@ -12,7 +12,12 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.engine.default import DefaultExecutionContext
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domain.enums import PRICING_MODE_ENUM, PricingMode
+from app.domain.enums import (
+    PRICING_MODE_ENUM,
+    SERVICE_BOOKING_MODE_ENUM,
+    PricingMode,
+    ServiceBookingMode,
+)
 from app.domain.search import normalize
 from app.persistence.db.base import TenantScopedModel
 from app.persistence.models._constraints import (
@@ -106,6 +111,38 @@ class Service(TenantScopedModel):
     #: % de seña propio en puntos básicos (D4-17). `None` = usa el del negocio
     #: (`tenant_settings.deposit_bps`). El interruptor `deposit_enabled` sigue siendo del negocio.
     deposit_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: F5 (FASE-5-CONTRATO §3.1): `SOLO_A_MANO` no se ofrece ni se acepta en el turnero.
+    booking_mode: Mapped[ServiceBookingMode] = mapped_column(
+        pg_enum(ServiceBookingMode, SERVICE_BOOKING_MODE_ENUM),
+        nullable=False,
+        default=ServiceBookingMode.TURNERO,
+        server_default=ServiceBookingMode.TURNERO.value,
+    )
+
+
+class ServiceScheduleRule(TenantScopedModel):
+    """Regla horaria de un servicio (FASE-5-CONTRATO §3.2, D-015): en qué ventana puede
+    **arrancar** cada día. Sin filas vivas, arranca en cualquier momento del horario del negocio.
+
+    Varias filas por día = varias ventanas (mañana y tarde). Se editan como lista completa con el
+    servicio: se anulan las vivas y se crean las nuevas en la misma transacción.
+    """
+
+    __tablename__ = "service_schedule_rules"
+    __table_args__ = voidable_table_args(
+        tenant_fk("service_id", "services"),
+        tenant_index("service_schedule_rules", "service_id"),
+        check("weekday BETWEEN 1 AND 7", "weekday_iso"),
+        check("last_start >= window_start", "ventana_valida"),
+    )
+
+    service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    #: ISO: 1 = lunes.
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    #: Desde cuándo puede arrancar (hora local del negocio).
+    window_start: Mapped[time] = mapped_column(Time, nullable=False)
+    #: Último inicio permitido (inclusive).
+    last_start: Mapped[time] = mapped_column(Time, nullable=False)
 
 
 class ServicePrice(TenantScopedModel):

@@ -67,13 +67,16 @@ async def test_toda_politica_tiene_using_y_with_check(pg_admin_engine):
         assert p.with_check == p.qual, p.tablename
         assert "identity_lookup" not in p.qual, p.tablename
 
-    # La única otra política: lectura de `users` para el DUEÑO (la usa la función
-    # SECURITY DEFINER del login). Solo SELECT, y nunca alcanza al rol de runtime.
+    # Las únicas otras políticas: lectura para el DUEÑO que usan las funciones SECURITY
+    # DEFINER del login (`users`) y del turnero público (`tenants` y `tenant_settings`, F5).
+    # Solo SELECT, y nunca alcanzan al rol de runtime.
     otras = [p for p in politicas if p not in aislamiento]
-    assert [(p.tablename, p.policyname, p.cmd) for p in otras] == [
-        ("users", "users_owner_auth_lookup", "SELECT")
+    assert sorted((p.tablename, p.policyname, p.cmd) for p in otras) == [
+        ("tenant_settings", "tenant_settings_owner_public_lookup", "SELECT"),
+        ("tenants", "tenants_owner_public_lookup", "SELECT"),
+        ("users", "users_owner_auth_lookup", "SELECT"),
     ]
-    assert list(otras[0].roles) == ["carwash_owner"]
+    assert all(list(p.roles) == ["carwash_owner"] for p in otras)
 
 
 async def test_el_rol_de_runtime_no_saltea_rls(pg_engine):

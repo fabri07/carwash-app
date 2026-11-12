@@ -8,7 +8,16 @@ branding incluido, vive en `tenant_settings` (1:1).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, Text, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Index,
+    Integer,
+    SmallInteger,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.slug import SLUG_PATTERN, candidate_slug
@@ -26,6 +35,12 @@ DEFAULT_LATE_CANCEL_THRESHOLD_MIN = 720  # 12 h
 DEFAULT_HOLD_MIN = 30
 DEFAULT_MIN_ADVANCE_MIN = 5  # D-002
 DEFAULT_QUOTE_VALIDITY_HOURS = 24  # D4-16
+DEFAULT_BOOKING_HORIZON_DAYS = 14  # D5-2
+DEFAULT_SLOT_STEP_MIN = 30  # D5-7
+#: Rangos de F5 (FASE-5-CONTRATO §3.4). Los repite la migración 0010 (congelados ahí).
+BOOKING_HORIZON_DAYS_RANGE = (1, 90)
+SLOT_STEP_MIN_RANGE = (5, 120)
+DEPOSIT_INSTRUCTIONS_MAX = 500
 #: El código `default` de los catálogos de `domain/branding.py` (PR 4.5); un test lo verifica.
 DEFAULT_PALETTE = "default"
 DEFAULT_FONT = "default"
@@ -92,6 +107,16 @@ class TenantSettings(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         check("quote_validity_hours > 0", "vigencia_cotizacion_positiva"),
         pg_check("palette ~ '^[a-z0-9_-]{1,40}$'", "paleta_formato"),
         pg_check("font ~ '^[a-z0-9_-]{1,40}$'", "fuente_formato"),
+        check(
+            "booking_horizon_days BETWEEN {} AND {}".format(*BOOKING_HORIZON_DAYS_RANGE),
+            "horizonte_rango",
+        ),
+        check("slot_step_min BETWEEN {} AND {}".format(*SLOT_STEP_MIN_RANGE), "paso_rango"),
+        check(
+            "deposit_instructions IS NULL OR length(deposit_instructions) "
+            f"BETWEEN 1 AND {DEPOSIT_INSTRUCTIONS_MAX}",
+            "instrucciones_sena_largo",
+        ),
     )
 
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -154,6 +179,22 @@ class TenantSettings(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     #: Clave del logo en R2 (PR 4.5): `logos/<tenant_id>/<sha256>.<ext>` (Y9). La mueve
     #: `/branding/logo`, no el PATCH de settings.
     logo_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: F5 (D5-2): cuántos días hacia adelante se puede reservar desde el turnero.
+    booking_horizon_days: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=DEFAULT_BOOKING_HORIZON_DAYS,
+        server_default=str(DEFAULT_BOOKING_HORIZON_DAYS),
+    )
+    #: F5 (D5-7): cada cuántos minutos se ofrece un inicio desde la apertura de cada franja.
+    slot_step_min: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=DEFAULT_SLOT_STEP_MIN,
+        server_default=str(DEFAULT_SLOT_STEP_MIN),
+    )
+    #: F5 (D5-1): cómo pagar la seña (alias/CBU/titular). Público por diseño (§8).
+    deposit_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: PR 4.6: el wizard de alta terminó.
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

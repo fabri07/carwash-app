@@ -552,7 +552,13 @@ class BookingService(ServiceBase):
                 else BookingAction.CANCEL_BY_CLIENT_AFTER_START
             )
             threshold = (await self._settings()).late_cancel_threshold_min
-            classification = classify_cancellation(anticipation, threshold)
+            classification = (
+                # Bajarse de la lista de espera no es una incidencia: el turno nunca se aprobó
+                # ni reservó horario (D-014). Si no, el cliente quedaba atrapado en la lista.
+                CancellationClassification.NORMAL
+                if booking.status == BookingStatus.PENDIENTE_REVISION
+                else classify_cancellation(anticipation, threshold)
+            )
         else:
             action = BookingAction.CANCEL_OPERATIONAL
             classification = CancellationClassification.OPERATIVA

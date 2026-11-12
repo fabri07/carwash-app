@@ -58,6 +58,7 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 )
 
 from app.application.services import (  # noqa: E402
+    AgendaService,
     BookingService,
     CustomerService,
     DepositResolutionService,
@@ -66,11 +67,13 @@ from app.application.services import (  # noqa: E402
     QuoteService,
     VehicleService,
 )
+from app.application.services.agenda_service import LocalRange  # noqa: E402
 from app.application.services.onboarding_service import (  # noqa: E402
     OnboardingIncompleteError,
     OnboardingService,
 )
 from app.application.services.service_catalog_service import (  # noqa: E402
+    RuleInput,
     ServiceCatalogService,
 )
 from app.application.services.tenant_provisioning import provision_tenant  # noqa: E402
@@ -87,8 +90,19 @@ from app.domain.enums import (  # noqa: E402
 )
 from app.domain.roles import Role  # noqa: E402
 from app.domain.vehicle_catalog import VehicleBodyType  # noqa: E402
-from app.persistence.models.agenda import Booking  # noqa: E402
-from app.persistence.models.catalog import VehicleSize  # noqa: E402
+from app.persistence.models.agenda import (  # noqa: E402
+    Booking,
+    CustomerIncidentMark,
+    ScheduleBlock,
+    ScheduleOpening,
+)
+from app.persistence.models.catalog import (  # noqa: E402
+    Resource,
+    Service,
+    ServiceScheduleRule,
+    VehicleSize,
+)
+from app.persistence.models.customer import Customer  # noqa: E402
 from app.persistence.models.idempotency_key import IdempotencyKey  # noqa: E402
 from app.persistence.models.tenant import TenantSettings  # noqa: E402
 from app.persistence.models.user import User  # noqa: E402
@@ -180,6 +194,8 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
             _p(f"{spec['name']}: catálogo de vehículos completado")
         if Role.OWNER in por_rol:
             await _seed_onboarding(session, existing, por_rol[Role.OWNER], str(spec["name"]))
+            if await _seed_agenda(session, existing, por_rol[Role.OWNER]):
+                _p(f"{spec['name']}: agenda de la F5 completada")
         return
 
     # El mismo camino que el registro: tenant, OWNER y perfiles por defecto.
@@ -204,6 +220,7 @@ async def _seed_tenant(session: AsyncSession, spec: dict[str, object], pw_hash: 
     await _seed_domain(session, tenant.id, provisioned.owner.id, staff.id)
     await _seed_vehicles(session, tenant.id, provisioned.owner.id)
     await _seed_onboarding(session, tenant.id, provisioned.owner.id, str(spec["name"]))
+    await _seed_agenda(session, tenant.id, provisioned.owner.id)
     _p(f"{spec['name']}: creado (2 usuarios, 3 perfiles, dominio sembrado)")
 
 
@@ -261,6 +278,113 @@ async def _seed_vehicles(session: AsyncSession, tenant_id: uuid.UUID, owner_id: 
         if pares:
             await VehicleCatalogService(session, tenant_id, owner_id).replace_body_type_sizes(pares)
             hizo = True
+    return hizo
+
+
+#: Instrucciones de seña de prueba (F5, D5-1): inventadas, sin alias ni CBU reales.
+_SEED_DEPOSIT_INSTRUCTIONS = (
+    "Cuenta de prueba de staging: no transferir. Alias: demo.staging.invalid"
+)
+_SEED_BLOCK_REASON = "Mantenimiento programado (demo)"
+_SEED_OPENING_REASON = "Domingo especial (demo)"
+
+
+async def _seed_agenda(session: AsyncSession, tenant_id: uuid.UUID, owner_id: uuid.UUID) -> bool:
+    """Agenda de la F5 (FASE-5-CONTRATO §3): una regla horaria (vie–sáb) en el lavado premium,
+    instrucciones de seña, un bloqueo y una apertura **a futuro** y una marca de incidencia.
+
+    Idempotente por pieza: cada una se agrega solo si falta (el bloqueo y la apertura, si no hay
+    uno vigente del seed: los anteriores van quedando en el pasado). `False` si no hizo nada.
+    """
+    hizo = False
+    ajustes = await session.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+    )
+    if ajustes is not None and ajustes.deposit_instructions is None:
+        ajustes.deposit_instructions = _SEED_DEPOSIT_INSTRUCTIONS
+        hizo = True
+    premium = await session.scalar(
+        select(Service).where(
+            Service.tenant_id == tenant_id,
+            Service.name == "Lavado premium",
+            Service.voided_at.is_(None),
+        )
+    )
+    reglas = await session.scalar(
+        select(func.count())
+        .select_from(ServiceScheduleRule)
+        .where(ServiceScheduleRule.tenant_id == tenant_id, ServiceScheduleRule.voided_at.is_(None))
+    )
+    if premium is not None and not reglas:
+        await ServiceCatalogService(session, tenant_id, owner_id).update_service(
+            premium.id,
+            schedule_rules=[RuleInput(5, time(9), time(16)), RuleInput(6, time(9), time(16))],
+        )
+        hizo = True
+
+    ahora = datetime.now(UTC)
+    agenda = AgendaService(session, tenant_id, owner_id)
+    hoy = ahora.date()
+    bloqueo = await session.scalar(
+        select(func.count())
+        .select_from(ScheduleBlock)
+        .where(
+            ScheduleBlock.tenant_id == tenant_id,
+            ScheduleBlock.reason == _SEED_BLOCK_REASON,
+            ScheduleBlock.ends_at > ahora,
+            ScheduleBlock.voided_at.is_(None),
+        )
+    )
+    puesto_2 = await session.scalar(
+        select(Resource).where(
+            Resource.tenant_id == tenant_id,
+            Resource.name == "Puesto 2",
+            Resource.voided_at.is_(None),
+        )
+    )
+    if not bloqueo:
+        await agenda.create_block(
+            LocalRange(hoy + timedelta(days=7)),
+            resource_id=puesto_2.id if puesto_2 is not None else None,
+            reason=_SEED_BLOCK_REASON,
+        )
+        hizo = True
+    apertura = await session.scalar(
+        select(func.count())
+        .select_from(ScheduleOpening)
+        .where(
+            ScheduleOpening.tenant_id == tenant_id,
+            ScheduleOpening.reason == _SEED_OPENING_REASON,
+            ScheduleOpening.ends_at > ahora,
+            ScheduleOpening.voided_at.is_(None),
+        )
+    )
+    if not apertura:
+        domingo = hoy + timedelta(days=(6 - hoy.weekday()) % 7 or 7)
+        await agenda.create_opening(
+            LocalRange(domingo, start_time=time(10), end_time=time(14)),
+            reason=_SEED_OPENING_REASON,
+        )
+        hizo = True
+    marcas = await session.scalar(
+        select(func.count())
+        .select_from(CustomerIncidentMark)
+        .where(CustomerIncidentMark.tenant_id == tenant_id)
+    )
+    cliente = await session.scalar(
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.name == "Cliente Demo 5")
+    )
+    if not marcas and cliente is not None:
+        session.add(
+            CustomerIncidentMark(
+                tenant_id=tenant_id,
+                customer_id=cliente.id,
+                reason="No avisó que no venía (demo)",
+                created_by_user_id=owner_id,
+            )
+        )
+        await session.flush()
+        hizo = True
     return hizo
 
 

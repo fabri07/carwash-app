@@ -23,7 +23,8 @@ from app.domain.exceptions import InvalidDatetimeError, InvalidParameterError, I
 
 S = BookingStatus
 A = BookingAction
-ACTIVOS = (S.PENDIENTE_SENA, S.PENDIENTE_COTIZACION, S.CONFIRMADO)
+#: F5 (FASE-5-CONTRATO §3.5) suma `PENDIENTE_REVISION`: el `_ACTIVE` de las cancelaciones.
+ACTIVOS = (S.PENDIENTE_SENA, S.PENDIENTE_COTIZACION, S.CONFIRMADO, S.PENDIENTE_REVISION)
 
 # (estado origen, acción) → estado destino. §2.1, fila por fila.
 ESPERADO: dict[tuple[BookingStatus | None, BookingAction], BookingStatus] = {
@@ -44,6 +45,12 @@ ESPERADO: dict[tuple[BookingStatus | None, BookingAction], BookingStatus] = {
     (S.PENDIENTE_SENA, A.RECEIVE): S.RECIBIDO,
     (S.RECIBIDO, A.JOB_FINISHED): S.ATENDIDO,
     (S.RECIBIDO, A.JOB_CANCELLED_DELAY): S.CANCELADO_DEMORA,
+    # F5 (FASE-5-CONTRATO §3.5): lista de espera.
+    (None, A.CREATE_FOR_REVIEW): S.PENDIENTE_REVISION,
+    (S.PENDIENTE_REVISION, A.APPROVE_REVIEW_WITH_DEPOSIT): S.PENDIENTE_SENA,
+    (S.PENDIENTE_REVISION, A.APPROVE_REVIEW_CONFIRMED): S.CONFIRMADO,
+    (S.PENDIENTE_REVISION, A.REJECT_REVIEW): S.RECHAZADO,
+    (S.PENDIENTE_REVISION, A.EXPIRE_REVIEW): S.VENCIDO,
 }
 
 ORIGENES: list[BookingStatus | None] = [None, *BookingStatus]
@@ -52,7 +59,7 @@ PRODUCTO = [(o, a) for o in ORIGENES for a in BookingAction]
 
 def test_el_producto_cubre_toda_la_tabla_esperada():
     assert set(ESPERADO) <= set(PRODUCTO)
-    assert len(PRODUCTO) == 12 * len(BookingAction)
+    assert len(PRODUCTO) == 14 * len(BookingAction)
 
 
 @pytest.mark.parametrize(("origen", "accion"), PRODUCTO, ids=lambda x: str(x))
@@ -74,6 +81,7 @@ def test_los_terminales_no_salen():
         S.CANCELADO_OPERATIVO,
         S.CANCELADO_DEMORA,
         S.NO_ASISTIO,
+        S.RECHAZADO,
     }
     assert not {o for (o, _a) in ESPERADO if o in terminales}
 
@@ -92,6 +100,9 @@ def test_estados_que_bloquean_el_intervalo_coinciden_con_el_exclude():
         "RECIBIDO",
     }
     assert BookingStatus.PENDIENTE_COTIZACION not in BLOCKING_BOOKING_STATUSES
+    # F5 (§3.5): la lista de espera y el rechazo tampoco.
+    assert BookingStatus.PENDIENTE_REVISION not in BLOCKING_BOOKING_STATUSES
+    assert BookingStatus.RECHAZADO not in BLOCKING_BOOKING_STATUSES
     assert isinstance(BLOCKING_BOOKING_STATUSES, frozenset)
 
 

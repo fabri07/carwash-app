@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { inputToBps } from "@/lib/percent";
 import { percentText } from "@/validation/percent";
-import type { ServicePriceItem } from "@/types/api";
+import { hhmm } from "@/lib/time";
+import type { ScheduleRule, ScheduleRuleItem, ServicePriceItem } from "@/types/api";
 
 /**
  * Schemas del catálogo de servicios (PR 4.3). Límites = los de `schemas/services.py`:
@@ -98,11 +99,38 @@ export const serviceCreateSchema = z.object({
 });
 export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
 
-/** Nombre, categoría y notas: lo que edita quien tiene `CATALOGO_EDITAR`; los precios son otro permiso. */
+/** Tope de filas de regla horaria por servicio (`MAX_RULE_ROWS` del backend). */
+export const MAX_RULE_ROWS = 50;
+const clock = z.string().regex(/^\d{2}:\d{2}$/, "Poné la hora");
+
+/**
+ * Una ventana de la regla horaria (FASE-5-CONTRATO §3.2): el servicio puede arrancar
+ * entre `window_start` y `last_start` (inclusive) ese día. Hora local del negocio.
+ */
+export const scheduleRuleRowSchema = z
+  .object({
+    weekday: z.string().regex(/^[1-7]$/, "Elegí el día"),
+    window_start: clock,
+    last_start: clock,
+  })
+  .refine((v) => v.last_start >= v.window_start, {
+    path: ["last_start"],
+    message: "No puede ser antes de «desde»",
+  });
+export type ScheduleRuleRowInput = z.infer<typeof scheduleRuleRowSchema>;
+
+/**
+ * Nombre, categoría y notas: lo que edita quien tiene `CATALOGO_EDITAR`; los precios son otro
+ * permiso. F5 suma si el servicio aparece en el turnero y sus reglas horarias.
+ */
 export const serviceEditSchema = z.object({
   name: searchableName(MAX_SERVICE_NAME),
   category_id: categoryId,
   notes,
+  solo_a_mano: z.boolean(),
+  schedule_rules: z
+    .array(scheduleRuleRowSchema)
+    .max(MAX_RULE_ROWS, `Máximo ${MAX_RULE_ROWS} ventanas`),
 });
 export type ServiceEditInput = z.infer<typeof serviceEditSchema>;
 
@@ -127,6 +155,31 @@ export const templateApplySchema = z.object({
     .min(1, "Elegí al menos un servicio"),
 });
 export type TemplateApplyInput = z.infer<typeof templateApplySchema>;
+
+/** Reglas del servicio → filas del formulario (horas `HH:MM`, día como texto). */
+export function toRuleRows(rules: ScheduleRule[]): ScheduleRuleRowInput[] {
+  return rules.map((r) => ({
+    weekday: String(r.weekday),
+    window_start: hhmm(r.window_start),
+    last_start: hhmm(r.last_start),
+  }));
+}
+
+/** Filas del formulario → payload de la API. */
+export function toScheduleRules(rows: ScheduleRuleRowInput[]): ScheduleRuleItem[] {
+  return rows.map((r) => ({
+    weekday: Number(r.weekday),
+    window_start: r.window_start,
+    last_start: r.last_start,
+  }));
+}
+
+/** ¿Las filas del formulario dicen lo mismo que las reglas guardadas? (mismo orden de carga) */
+export function sameRules(rows: ScheduleRuleRowInput[], saved: ScheduleRule[]): boolean {
+  return (
+    JSON.stringify(toScheduleRules(rows)) === JSON.stringify(toScheduleRules(toRuleRows(saved)))
+  );
+}
 
 /** Filas del formulario → payload de la API (minutos de texto a número). */
 export function toPriceItems(rows: PriceRowInput[]): ServicePriceItem[] {

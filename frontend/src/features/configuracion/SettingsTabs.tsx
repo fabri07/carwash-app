@@ -90,7 +90,7 @@ export function DepositTab({ submitLabel, onSaved }: StepProps = {}) {
     <SettingsState>
       {(settings) => (
         <DepositForm
-          key={`${settings.deposit_bps}-${settings.deposit_enabled}`}
+          key={`${settings.deposit_bps}-${settings.deposit_enabled}-${settings.deposit_instructions ?? ""}`}
           settings={settings}
           submitLabel={submitLabel}
           onSubmit={(v: DepositInput) =>
@@ -103,6 +103,10 @@ export function DepositTab({ submitLabel, onSaved }: StepProps = {}) {
                 tolerance_min: Number(v.tolerance_min),
                 late_cancel_threshold_min: Number(v.late_cancel_threshold_min),
                 quote_validity_hours: Number(v.quote_validity_hours),
+                booking_horizon_days: Number(v.booking_horizon_days),
+                slot_step_min: Number(v.slot_step_min),
+                // Vacío borra las instrucciones (el turnero muestra el texto por defecto).
+                deposit_instructions: v.deposit_instructions === "" ? null : v.deposit_instructions,
               },
               "Seña y reservas guardadas.",
             ).then(onSaved)

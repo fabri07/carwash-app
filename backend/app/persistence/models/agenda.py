@@ -204,3 +204,61 @@ class ScheduleBlock(TenantScopedModel):
     )
     #: Reemplaza el responsable hardcodeado del legacy.
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+
+#: Largo máximo del motivo de un bloqueo, una apertura o una marca de incidencia (F5).
+AGENDA_REASON_MAX = 160
+DEFAULT_OPENING_REASON = "Apertura especial"
+
+
+class ScheduleOpening(TenantScopedModel):
+    """Disponibilidad especial (FASE-5-CONTRATO §3.3, R-N4): espejo de `schedule_blocks`.
+
+    Suma una ventana abierta fuera (o además) del horario habitual. Las reglas del servicio no se
+    aplican dentro de una apertura salvo el día de la semana; un bloqueo gana sobre una apertura.
+    Desactivar = anular.
+    """
+
+    __tablename__ = "schedule_openings"
+    __table_args__ = voidable_table_args(
+        tenant_fk("resource_id", "resources"),
+        tenant_fk("created_by_user_id", "users"),
+        tenant_index("schedule_openings", "resource_id"),
+        tenant_index("schedule_openings", "created_by_user_id"),
+        check("ends_at > starts_at", "rango_valido"),
+        check(f"length(reason) BETWEEN 1 AND {AGENDA_REASON_MAX}", "motivo_largo"),
+    )
+
+    #: NULL = todos los puestos.
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(
+        Text, nullable=False, default=DEFAULT_OPENING_REASON, server_default=DEFAULT_OPENING_REASON
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+
+class CustomerIncidentMark(TenantScopedModel):
+    """Marca manual de incidencia de un cliente (FASE-5-CONTRATO §3.6, D-014).
+
+    Cuenta para la lista de espera como una cancelación tardía. Se "desmarca" anulando, nunca
+    borrando.
+    """
+
+    __tablename__ = "customer_incident_marks"
+    __table_args__ = voidable_table_args(
+        tenant_fk("customer_id", "customers"),
+        tenant_fk("booking_id", "bookings"),
+        tenant_fk("created_by_user_id", "users"),
+        tenant_index("customer_incident_marks", "customer_id"),
+        tenant_index("customer_incident_marks", "booking_id"),
+        tenant_index("customer_incident_marks", "created_by_user_id"),
+        check(f"length(reason) BETWEEN 1 AND {AGENDA_REASON_MAX}", "motivo_largo"),
+    )
+
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    #: El turno desde el que se marcó, si hay.
+    booking_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

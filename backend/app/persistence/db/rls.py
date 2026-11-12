@@ -136,6 +136,66 @@ def create_auth_lookup_by_identifier() -> list[str]:
     ]
 
 
+PUBLIC_TENANT_LOOKUP_FUNCTION = "public_tenant_by_slug"
+#: Lo que lee la función del turnero: el negocio y su configuración (alta terminada).
+PUBLIC_LOOKUP_TABLES = ("tenants", "tenant_settings")
+
+
+def public_lookup_policy_name(table: str) -> str:
+    return f"{table}_owner_public_lookup"
+
+
+def create_public_tenant_lookup() -> list[str]:
+    """F5 (FASE-5-CONTRATO §3.7, Z7): el tenant de una URL pública `/<slug>`, sin sesión.
+
+    Mismo patrón que `auth_lookup_user`: `SECURITY DEFINER`, dueña el rol de las migraciones,
+    `search_path` fijo, `EXECUTE` solo para el runtime. Devuelve **solo el `id`** del negocio vivo
+    con ese slug y el alta terminada; si no, `NULL` (Z8: inexistente y a medio configurar son lo
+    mismo). Como `tenants` y `tenant_settings` tienen `FORCE ROW LEVEL SECURITY`, el dueño necesita
+    una política `FOR SELECT` propia para leerlas desde la función; no alcanza al runtime.
+    """
+    fn = PUBLIC_TENANT_LOOKUP_FUNCTION
+    policies = [
+        statement
+        for table in PUBLIC_LOOKUP_TABLES
+        for statement in (
+            f"DROP POLICY IF EXISTS {public_lookup_policy_name(table)} ON {table}",
+            f"CREATE POLICY {public_lookup_policy_name(table)} ON {table} "
+            "FOR SELECT TO CURRENT_USER USING (true)",
+        )
+    ]
+    return [
+        *policies,
+        f"""
+        CREATE OR REPLACE FUNCTION {fn}(p_slug text)
+        RETURNS uuid
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $fn$
+            SELECT t.id
+            FROM public.tenants AS t
+            JOIN public.tenant_settings AS s ON s.tenant_id = t.id
+            WHERE t.slug = lower(p_slug)
+              AND t.voided_at IS NULL
+              AND s.onboarding_completed_at IS NOT NULL
+            LIMIT 1
+        $fn$
+        """,
+        f"REVOKE ALL ON FUNCTION {fn}(text) FROM PUBLIC",
+        _if_app_role(f"GRANT EXECUTE ON FUNCTION {fn}(text) TO {APP_ROLE}"),
+    ]
+
+
+def drop_public_tenant_lookup() -> list[str]:
+    return [
+        f"DROP FUNCTION IF EXISTS {PUBLIC_TENANT_LOOKUP_FUNCTION}(text)",
+        *(
+            f"DROP POLICY IF EXISTS {public_lookup_policy_name(table)} ON {table}"
+            for table in PUBLIC_LOOKUP_TABLES
+        ),
+    ]
+
+
 def drop_auth_lookup() -> list[str]:
     return [
         f"DROP FUNCTION IF EXISTS {AUTH_LOOKUP_FUNCTION}(text)",

@@ -24,7 +24,7 @@ import pkgutil
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,14 +34,17 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.persistence.repositories as paquete_repos
+from app.domain.enums import BookingStatus, CancellationClassification
 from app.domain.void import VoidReason
 from app.persistence.db.base import Base
 from app.persistence.repositories.base import BaseRepository, Page
 from app.tests.conftest import make_tenant
-from app.tests.security._poblar_dominio import RECETAS, _Contexto, tablas_tenant
+from app.tests.security._poblar_dominio import INICIO_TURNO, RECETAS, _Contexto, tablas_tenant
 
 #: Un "ahora" posterior a todo hold sembrado: con el tenant correcto, vence el de A.
 MUY_TARDE = datetime(2030, 1, 1, tzinfo=UTC)
+#: Uno anterior a todo lo sembrado: los holds siguen vigentes y los "desde" lo abarcan todo.
+MUY_TEMPRANO = datetime(2020, 1, 1, tzinfo=UTC)
 
 
 # ── Descubrimiento ────────────────────────────────────────────────────────────
@@ -309,6 +312,17 @@ async def _perfil_en_uso(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
     return [SimpleNamespace(id=perfil)] if n else None
 
 
+def _de_a(tabla: str, caso: "Caso") -> "Caso":
+    """Un caso por ventana de tiempo, recortado a la fila de A de `tabla`: con el tenant B la
+    consulta trae lo propio de B (mismo horario sembrado), y lo que importa es que no traiga la
+    de A."""
+
+    async def _caso(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+        return [x for x in await caso(repo, a, tenant_id) if x.id == a.ids[tabla]]
+
+    return _caso
+
+
 #: Cada caso recibe (repo, datos de A, tenant con el que se pregunta).
 CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("BookingRepository", "lock_expired_holds"): lambda r, a, t: r.lock_expired_holds(
@@ -355,6 +369,46 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("UserRepository", "get_active"): lambda r, a, t: r.get_active(a.ids["users"], t),
     ("UserRepository", "list_staff"): _equipo_de_a,
     ("PermissionProfileRepository", "count_alive_staff"): _perfil_en_uso,
+    # ── F5 · agenda ── el turno sembrado es `PENDIENTE_SEÑA` con hold hasta INICIO − 1 h: con un
+    # "ahora" anterior todavía ocupa. Las consultas por ventana de tiempo devuelven también lo
+    # propio de B (los dos lavaderos tienen el mismo horario sembrado): se mira solo la fila de A.
+    ("BookingRepository", "list_occupying"): _de_a(
+        "bookings",
+        lambda r, a, t: r.list_occupying(
+            INICIO_TURNO - timedelta(days=1), INICIO_TURNO + timedelta(days=1), MUY_TEMPRANO, t
+        ),
+    ),
+    ("BookingRepository", "list_with_status_overlapping"): _de_a(
+        "bookings",
+        lambda r, a, t: r.list_with_status_overlapping(
+            INICIO_TURNO - timedelta(days=1),
+            INICIO_TURNO + timedelta(days=1),
+            frozenset(BookingStatus),
+            t,
+        ),
+    ),
+    ("BookingRepository", "list_for_customer_with_status_since"): lambda r, a, t: (
+        r.list_for_customer_with_status_since(
+            a.ids["customers"], frozenset(BookingStatus), MUY_TEMPRANO, t
+        )
+    ),
+    ("CancellationRepository", "list_for_customer_since"): lambda r, a, t: (
+        r.list_for_customer_since(
+            a.ids["customers"], frozenset(CancellationClassification), MUY_TEMPRANO, t
+        )
+    ),
+    ("CustomerIncidentMarkRepository", "list_for_customer_since"): lambda r, a, t: (
+        r.list_for_customer_since(a.ids["customers"], MUY_TEMPRANO, t)
+    ),
+    ("ScheduleBlockRepository", "list_overlapping"): _de_a(
+        "schedule_blocks", lambda r, a, t: r.list_overlapping(MUY_TEMPRANO, None, t)
+    ),
+    ("ScheduleOpeningRepository", "list_overlapping"): _de_a(
+        "schedule_openings", lambda r, a, t: r.list_overlapping(MUY_TEMPRANO, None, t)
+    ),
+    ("ServiceScheduleRuleRepository", "list_for_services"): lambda r, a, t: (
+        r.list_for_services([a.ids["services"]], t)
+    ),
 }
 
 #: Métodos propios sin `tenant_id`, con el motivo por el que no cruzan.

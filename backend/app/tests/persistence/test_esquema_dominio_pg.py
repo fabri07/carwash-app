@@ -41,6 +41,10 @@ pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 MIGRACION = (
     Path(__file__).resolve().parents[2] / "persistence/migrations/versions/20260918_0003_dominio.py"
 )
+MIGRACION_0010 = (
+    Path(__file__).resolve().parents[2]
+    / "persistence/migrations/versions/20261111_0010_agenda_f5.py"
+)
 DIEZ = datetime(2026, 9, 21, 10, tzinfo=UTC)
 
 
@@ -874,11 +878,28 @@ PYTHON_POR_TIPO: dict[str, type[StrEnum]] = {
     enums.PAYMENT_KIND_ENUM: enums.PaymentKind,
     enums.CASH_DIRECTION_ENUM: enums.CashDirection,
     enums.CASH_MOVEMENT_KIND_ENUM: enums.CashMovementKind,
+    enums.SERVICE_BOOKING_MODE_ENUM: enums.ServiceBookingMode,
 }
 
 
+def _congelados() -> dict[str, tuple[str, ...]]:
+    """Los enums que congeló la 0003, más lo que la 0010 (F5) agregó: un tipo nuevo y dos
+    valores al final de `booking_status`."""
+    spec = importlib.util.spec_from_file_location("migracion_0010", MIGRACION_0010)
+    assert spec is not None and spec.loader is not None
+    f5 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(f5)
+    congelados = dict(_migracion().ENUMS)
+    congelados[f5.BOOKING_STATUS_ENUM] = (
+        *congelados[f5.BOOKING_STATUS_ENUM],
+        *f5.BOOKING_STATUS_ADDED,
+    )
+    congelados[f5.BOOKING_MODE_ENUM] = f5.BOOKING_MODES
+    return congelados
+
+
 async def test_los_enums_de_la_base_son_los_del_dominio(pg_admin_engine):
-    congelados = _migracion().ENUMS
+    congelados = _congelados()
     declarados = {getattr(enums, n) for n in dir(enums) if n.endswith("_ENUM")}
     assert set(congelados) == set(PYTHON_POR_TIPO) == declarados
     async with pg_admin_engine.connect() as conn:

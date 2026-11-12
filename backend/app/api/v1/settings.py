@@ -47,6 +47,9 @@ def to_response(current: BusinessSettings) -> SettingsResponse:
         logo_key=settings.logo_key,
         logo_url=get_app_settings().public_url(settings.logo_key),
         onboarding_completed_at=settings.onboarding_completed_at,
+        booking_horizon_days=settings.booking_horizon_days,
+        slot_step_min=settings.slot_step_min,
+        deposit_instructions=settings.deposit_instructions,
     )
 
 

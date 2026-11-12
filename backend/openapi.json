@@ -1,6 +1,229 @@
 {
   "components": {
     "schemas": {
+      "AvailabilityResponse": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/AvailableStart"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "timezone",
+          "duration_min",
+          "slots"
+        ],
+        "title": "AvailabilityResponse",
+        "type": "object"
+      },
+      "AvailableStart": {
+        "properties": {
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "resource_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Resource Ids",
+            "type": "array"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_at",
+          "end_at",
+          "resource_ids"
+        ],
+        "title": "AvailableStart",
+        "type": "object"
+      },
+      "BlockCreate": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "BlockCreate",
+        "type": "object"
+      },
+      "BlockCreatedResponse": {
+        "properties": {
+          "block": {
+            "$ref": "#/components/schemas/BlockResponse"
+          },
+          "overlapping_bookings": {
+            "items": {
+              "$ref": "#/components/schemas/OverlappingBooking"
+            },
+            "title": "Overlapping Bookings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "block",
+          "overlapping_bookings"
+        ],
+        "title": "BlockCreatedResponse",
+        "type": "object"
+      },
+      "BlockResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "title": "Created By User Id",
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "created_at",
+          "updated_at",
+          "resource_id",
+          "starts_at",
+          "ends_at",
+          "reason",
+          "created_by_user_id"
+        ],
+        "title": "BlockResponse",
+        "type": "object"
+      },
       "BodyTypeSizeInput": {
         "properties": {
           "body_type": {
@@ -98,6 +321,26 @@
         ],
         "title": "Body_upload_logo_v1_branding_logo_post",
         "type": "object"
+      },
+      "BookingStatus": {
+        "description": "§2.1. Los que bloquean el intervalo del puesto: `BLOCKING_BOOKING_STATUSES`.",
+        "enum": [
+          "PENDIENTE_SEÑA",
+          "PENDIENTE_COTIZACION",
+          "CONFIRMADO",
+          "RECIBIDO",
+          "ATENDIDO",
+          "VENCIDO",
+          "CANCELADO_CLIENTE",
+          "AUSENTE_CON_AVISO_POSTERIOR",
+          "CANCELADO_OPERATIVO",
+          "CANCELADO_DEMORA",
+          "NO_ASISTIO",
+          "PENDIENTE_REVISION",
+          "RECHAZADO"
+        ],
+        "title": "BookingStatus",
+        "type": "string"
       },
       "BrandColor": {
         "properties": {
@@ -687,6 +930,232 @@
         "title": "OnboardingStepStatus",
         "type": "object"
       },
+      "OpeningCreate": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "format": "time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "OpeningCreate",
+        "type": "object"
+      },
+      "OpeningResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "title": "Created By User Id",
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "created_at",
+          "updated_at",
+          "resource_id",
+          "starts_at",
+          "ends_at",
+          "reason",
+          "created_by_user_id"
+        ],
+        "title": "OpeningResponse",
+        "type": "object"
+      },
+      "OverlappingBooking": {
+        "description": "Un turno activo que quedó dentro de un bloqueo nuevo: hay que avisarle al cliente.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "status",
+          "resource_id",
+          "start_at",
+          "end_at",
+          "customer_name"
+        ],
+        "title": "OverlappingBooking",
+        "type": "object"
+      },
+      "PaginatedResponse_BlockResponse_": {
+        "properties": {
+          "has_more": {
+            "readOnly": true,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BlockResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "title": "PaginatedResponse[BlockResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_BodyTypeSizeResponse_": {
         "properties": {
           "has_more": {
@@ -759,6 +1228,43 @@
           "has_more"
         ],
         "title": "PaginatedResponse[BusinessHoursResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_OpeningResponse_": {
+        "properties": {
+          "has_more": {
+            "readOnly": true,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OpeningResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "title": "PaginatedResponse[OpeningResponse]",
         "type": "object"
       },
       "PaginatedResponse_PaymentMethodResponse_": {
@@ -1680,6 +2186,74 @@
         "title": "Role",
         "type": "string"
       },
+      "ScheduleRuleInput": {
+        "description": "Una fila de regla horaria (FASE-5-CONTRATO §3.2): el servicio puede **arrancar** entre\n`window_start` y `last_start` (inclusive) del día ISO `weekday`. Hora local del negocio.",
+        "properties": {
+          "last_start": {
+            "format": "time",
+            "title": "Last Start",
+            "type": "string"
+          },
+          "weekday": {
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Weekday",
+            "type": "integer"
+          },
+          "window_start": {
+            "format": "time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "weekday",
+          "window_start",
+          "last_start"
+        ],
+        "title": "ScheduleRuleInput",
+        "type": "object"
+      },
+      "ScheduleRuleResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_start": {
+            "format": "time",
+            "title": "Last Start",
+            "type": "string"
+          },
+          "weekday": {
+            "title": "Weekday",
+            "type": "integer"
+          },
+          "window_start": {
+            "format": "time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "weekday",
+          "window_start",
+          "last_start"
+        ],
+        "title": "ScheduleRuleResponse",
+        "type": "object"
+      },
+      "ServiceBookingMode": {
+        "description": "FASE-5-CONTRATO §3.1: `SOLO_A_MANO` no se ofrece ni se acepta en el turnero (lo agenda el\nnegocio). Un servicio `A_COTIZAR` se muestra en el turnero pero no se reserva (D5-5),\nindependientemente de este modo.",
+        "enum": [
+          "TURNERO",
+          "SOLO_A_MANO"
+        ],
+        "title": "ServiceBookingMode",
+        "type": "string"
+      },
       "ServiceCategoryCreate": {
         "properties": {
           "name": {
@@ -1776,6 +2350,10 @@
       },
       "ServiceCreate": {
         "properties": {
+          "booking_mode": {
+            "$ref": "#/components/schemas/ServiceBookingMode",
+            "default": "TURNERO"
+          },
           "category_id": {
             "anyOf": [
               {
@@ -1828,6 +2406,15 @@
           },
           "pricing_mode": {
             "$ref": "#/components/schemas/PricingMode"
+          },
+          "schedule_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ScheduleRuleInput"
+            },
+            "maxItems": 50,
+            "title": "Schedule Rules",
+            "type": "array"
           }
         },
         "required": [
@@ -1940,6 +2527,9 @@
       },
       "ServiceResponse": {
         "properties": {
+          "booking_mode": {
+            "$ref": "#/components/schemas/ServiceBookingMode"
+          },
           "category_id": {
             "anyOf": [
               {
@@ -2017,6 +2607,13 @@
           "pricing_mode": {
             "$ref": "#/components/schemas/PricingMode"
           },
+          "schedule_rules": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleRuleResponse"
+            },
+            "title": "Schedule Rules",
+            "type": "array"
+          },
           "tenant_id": {
             "format": "uuid",
             "title": "Tenant Id",
@@ -2039,6 +2636,8 @@
           "category_id",
           "glossary_code",
           "deposit_bps",
+          "booking_mode",
+          "schedule_rules",
           "prices",
           "missing_price_size_ids"
         ],
@@ -2046,8 +2645,18 @@
         "type": "object"
       },
       "ServiceUpdate": {
-        "description": "Sin precios ni modalidad. `notes: null` o `category_id: null` explícitos las borran.",
+        "description": "Sin precios ni modalidad. `notes: null` o `category_id: null` explícitos las borran.\n\nF5: `booking_mode` y `schedule_rules` (lista **completa**: reemplaza las reglas vivas; `[]` las\nborra; ausente no las toca). Ninguno de los dos acepta `null`.",
         "properties": {
+          "booking_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceBookingMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "category_id": {
             "anyOf": [
               {
@@ -2083,6 +2692,21 @@
               }
             ],
             "title": "Notes"
+          },
+          "schedule_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScheduleRuleInput"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Rules"
           }
         },
         "title": "ServiceUpdate",
@@ -2100,6 +2724,10 @@
               }
             ],
             "title": "Address"
+          },
+          "booking_horizon_days": {
+            "title": "Booking Horizon Days",
+            "type": "integer"
           },
           "cancellation_policy": {
             "anyOf": [
@@ -2123,6 +2751,17 @@
           "deposit_enabled": {
             "title": "Deposit Enabled",
             "type": "boolean"
+          },
+          "deposit_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Instructions"
           },
           "font": {
             "title": "Font",
@@ -2197,6 +2836,10 @@
             "title": "Quote Validity Hours",
             "type": "integer"
           },
+          "slot_step_min": {
+            "title": "Slot Step Min",
+            "type": "integer"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -2253,7 +2896,10 @@
           "font",
           "logo_key",
           "logo_url",
-          "onboarding_completed_at"
+          "onboarding_completed_at",
+          "booking_horizon_days",
+          "slot_step_min",
+          "deposit_instructions"
         ],
         "title": "SettingsResponse",
         "type": "object"
@@ -2272,6 +2918,19 @@
               }
             ],
             "title": "Address"
+          },
+          "booking_horizon_days": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Horizon Days"
           },
           "cancellation_policy": {
             "anyOf": [
@@ -2308,6 +2967,18 @@
               }
             ],
             "title": "Deposit Enabled"
+          },
+          "deposit_instructions": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Instructions"
           },
           "font": {
             "anyOf": [
@@ -2394,6 +3065,19 @@
               }
             ],
             "title": "Quote Validity Hours"
+          },
+          "slot_step_min": {
+            "anyOf": [
+              {
+                "maximum": 120.0,
+                "minimum": 5.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot Step Min"
           },
           "slug": {
             "anyOf": [
@@ -3463,6 +4147,640 @@
         "summary": "Readiness Check",
         "tags": [
           "Infra"
+        ]
+      }
+    },
+    "/v1/agenda/availability": {
+      "get": {
+        "operationId": "get_availability_v1_agenda_availability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vehicle_size_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Vehicle Size Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "title": "Service Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Availability",
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/v1/agenda/blocks": {
+      "get": {
+        "description": "Bloqueos vigentes (los que todavía no terminaron), por inicio.",
+        "operationId": "list_blocks_v1_agenda_blocks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_BlockResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Blocks",
+        "tags": [
+          "Agenda"
+        ]
+      },
+      "post": {
+        "operationId": "create_block_v1_agenda_blocks_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Block",
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/v1/agenda/blocks/{id}": {
+      "delete": {
+        "operationId": "delete_block_v1_agenda_blocks__id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Block",
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/v1/agenda/openings": {
+      "get": {
+        "description": "Aperturas especiales vigentes (las que todavía no terminaron), por inicio.",
+        "operationId": "list_openings_v1_agenda_openings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_OpeningResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Openings",
+        "tags": [
+          "Agenda"
+        ]
+      },
+      "post": {
+        "operationId": "create_opening_v1_agenda_openings_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Opening",
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/v1/agenda/openings/{id}": {
+      "delete": {
+        "operationId": "delete_opening_v1_agenda_openings__id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Opening",
+        "tags": [
+          "Agenda"
         ]
       }
     },

@@ -7,18 +7,29 @@ plantilla. Los precios y la seña propia (D4-17) entran por `POST /services` y `
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from typing import Annotated
 
-from pydantic import AfterValidator, BeforeValidator, Field, StrictInt, model_validator
+from pydantic import (
+    AfterValidator,
+    BeforeValidator,
+    Field,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
-from app.application.services.service_catalog_service import PriceInput
-from app.domain.enums import PricingMode
+from app.application.services.service_catalog_service import (
+    MAX_RULE_ROWS,
+    PriceInput,
+    RuleInput,
+)
+from app.domain.enums import PricingMode, ServiceBookingMode
 from app.domain.glossary import TemplateKind
 from app.domain.search import normalize
 from app.persistence.models.catalog import CATEGORY_NAME_MAX
 from app.schemas.auth import _sin_nul
-from app.schemas.catalog import SortOrder, _Body, _nombre, _Out
+from app.schemas.catalog import SortOrder, Weekday, _Body, _naive_time, _nombre, _Out
 from app.schemas.common import CamelModel
 
 
@@ -83,6 +94,36 @@ class ServicePriceInput(_Body):
         return PriceInput(self.vehicle_size_id, self.price_cents, self.duration_min)
 
 
+class ScheduleRuleInput(_Body):
+    """Una fila de regla horaria (FASE-5-CONTRATO §3.2): el servicio puede **arrancar** entre
+    `window_start` y `last_start` (inclusive) del día ISO `weekday`. Hora local del negocio."""
+
+    weekday: Weekday
+    window_start: time
+    last_start: time
+
+    _sin_zona = field_validator("window_start", "last_start")(_naive_time)
+
+    @model_validator(mode="after")
+    def _ventana_valida(self) -> "ScheduleRuleInput":
+        if self.last_start < self.window_start:
+            raise ValueError("last_start must be at or after window_start")
+        return self
+
+    def to_input(self) -> RuleInput:
+        return RuleInput(self.weekday, self.window_start, self.last_start)
+
+
+ScheduleRules = Annotated[list[ScheduleRuleInput], Field(max_length=MAX_RULE_ROWS)]
+
+
+class ScheduleRuleResponse(CamelModel):
+    id: uuid.UUID
+    weekday: int
+    window_start: time
+    last_start: time
+
+
 class ServicePriceResponse(CamelModel):
     id: uuid.UUID
     vehicle_size_id: uuid.UUID
@@ -98,19 +139,30 @@ class ServiceCreate(_Body):
     #: % de seña propio (D4-17). Ausente o `null`: usa el del negocio.
     deposit_bps: DepositBps | None = None
     prices: Annotated[list[ServicePriceInput], Field(min_length=1)]
+    #: F5 (§3.1): `SOLO_A_MANO` no aparece en el turnero.
+    booking_mode: ServiceBookingMode = ServiceBookingMode.TURNERO
+    #: F5 (§3.2): vacía = arranca en todo el horario del negocio.
+    schedule_rules: ScheduleRules = []
 
 
 class ServiceUpdate(_Body):
-    """Sin precios ni modalidad. `notes: null` o `category_id: null` explícitos las borran."""
+    """Sin precios ni modalidad. `notes: null` o `category_id: null` explícitos las borran.
+
+    F5: `booking_mode` y `schedule_rules` (lista **completa**: reemplaza las reglas vivas; `[]` las
+    borra; ausente no las toca). Ninguno de los dos acepta `null`.
+    """
 
     name: ServiceName | None = None
     notes: Notes | None = None
     category_id: uuid.UUID | None = None
+    booking_mode: ServiceBookingMode | None = None
+    schedule_rules: ScheduleRules | None = None
 
     @model_validator(mode="after")
     def _name_no_nulo(self) -> "ServiceUpdate":
-        if "name" in self.model_fields_set and self.name is None:
-            raise ValueError("name cannot be null")
+        for name in ("name", "booking_mode", "schedule_rules"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
         return self
 
 
@@ -138,6 +190,10 @@ class ServiceResponse(CamelModel):
     glossary_code: str | None
     #: % de seña propio (D4-17); `null` = usa el del negocio.
     deposit_bps: int | None
+    #: F5 (§3.1).
+    booking_mode: ServiceBookingMode
+    #: F5 (§3.2): reglas vivas por día y hora; vacía = todo el horario del negocio.
+    schedule_rules: list[ScheduleRuleResponse]
     prices: list[ServicePriceResponse]
     #: Tamaños vivos sin precio vivo: la UI los marca (§6). Vacío si el servicio está completo.
     missing_price_size_ids: list[uuid.UUID]

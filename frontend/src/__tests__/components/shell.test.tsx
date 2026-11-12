@@ -126,8 +126,10 @@ describe("activeItem", () => {
       visibleNavItems(NAV_ITEMS, { role }, perms).map((i) => i.label);
     expect(labels("OWNER", [])).toEqual(["Inicio", "Catálogo", "Negocio", "Equipo"]);
     expect(labels("STAFF", ["CATALOGO_EDITAR"])).toEqual(["Inicio", "Catálogo", "Negocio"]);
+    // Con permisos de agenda entra a "Bloqueos y aperturas" (adenda 5.1-12).
+    expect(labels("STAFF", ["AGENDA_VER"])).toEqual(["Inicio", "Negocio"]);
+    expect(labels("STAFF", ["TURNOS_GESTIONAR"])).toEqual(["Inicio", "Negocio"]);
     expect(labels("STAFF", ["PRECIOS_EDITAR"])).toEqual(["Inicio", "Catálogo"]);
-    expect(labels("STAFF", ["AGENDA_VER"])).toEqual(["Inicio"]);
   });
 });
 
@@ -169,7 +171,7 @@ describe("Sidebar", () => {
 
     useAuthStore.setState({
       user: { ...session.user, role: "STAFF" },
-      permissions: ["AGENDA_VER"],
+      permissions: ["CAJA_VER"],
     });
     render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
     expect(screen.queryByRole("link", { name: "Equipo" })).toBeNull();
@@ -180,7 +182,9 @@ describe("Sidebar", () => {
       { label: "Caja", href: "/caja", icon: NAV_ITEMS[0]!.icon, permission: "CAJA_VER" as const },
     ];
     const staff = { role: "STAFF" as const };
-    expect(visibleNavItems(items, staff, ["AGENDA_VER"]).map((i) => i.label)).toEqual(["Inicio"]);
+    expect(visibleNavItems(items, staff, ["COBROS_REGISTRAR"]).map((i) => i.label)).toEqual([
+      "Inicio",
+    ]);
     expect(visibleNavItems(items, staff, ["CAJA_VER"]).map((i) => i.label)).toEqual([
       "Inicio",
       "Caja",

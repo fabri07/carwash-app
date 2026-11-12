@@ -104,6 +104,13 @@ RECETAS: dict[str, Receta] = {
         "price_cents": PRECIO_CENTS,
         "duration_min": 60,
     },
+    # ── F5 · agenda ── regla horaria del servicio (vie 09–16).
+    "service_schedule_rules": lambda c: {
+        "service_id": c["services"],
+        "weekday": 5,
+        "window_start": time(9, 0),
+        "last_start": time(16, 0),
+    },
     "resources": lambda c: {"name": f"Puesto 1 {c.tag}", "sort_order": 1},
     "business_hours": lambda c: {
         "weekday": 4,
@@ -201,6 +208,19 @@ RECETAS: dict[str, Receta] = {
         "starts_at": INICIO_TURNO + timedelta(days=1),
         "ends_at": INICIO_TURNO + timedelta(days=2),
         "reason": "Bloqueo operativo",
+        "created_by_user_id": c["users"],
+    },
+    "schedule_openings": lambda c: {
+        "resource_id": c["resources"],
+        "starts_at": INICIO_TURNO + timedelta(days=3),
+        "ends_at": INICIO_TURNO + timedelta(days=3, hours=2),
+        "reason": "Apertura especial",
+        "created_by_user_id": c["users"],
+    },
+    "customer_incident_marks": lambda c: {
+        "customer_id": c["customers"],
+        "booking_id": c["bookings"],
+        "reason": "No avisó",
         "created_by_user_id": c["users"],
     },
     # ── 1.4 Operación ──

@@ -104,6 +104,8 @@ function service(over: Partial<Service> = {}): Service {
       { id: "p2", vehicle_size_id: "s2", price_cents: 3_000_000, duration_min: 90 },
     ],
     missing_price_size_ids: [],
+    booking_mode: "TURNERO",
+    schedule_rules: [],
     ...stamp,
     ...over,
   };
@@ -375,6 +377,8 @@ describe("Servicios — alta, edición y baja", () => {
         { vehicle_size_id: "s1", price_cents: 2_000_000, duration_min: 60 },
         { vehicle_size_id: "s2", price_cents: 3_050_050, duration_min: 90 },
       ],
+      booking_mode: "TURNERO",
+      schedule_rules: [],
     });
     expect(typeof key).toBe("string");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -526,7 +530,55 @@ describe("Servicios — alta, edición y baja", () => {
         name: "Lavado total",
         notes: null,
         category_id: null,
+        booking_mode: "TURNERO",
       }),
+    );
+    // Las reglas no cambiaron: no se mandan (cada reemplazo anula y recrea todas las filas).
+    expect((servicesApi.update as jest.Mock).mock.calls[0]![1]).not.toHaveProperty(
+      "schedule_rules",
+    );
+  });
+
+  it("marca solo a mano y edita las reglas horarias como lista completa", async () => {
+    (servicesApi.list as jest.Mock).mockResolvedValue(
+      page([
+        service({
+          schedule_rules: [
+            { id: "rg1", weekday: 5, window_start: "09:00:00", last_start: "16:00:00" },
+          ],
+        }),
+      ]),
+    );
+    (servicesApi.update as jest.Mock).mockResolvedValueOnce(service());
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Editar servicio Lavado completo" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Editar servicio Lavado completo" });
+    expect(within(dialog).getByLabelText("Día")).toHaveValue("5");
+    expect(within(dialog).getByLabelText("Desde")).toHaveValue("09:00");
+    await userEvent.click(within(dialog).getByRole("switch"));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Agregar ventana" }));
+    const dias = within(dialog).getAllByLabelText("Día");
+    await userEvent.selectOptions(dias[1]!, "6");
+    const ultimo = within(dialog).getAllByLabelText("Último inicio")[1]!;
+    await userEvent.clear(ultimo);
+    await userEvent.type(ultimo, "08:00");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+    expect(await within(dialog).findByText(/no puede ser antes/i)).toBeInTheDocument();
+    expect(servicesApi.update).not.toHaveBeenCalled();
+    await userEvent.clear(ultimo);
+    await userEvent.type(ultimo, "11:00");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Quitar la ventana 1" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() =>
+      expect(servicesApi.update).toHaveBeenCalledWith(
+        "sv1",
+        expect.objectContaining({
+          booking_mode: "SOLO_A_MANO",
+          schedule_rules: [{ weekday: 6, window_start: "09:00", last_start: "11:00" }],
+        }),
+      ),
     );
   });
 

@@ -10,6 +10,7 @@ import {
   ResourcesTab,
   VehicleSizesTab,
 } from "@/features/configuracion/CatalogTabs";
+import { AgendaTab } from "@/features/configuracion/AgendaTab";
 import { BrandingTab } from "@/features/configuracion/BrandingTab";
 import { BusinessTab, DepositTab } from "@/features/configuracion/SettingsTabs";
 import { VehicleCatalogPanel } from "@/features/vehiculos/VehicleCatalogPanel";
@@ -26,6 +27,8 @@ export function ConfigPageClient() {
   const isOwner = useIsOwner();
   const can = useCan();
   const canCatalog = can("CATALOGO_EDITAR");
+  // F5 (PR 5.1): bloqueos y aperturas se ven con AGENDA_VER y se editan con TURNOS_GESTIONAR.
+  const canAgenda = can("AGENDA_VER") || can("TURNOS_GESTIONAR");
   const loaded = usePermissionsLoaded();
 
   // Tras recargar los permisos no están hasta que llega `/auth/me`: sin esto, quien edita el
@@ -34,7 +37,7 @@ export function ConfigPageClient() {
     return <p className="text-sm text-muted-foreground">Cargando…</p>;
   }
 
-  if (!isOwner && !canCatalog) {
+  if (!isOwner && !canCatalog && !canAgenda) {
     return (
       <section aria-labelledby="config-title" className="rounded-xl border bg-card">
         <h1 id="config-title" className="sr-only">
@@ -43,14 +46,14 @@ export function ConfigPageClient() {
         <EmptyState
           icon={<Lock className="h-6 w-6" />}
           title="No tenés acceso a esta sección"
-          description="La configuración del negocio la manejan el dueño y quienes tengan permiso para editar el catálogo. Si necesitás un cambio, pedíselo."
+          description="La configuración del negocio la manejan el dueño y quienes tengan permiso para editar el catálogo o la agenda. Si necesitás un cambio, pedíselo."
           action={{ label: "Volver al inicio", href: "/dashboard" }}
         />
       </section>
     );
   }
 
-  const first = isOwner ? "negocio" : "horarios";
+  const first = isOwner ? "negocio" : canCatalog ? "horarios" : "agenda";
   return (
     <section aria-labelledby="config-title" className="space-y-4">
       <div>
@@ -67,6 +70,7 @@ export function ConfigPageClient() {
           {isOwner && <TabsTrigger value="marca">Personalización</TabsTrigger>}
           {isOwner && <TabsTrigger value="sena">Seña y reservas</TabsTrigger>}
           {canCatalog && <TabsTrigger value="horarios">Horarios</TabsTrigger>}
+          {canAgenda && <TabsTrigger value="agenda">Bloqueos y aperturas</TabsTrigger>}
           {canCatalog && <TabsTrigger value="puestos">Puestos</TabsTrigger>}
           {canCatalog && <TabsTrigger value="medios">Medios de pago</TabsTrigger>}
           {canCatalog && <TabsTrigger value="tamanos">Tamaños</TabsTrigger>}
@@ -90,6 +94,11 @@ export function ConfigPageClient() {
         {canCatalog && (
           <TabsContent value="horarios">
             <BusinessHoursTab />
+          </TabsContent>
+        )}
+        {canAgenda && (
+          <TabsContent value="agenda">
+            <AgendaTab />
           </TabsContent>
         )}
         {canCatalog && (

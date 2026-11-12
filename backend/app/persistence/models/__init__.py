@@ -1,6 +1,12 @@
 """Importa todos los modelos para que `Base.metadata` (y el autogenerate) los vea."""
 
-from app.persistence.models.agenda import Booking, BookingItem, ScheduleBlock
+from app.persistence.models.agenda import (
+    Booking,
+    BookingItem,
+    CustomerIncidentMark,
+    ScheduleBlock,
+    ScheduleOpening,
+)
 from app.persistence.models.cancellation import Cancellation
 from app.persistence.models.catalog import (
     BusinessHours,
@@ -9,6 +15,7 @@ from app.persistence.models.catalog import (
     Service,
     ServiceCategory,
     ServicePrice,
+    ServiceScheduleRule,
     VehicleSize,
 )
 from app.persistence.models.customer import Customer, CustomerVehicle, Vehicle
@@ -34,6 +41,7 @@ __all__ = [
     "Cancellation",
     "CashMovement",
     "Customer",
+    "CustomerIncidentMark",
     "CustomerVehicle",
     "IdempotencyKey",
     "Job",
@@ -46,9 +54,11 @@ __all__ = [
     "Quote",
     "Resource",
     "ScheduleBlock",
+    "ScheduleOpening",
     "Service",
     "ServiceCategory",
     "ServicePrice",
+    "ServiceScheduleRule",
     "Tenant",
     "TenantSettings",
     "User",

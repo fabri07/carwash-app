@@ -25,7 +25,7 @@ from app.application.services.errors import (
     InUseError,
     NotFoundError,
 )
-from app.domain.booking_state import BLOCKING_BOOKING_STATUSES
+from app.domain.booking_state import ACTIVE_BOOKING_STATUSES
 from app.domain.enums import PricingMode
 from app.domain.exceptions import InvalidAmountError
 from app.domain.money import BPS_DENOMINATOR
@@ -53,6 +53,9 @@ from app.persistence.repositories.catalog import (
     ServiceRepository,
     VehicleSizeRepository,
 )
+
+#: Turnos que impiden anular su puesto: los que lo ocupan más los que lo guardan sin ocuparlo.
+RESOURCE_IN_USE_STATUSES = ACTIVE_BOOKING_STATUSES
 
 
 def _check_hours(weekday: int, opens_at: time, closes_at: time) -> None:
@@ -328,7 +331,12 @@ class CatalogService(ServiceBase):
         return resource
 
     async def void_resource(self, id: uuid.UUID) -> None:
-        """No se anula un puesto con turnos que lo ocupan hoy o más adelante."""
+        """No se anula un puesto con turnos activos que lo usan hoy o más adelante (409 `IN_USE`).
+
+        F5 (FASE-5-CONTRATO §4.1, diferido de F4 §11.4): cuentan también la lista de espera
+        (`PENDIENTE_REVISION`) y el turno a cotizar, que guardan el puesto aunque no lo ocupen, y
+        un turno en curso (`end_at > now`, no solo `start_at > now`).
+        """
         await self._enter()
         resource = await self._require(ResourceRepository(self._session), id)
         busy = await self._session.scalar(
@@ -338,7 +346,7 @@ class CatalogService(ServiceBase):
                 Booking.tenant_id == self._tenant_id,
                 Booking.resource_id == resource.id,
                 Booking.voided_at.is_(None),
-                Booking.status.in_(BLOCKING_BOOKING_STATUSES),
+                Booking.status.in_(RESOURCE_IN_USE_STATUSES),
                 Booking.end_at > func.now(),
             )
         )

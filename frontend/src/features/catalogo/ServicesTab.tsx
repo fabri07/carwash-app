@@ -42,6 +42,8 @@ import type { Service } from "@/types/api";
 import {
   toDepositBps,
   toPriceItems,
+  sameRules,
+  toScheduleRules,
   type ServiceCreateInput,
   type ServiceEditInput,
   type ServicePricesInput,
@@ -167,6 +169,9 @@ export function ServicesTab() {
           category_id: values.category_id === "" ? null : values.category_id,
           deposit_bps: toDepositBps(values.deposit_percent),
           prices: toPriceItems(values.prices),
+          // Nace en el turnero y sin reglas horarias: se ajusta después con "Editar".
+          booking_mode: "TURNERO",
+          schedule_rules: [],
         },
         idempotencyKey,
       );
@@ -189,6 +194,12 @@ export function ServicesTab() {
         name: values.name,
         notes: values.notes === "" ? null : values.notes,
         category_id: values.category_id === "" ? null : values.category_id,
+        booking_mode: values.solo_a_mano ? "SOLO_A_MANO" : "TURNERO",
+        // Lista completa: reemplaza las reglas vivas (vacía = todo el horario del negocio). Solo
+        // si cambió: cada reemplazo anula y recrea todas las filas.
+        ...(!sameRules(values.schedule_rules, item.schedule_rules) && {
+          schedule_rules: toScheduleRules(values.schedule_rules),
+        }),
       });
     } catch (e) {
       throw new FormSubmitError(serviceError(e));
