@@ -379,3 +379,24 @@ rebasea después de mergear 5.2.
 
 D5-1 a D5-5 y D5-10 (2026-11-11). D5-6 a D5-9 son decisiones por defecto de este contrato: se confirman o se
 cambian en el checkpoint.
+
+## 12. Adenda del PR 5.1 — motor y configuración de la agenda (2026-11-11)
+
+### Decisiones tomadas al construir
+
+Donde el contrato era ambiguo se eligió la lectura más conservadora.
+
+| # | Decisión |
+|---|---|
+| 5.1-1 | **Bloqueos y aperturas se cargan en hora local del negocio** (`date`, `end_date` opcional e inclusive, `start_time`/`end_time` opcionales; sin horas = día completo `[00:00, 00:00)`), no como instantes. El backend los convierte con `tenants.timezone` (Z9) y responde instantes UTC. Tope: un año por rango. El front no tiene que calcular zonas. |
+| 5.1-2 | **El downgrade de `0010` deja `PENDIENTE_REVISION` y `RECHAZADO` en `booking_status`**: Postgres no saca valores de un enum sin recrear el tipo (y con él el `EXCLUDE` y los CHECK). Corta antes si algún turno vivo los usa; sin filas son inertes y volver a subir los reusa (`ADD VALUE IF NOT EXISTS`, en un bloque autocommit propio). El downgrade también corta con reglas, aperturas o marcas vivas, servicios `SOLO_A_MANO` o reservas configuradas distinto del default. |
+| 5.1-3 | **`public_tenant_by_slug` necesita lectura del dueño** sobre `tenants` y `tenant_settings` (políticas `FOR SELECT TO carwash_owner`, `<tabla>_owner_public_lookup`), como `users_owner_auth_lookup` para el login: con `FORCE ROW LEVEL SECURITY` la función `SECURITY DEFINER` no vería filas. No alcanza al rol de runtime. Se ajustaron los tests de políticas y del dueño sin contexto. |
+| 5.1-4 | **`PENDIENTE_REVISION` entra a `_ACTIVE` tal cual dice §3.5**: además de `CANCEL_BY_CLIENT`, habilita `CANCEL_BY_CLIENT_AFTER_START` y `CANCEL_OPERATIONAL` desde la lista de espera (las tres comparten el conjunto). |
+| 5.1-5 | **`DELETE /resources/{id}` → 409 `IN_USE`** cuenta `PENDIENTE_SEÑA`, `CONFIRMADO`, `RECIBIDO`, `PENDIENTE_REVISION` **y `PENDIENTE_COTIZACION`** (también guarda el puesto), con `end_at > now` (un turno en curso también lo retiene), más estricto que "`start_at > now`" del contrato. |
+| 5.1-6 | **El alta de un bloqueo devuelve los turnos activos que pisa** (`PENDIENTE_SEÑA`, `PENDIENTE_COTIZACION`, `PENDIENTE_REVISION`, `CONFIRMADO`, `RECIBIDO`) con el nombre del cliente, sin teléfono: el contacto queda para la bandeja de 5.3. No los cancela (R-T-052). |
+| 5.1-7 | **Incidencias (D-014):** la ventana de 90 días se mide por `requested_at` (cancelaciones `TARDIA`/`POSTERIOR_AL_TURNO`), `start_at` (turnos `CANCELADO_DEMORA`/`NO_ASISTIO`) y `created_at` (marcas vivas), sin tope superior. Lo anulado no cuenta. |
+| 5.1-8 | **`GET /agenda/availability` no filtra `SOLO_A_MANO` ni `A_COTIZAR`**: es la disponibilidad interna del negocio (que sí los agenda a mano). El filtro es del turnero público (5.2). Devuelve `slots` con los puestos libres en `sort_order`. |
+| 5.1-9 | **`deposit_instructions` nunca se guarda vacía** (CHECK `1–500`; el PATCH convierte blanco en `null`). |
+| 5.1-10 | **El formulario de alta de servicio no edita modo ni reglas**: nace `TURNERO` sin reglas y se ajusta con "Editar" (donde están el interruptor "Solo a mano" y el editor de ventanas). |
+| 5.1-11 | **Test de slugs reservados en los dos lados:** el front tiene la lista espejo `src/lib/reservedSlugs.ts` (la usa el formulario del negocio para avisar antes de guardar) y su test de carpetas; el backend compara las dos listas y vuelve a leer las carpetas. |
+| 5.1-12 | La pestaña "Bloqueos y aperturas" se ve con `AGENDA_VER` (o `TURNOS_GESTIONAR`); por eso `/configuracion` deja entrar también a quien solo tiene permisos de agenda (ve únicamente esa pestaña). El orden de los puestos ya era editable (D5-6): solo se aclaró el texto de ayuda. |
