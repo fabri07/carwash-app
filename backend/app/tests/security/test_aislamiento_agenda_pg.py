@@ -329,7 +329,13 @@ LUNES = (HOY + timedelta(days=(7 - HOY.weekday()) % 7 or 7)).date()
 
 
 @pytest_asyncio.fixture
-async def dos(pg_session_factory, pg_tenant_a, pg_tenant_b, pg_user_factory) -> dict[str, Any]:
+async def dos(
+    pg_engine, pg_session_factory, pg_tenant_a, pg_tenant_b, pg_user_factory
+) -> dict[str, Any]:
+    # Los tests de la migración 0010 (que corren antes) bajan y suben el enum
+    # `service_booking_mode`: una conexión del pool guardaría el OID viejo ("cache lookup failed
+    # for type"). Se tira el pool, como en `test_cuentas_pg.py`.
+    await pg_engine.dispose()
     owner_a = await pg_user_factory(pg_tenant_a, "agenda-owner-a@example.com")
     owner_b = await pg_user_factory(pg_tenant_b, "agenda-owner-b@example.com")
     async with pg_session_factory() as s, s.begin():
