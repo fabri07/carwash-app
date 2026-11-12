@@ -354,14 +354,7 @@ async def test_patch_de_reglas_sobre_el_servicio_de_a_desde_b_es_404_y_no_cambia
 # ── 6 · Entradas hostiles: nunca un 500 ──────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BUG T3-5.1: date=9999-12-31 desborda `day + timedelta(days=1)` en "
-        "agenda_service.py (LocalRange.instants y availability) → OverflowError → 500. "
-        "Debería ser 422."
-    ),
-)
+# Era el bug T3-5.1 (OverflowError → 500); arreglado en la revisión (adenda 5.1-15).
 @pytest.mark.parametrize("ruta", ["availability", "blocks", "openings"])
 async def test_una_fecha_en_el_borde_del_calendario_es_422_no_500(client, cookies_a, a, ruta):
     if ruta == "availability":
