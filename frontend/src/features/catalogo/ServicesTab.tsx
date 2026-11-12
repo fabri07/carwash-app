@@ -42,6 +42,7 @@ import type { Service } from "@/types/api";
 import {
   toDepositBps,
   toPriceItems,
+  sameRules,
   toScheduleRules,
   type ServiceCreateInput,
   type ServiceEditInput,
@@ -194,8 +195,11 @@ export function ServicesTab() {
         notes: values.notes === "" ? null : values.notes,
         category_id: values.category_id === "" ? null : values.category_id,
         booking_mode: values.solo_a_mano ? "SOLO_A_MANO" : "TURNERO",
-        // Lista completa: reemplaza las reglas vivas (vacía = todo el horario del negocio).
-        schedule_rules: toScheduleRules(values.schedule_rules),
+        // Lista completa: reemplaza las reglas vivas (vacía = todo el horario del negocio). Solo
+        // si cambió: cada reemplazo anula y recrea todas las filas.
+        ...(!sameRules(values.schedule_rules, item.schedule_rules) && {
+          schedule_rules: toScheduleRules(values.schedule_rules),
+        }),
       });
     } catch (e) {
       throw new FormSubmitError(serviceError(e));

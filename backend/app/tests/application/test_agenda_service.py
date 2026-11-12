@@ -48,6 +48,7 @@ async def _inicios(lav: Lavadero, *, dia: date = LUNES, ahora: datetime = AHORA,
         vehicle_size_id=kw.get("tamano", lav.auto),
         service_ids=kw.get("servicios", [lav.lavado]),
         now=ahora,
+        public=kw.get("public", False),
     )
     return {s.start_at: s.resource_ids for s in resultado.starts}
 
@@ -130,8 +131,30 @@ async def test_una_apertura_especial_abre_un_domingo(lav):
 
 async def test_el_horizonte_y_el_paso_salen_de_la_configuracion(lav):
     await lav.configurar(slot_step_min=60, booking_horizon_days=1)
-    assert sorted(await _inicios(lav)) == [local(9), local(10), local(11), local(12)]
-    assert await _inicios(lav, dia=LUNES + timedelta(days=7)) == {}
+    assert sorted(await _inicios(lav, public=True)) == [local(9), local(10), local(11), local(12)]
+    assert await _inicios(lav, dia=LUNES + timedelta(days=7), public=True) == {}
+
+
+async def test_la_disponibilidad_del_negocio_no_usa_horizonte_ni_anticipacion(lav):
+    """El negocio agenda a mano a quien llama para dentro de 3 semanas o ya está en el lavadero:
+    horizonte y anticipación mínima son reglas del turnero público (5.2)."""
+    await lav.configurar(booking_horizon_days=1, min_advance_min=240)
+    lejos = LUNES + timedelta(days=21)
+    assert await _inicios(lav, dia=lejos, public=True) == {}
+    assert len(await _inicios(lav, dia=lejos)) == 7
+    # A las 07:00 del mismo día, con 240' de anticipación, el público arranca a las 11.
+    assert min(await _inicios(lav, ahora=local(7), public=True)) == local(11)
+    assert min(await _inicios(lav, ahora=local(7))) == local(9)
+
+
+@pytest.mark.parametrize("dia", [date(9999, 12, 31), date(1, 1, 1)])
+async def test_una_fecha_absurda_se_rechaza_en_vez_de_desbordar(lav, dia):
+    with pytest.raises(GuardFailedError):
+        await _inicios(lav, dia=dia)
+    with pytest.raises(GuardFailedError):
+        await lav.agenda.create_block(LocalRange(dia))
+    with pytest.raises(GuardFailedError):
+        await lav.agenda.create_block(LocalRange(LUNES, end_day=date(9999, 12, 31)))
 
 
 async def test_un_servicio_sin_precio_para_el_tamano_es_incoherente(lav):
@@ -389,3 +412,34 @@ async def test_anular_un_servicio_anula_sus_reglas(lav):
     regla = vista.rules[0]
     await servicios.void_service(lav.tapizado)
     assert regla.voided_at is not None
+
+
+async def test_un_turno_anulado_no_suma_su_cancelacion_tardia(lav):
+    cancelacion = await _cancelacion(lav, CancellationClassification.TARDIA, T + timedelta(days=1))
+    await lav.session.execute(
+        update(Booking)
+        .where(Booking.id == cancelacion.booking_id)
+        .values(voided_at=datetime.now(UTC), void_reason=VoidReason.ERROR_DE_CARGA)
+    )
+    assert await lav.agenda.count_incidents(lav.cliente, now=AHORA_INC) == 0
+
+
+async def test_bajarse_de_la_lista_de_espera_no_es_incidencia(lav):
+    cuando = T + timedelta(days=1)
+    turno = await _con_estado(lav, BookingStatus.PENDIENTE_REVISION, cuando + timedelta(hours=1))
+    cancelacion = await lav.turnos.cancel_by_client(turno.id, now=cuando)
+    assert cancelacion.classification == CancellationClassification.NORMAL
+    assert await lav.agenda.count_incidents(lav.cliente, now=AHORA_INC) == 0
+
+
+async def test_no_se_anula_un_servicio_con_un_pedido_en_lista_de_espera(lav):
+    futuro = datetime.now(UTC) + timedelta(days=3)
+    turno = await lav.turno(inicio=futuro, ahora=datetime.now(UTC))
+    await lav.session.execute(
+        update(Booking)
+        .where(Booking.id == turno.id)
+        .values(status=BookingStatus.PENDIENTE_REVISION, hold_expires_at=None)
+    )
+    servicios = ServiceCatalogService(lav.session, lav.tenant_id, lav.owner_id)
+    with pytest.raises(InUseError):
+        await servicios.void_service(lav.lavado)

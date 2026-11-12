@@ -22,6 +22,17 @@ BLOCKING_BOOKING_STATUSES: frozenset[BookingStatus] = frozenset(
     {_S.PENDIENTE_SENA, _S.CONFIRMADO, _S.RECIBIDO}
 )
 
+#: Turnos que siguen en pie (ocupen puesto o no): un puesto o un servicio con alguno de estos no
+#: se puede anular, y un bloqueo nuevo que los pisa los lista para avisar. Una sola fuente: antes
+#: había tres copias y una se quedó sin `PENDIENTE_REVISION`.
+ACTIVE_BOOKING_STATUSES: tuple[BookingStatus, ...] = (
+    _S.PENDIENTE_SENA,
+    _S.PENDIENTE_COTIZACION,
+    _S.PENDIENTE_REVISION,
+    _S.CONFIRMADO,
+    _S.RECIBIDO,
+)
+
 #: Desde donde el cliente o el negocio pueden cancelar. **[corregir] R-T-036**: ni desde
 #: `VENCIDO` ni desde estados cerrados; el negocio tampoco desde `RECIBIDO`. F5 (§3.5) suma
 #: `PENDIENTE_REVISION`: el cliente en lista de espera también puede bajarse.

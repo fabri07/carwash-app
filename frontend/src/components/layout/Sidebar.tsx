@@ -56,7 +56,8 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/configuracion",
     icon: Settings,
     section: "Configuración",
-    permission: "CATALOGO_EDITAR",
+    // Con permisos de agenda se entra a ver "Bloqueos y aperturas" (adenda 5.1-12).
+    anyPermission: ["CATALOGO_EDITAR", "AGENDA_VER", "TURNOS_GESTIONAR"],
   },
   {
     label: "Equipo",

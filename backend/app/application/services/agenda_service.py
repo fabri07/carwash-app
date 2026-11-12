@@ -23,6 +23,7 @@ from app.application.services._items import catalog_items
 from app.application.services.booking_service import BookingService
 from app.application.services.errors import NotFoundError
 from app.domain.availability import BusinessHour, FreeStart, RuleRow, Span, free_starts
+from app.domain.booking_state import ACTIVE_BOOKING_STATUSES
 from app.domain.enums import BookingStatus, CancellationClassification
 from app.domain.exceptions import GuardFailedError
 from app.domain.void import VoidReason
@@ -60,19 +61,23 @@ INCIDENT_CANCELLATIONS = (
 )
 #: Estados finales del turno que cuentan como incidencia.
 INCIDENT_BOOKING_STATUSES = (BookingStatus.CANCELADO_DEMORA, BookingStatus.NO_ASISTIO)
-#: Turnos que siguen en pie: los que un bloqueo nuevo deja adentro (hay que avisarle al cliente).
-ACTIVE_BOOKING_STATUSES = (
-    BookingStatus.PENDIENTE_SENA,
-    BookingStatus.PENDIENTE_COTIZACION,
-    BookingStatus.PENDIENTE_REVISION,
-    BookingStatus.CONFIRMADO,
-    BookingStatus.RECIBIDO,
-)
 _ALL_ROWS = 10_000  # puestos y franjas de un negocio: decenas, se leen enteros
 
 
 #: Tope de un bloqueo o una apertura: un año (vacaciones largas entran; un typo de año, no).
 MAX_SPAN = timedelta(days=366)
+#: Días que el negocio puede mirar o cargar: fuera de esto es un typo (y `date.max + 1 día`
+#: desborda: sin esta guarda, `9999-12-31` terminaba en 500).
+MIN_DAY = date(2000, 1, 1)
+MAX_DAY = date(2200, 12, 31)
+#: La disponibilidad interna no tiene horizonte del turnero: mira hasta un año adelante.
+OWNER_HORIZON_DAYS = 366
+
+
+def check_day(day: date) -> date:
+    if not MIN_DAY <= day <= MAX_DAY:
+        raise GuardFailedError(f"date out of range: {day.isoformat()}")
+    return day
 
 
 @dataclass(frozen=True)
@@ -89,7 +94,8 @@ class LocalRange:
     end_time: time | None = None
 
     def instants(self, tz: ZoneInfo) -> tuple[datetime, datetime]:
-        last = self.end_day or self.day
+        last = check_day(self.end_day or self.day)
+        check_day(self.day)
         starts = datetime.combine(self.day, self.start_time or time(0), tzinfo=tz)
         if self.end_time is None:
             ends = datetime.combine(last + timedelta(days=1), time(0), tzinfo=tz)
@@ -255,6 +261,7 @@ class AgendaService(ServiceBase):
         vehicle_size_id: uuid.UUID,
         service_ids: Sequence[uuid.UUID],
         now: datetime,
+        public: bool = False,
     ) -> Availability:
         """Los inicios libres de `day` para esos servicios y ese tamaño (§5).
 
@@ -264,6 +271,7 @@ class AgendaService(ServiceBase):
         """
         await self._enter()
         require_instant(now)
+        check_day(day)
         await self._require(VehicleSizeRepository(self._session), vehicle_size_id)
         settings = await self._settings()
         items = await catalog_items(
@@ -317,8 +325,10 @@ class AgendaService(ServiceBase):
             occupied=occupied,
             resources=[r.id for r in resources.items],
             duration_min=duration,
-            min_advance_min=settings.min_advance_min,
-            horizon_days=settings.booking_horizon_days,
+            # Anticipación mínima y horizonte son reglas del turnero público (5.2). El negocio
+            # agenda a mano a quien llama o ya está en el lavadero: sin anticipación, un año.
+            min_advance_min=settings.min_advance_min if public else 0,
+            horizon_days=settings.booking_horizon_days if public else OWNER_HORIZON_DAYS,
             step_min=settings.slot_step_min,
         )
         return Availability(timezone=tz.key, duration_min=duration, starts=starts)

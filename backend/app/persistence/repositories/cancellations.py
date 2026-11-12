@@ -35,7 +35,8 @@ class CancellationRepository(BaseRepository[Cancellation]):
         tenant_id: uuid.UUID,
     ) -> list[Cancellation]:
         """Cancelaciones vivas de turnos del cliente con esas clasificaciones, pedidas desde
-        `since` (incidencias, D-014). El cruce con `bookings` es por la FK compuesta."""
+        `since` (incidencias, D-014). El cruce con `bookings` es por la FK compuesta; un turno
+        anulado (cargado por error) no cuenta aunque su cancelación siga viva (adenda 5.1-7)."""
         result = await self._session.scalars(
             select(Cancellation)
             .join(
@@ -45,6 +46,7 @@ class CancellationRepository(BaseRepository[Cancellation]):
             )
             .where(
                 Booking.customer_id == customer_id,
+                Booking.voided_at.is_(None),
                 Cancellation.classification.in_(tuple(classifications)),
                 Cancellation.requested_at >= since,
                 *self._scope(tenant_id, False),

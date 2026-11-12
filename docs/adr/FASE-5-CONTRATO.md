@@ -400,3 +400,13 @@ Donde el contrato era ambiguo se eligió la lectura más conservadora.
 | 5.1-10 | **El formulario de alta de servicio no edita modo ni reglas**: nace `TURNERO` sin reglas y se ajusta con "Editar" (donde están el interruptor "Solo a mano" y el editor de ventanas). |
 | 5.1-11 | **Test de slugs reservados en los dos lados:** el front tiene la lista espejo `src/lib/reservedSlugs.ts` (la usa el formulario del negocio para avisar antes de guardar) y su test de carpetas; el backend compara las dos listas y vuelve a leer las carpetas. |
 | 5.1-12 | La pestaña "Bloqueos y aperturas" se ve con `AGENDA_VER` (o `TURNOS_GESTIONAR`); por eso `/configuracion` deja entrar también a quien solo tiene permisos de agenda (ve únicamente esa pestaña). El orden de los puestos ya era editable (D5-6): solo se aclaró el texto de ayuda. |
+| 5.1-13 | **`GET /agenda/availability` no aplica horizonte ni anticipación mínima** (revisión T3b): el negocio agenda a mano a quien llama para dentro de tres semanas o ya está en el lavadero. Mira hasta un año. `AgendaService.availability(public=True)` las aplica: es lo que usa el turnero de 5.2. |
+| 5.1-14 | **Bajarse de la lista de espera no es incidencia:** si el cliente cancela un `PENDIENTE_REVISION`, la cancelación queda `NORMAL` sin importar la anticipación. El turno nunca se aprobó ni reservó horario. |
+| 5.1-15 | **Un solo conjunto de turnos "en pie"** (`ACTIVE_BOOKING_STATUSES` en `domain/booking_state.py`) para anular un puesto, anular un servicio y avisar al bloquear. Antes había tres copias, y la del servicio no tenía `PENDIENTE_REVISION`. Las fechas fuera de 2000–2200 dan 422 (antes, `9999-12-31` desbordaba y daba 500). |
+
+### Revisión de código (T3b) — diferidos con motivo
+
+| Hallazgo | Motivo |
+|---|---|
+| `_replace_rules` y `void_service` anulan a mano en vez de usar `BaseRepository.void`; `check_rules` corre dos veces | Es el mismo patrón que ya usa `void_service` con precios desde F4. Unificar la anulación toca todos los servicios y va en su propio PR. El front ya no manda reglas sin cambios. |
+| `count_incidents` lee filas en vez de hacer `COUNT(*)`; `create_block` busca los clientes con N+1 | Con 90 días por cliente son pocas filas, y un bloqueo pisa decenas de turnos como mucho. Se pasa a `COUNT` en 5.2, donde el conteo corre en cada pedido público. |

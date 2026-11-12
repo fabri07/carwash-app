@@ -91,6 +91,16 @@ export function AgendaTab() {
       }
     } catch (e) {
       if (apiErrorCode(e) !== "DUPLICATE_IDEMPOTENT") throw new FormSubmitError(configError(e));
+      // El primer intento se guardó pero la respuesta se perdió: no tenemos la lista de turnos
+      // que el bloqueo pisa (R-T-052), así que no decimos "creado" como si nada.
+      await queryClient.invalidateQueries({ queryKey: ["agenda"] });
+      close();
+      toast.info(
+        what === "block"
+          ? "Ese bloqueo ya se había creado. Revisá si quedaron turnos dentro para avisarles."
+          : "Esa apertura ya se había creado. Revisá en la lista cómo quedó.",
+      );
+      return;
     }
     await queryClient.invalidateQueries({ queryKey: ["agenda"] });
     close();

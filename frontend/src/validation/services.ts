@@ -174,6 +174,13 @@ export function toScheduleRules(rows: ScheduleRuleRowInput[]): ScheduleRuleItem[
   }));
 }
 
+/** ¿Las filas del formulario dicen lo mismo que las reglas guardadas? (mismo orden de carga) */
+export function sameRules(rows: ScheduleRuleRowInput[], saved: ScheduleRule[]): boolean {
+  return (
+    JSON.stringify(toScheduleRules(rows)) === JSON.stringify(toScheduleRules(toRuleRows(saved)))
+  );
+}
+
 /** Filas del formulario → payload de la API (minutos de texto a número). */
 export function toPriceItems(rows: PriceRowInput[]): ServicePriceItem[] {
   return rows.map((r) => ({

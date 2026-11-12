@@ -28,8 +28,8 @@ from app.application.services.errors import (
     GlossaryCodeTakenError,
     InUseError,
 )
+from app.domain.booking_state import ACTIVE_BOOKING_STATUSES
 from app.domain.enums import (
-    BookingStatus,
     JobStatus,
     PricingMode,
     QuoteStatus,
@@ -103,12 +103,7 @@ def check_rules(rules: Sequence[RuleInput]) -> None:
 
 #: Quién "usa" un servicio y por eso no se puede anular (como `void_resource` con los puestos):
 #: turnos que todavía no cerraron, cotizaciones sin resolver y jobs abiertos (sin retirar).
-OPEN_BOOKING_STATUSES = (
-    BookingStatus.PENDIENTE_SENA,
-    BookingStatus.PENDIENTE_COTIZACION,
-    BookingStatus.CONFIRMADO,
-    BookingStatus.RECIBIDO,
-)
+OPEN_BOOKING_STATUSES = ACTIVE_BOOKING_STATUSES
 OPEN_QUOTE_STATUSES = (QuoteStatus.PENDIENTE, QuoteStatus.COTIZADO)
 OPEN_JOB_STATUSES = (
     JobStatus.PRESENTE,

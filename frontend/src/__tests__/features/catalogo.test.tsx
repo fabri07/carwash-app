@@ -531,8 +531,11 @@ describe("Servicios — alta, edición y baja", () => {
         notes: null,
         category_id: null,
         booking_mode: "TURNERO",
-        schedule_rules: [],
       }),
+    );
+    // Las reglas no cambiaron: no se mandan (cada reemplazo anula y recrea todas las filas).
+    expect((servicesApi.update as jest.Mock).mock.calls[0]![1]).not.toHaveProperty(
+      "schedule_rules",
     );
   });
 

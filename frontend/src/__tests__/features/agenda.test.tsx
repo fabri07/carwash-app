@@ -23,6 +23,18 @@ import { useToastStore } from "@/stores/toastStore";
 import type { AgendaBlock, AgendaOpening, Resource } from "@/types/api";
 import { agendaRangeSchema, toAgendaPayload } from "@/validation/agenda";
 
+const axiosConfig = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
+function apiError(status: number, code: string, message = "x") {
+  const response = {
+    status,
+    data: { detail: { code, message } },
+    statusText: "",
+    headers: {},
+    config: axiosConfig,
+  } as AxiosResponse;
+  return new AxiosError("x", "ERR_BAD_REQUEST", axiosConfig, null, response);
+}
+
 jest.mock("@/services/agenda.service", () => ({
   listBlocks: jest.fn(),
   listOpenings: jest.fn(),
@@ -160,6 +172,21 @@ describe("Bloqueos y aperturas", () => {
     expect(aviso.parentElement).toHaveTextContent("TUR-ABC234");
     await userEvent.click(screen.getByRole("button", { name: "Entendido" }));
     expect(screen.queryByText(/quedan dentro del bloqueo/i)).toBeNull();
+  });
+
+  it("un reintento que el servidor ya había guardado no dice 'creado' sin avisar de los turnos", async () => {
+    (createBlock as jest.Mock).mockRejectedValueOnce(apiError(409, "DUPLICATE_IDEMPOTENT"));
+    renderTab();
+    await userEvent.click(await screen.findByRole("button", { name: /nuevo bloqueo/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Nuevo bloqueo" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear bloqueo" }));
+    await waitFor(() => expect(createBlock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
+        "Ese bloqueo ya se había creado. Revisá si quedaron turnos dentro para avisarles.",
+      ]),
+    );
+    expect(screen.queryByRole("dialog", { name: "Nuevo bloqueo" })).toBeNull();
   });
 
   it("una franja que termina antes de empezar no se manda", async () => {

@@ -25,8 +25,8 @@ from app.application.services.errors import (
     InUseError,
     NotFoundError,
 )
-from app.domain.booking_state import BLOCKING_BOOKING_STATUSES
-from app.domain.enums import BookingStatus, PricingMode
+from app.domain.booking_state import ACTIVE_BOOKING_STATUSES
+from app.domain.enums import PricingMode
 from app.domain.exceptions import InvalidAmountError
 from app.domain.money import BPS_DENOMINATOR
 from app.domain.void import VoidReason
@@ -55,11 +55,7 @@ from app.persistence.repositories.catalog import (
 )
 
 #: Turnos que impiden anular su puesto: los que lo ocupan más los que lo guardan sin ocuparlo.
-RESOURCE_IN_USE_STATUSES: tuple[BookingStatus, ...] = (
-    *sorted(BLOCKING_BOOKING_STATUSES),
-    BookingStatus.PENDIENTE_COTIZACION,
-    BookingStatus.PENDIENTE_REVISION,
-)
+RESOURCE_IN_USE_STATUSES = ACTIVE_BOOKING_STATUSES
 
 
 def _check_hours(weekday: int, opens_at: time, closes_at: time) -> None:
