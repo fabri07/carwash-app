@@ -197,10 +197,14 @@ async def test_la_unica_funcion_security_definer_es_el_login_y_no_devuelve_domin
                 )
             )
         ).all()
-    assert [f.proname for f in definer] == [AUTH_LOOKUP_FUNCTION]
-    assert definer[0].resultado == (
-        "TABLE(id uuid, tenant_id uuid, password_hash text, token_version integer, role role)"
-    )
+    # El login y, desde la F5, el slug del turnero público (devuelve solo el id del negocio).
+    resultados = {f.proname: f.resultado for f in definer}
+    assert resultados == {
+        AUTH_LOOKUP_FUNCTION: (
+            "TABLE(id uuid, tenant_id uuid, password_hash text, token_version integer, role role)"
+        ),
+        "public_tenant_by_slug": "uuid",
+    }
 
 
 async def test_la_funcion_de_login_no_encuentra_clientes_del_dominio(
@@ -509,16 +513,19 @@ async def test_copy_to_solo_exporta_lo_propio_y_copy_from_se_rechaza(pg_engine, 
 
 
 async def test_el_dueno_sin_contexto_no_ve_nada_salvo_la_ventana_del_login(dos_lavaderos):
-    """`carwash_owner` corre las migraciones; con `FORCE` también pasa por RLS. La única
-    excepción es la política `users_owner_auth_lookup` (`FOR SELECT`), que la función del login
-    necesita (ver `rls.py`): el dueño lee `users`, pero no puede modificarla sin contexto."""
+    """`carwash_owner` corre las migraciones; con `FORCE` también pasa por RLS. Las excepciones
+    son las políticas `FOR SELECT` que necesitan las funciones del login (`users`) y del slug
+    público (`tenant_settings`; `tenants` no está en la lista): lee, pero no modifica sin
+    contexto."""
     _, filas_a, tenant_b, _ = dos_lavaderos
     engine = create_async_engine(owner_url().replace("postgresql://", "postgresql+asyncpg://", 1))
     try:
         async with engine.connect() as conn, conn.begin():
             for tabla in TABLAS_TENANT:
                 total = await conn.scalar(text(f"SELECT count(*) FROM {tabla}"))
-                esperado = 2 if tabla == "users" else 0
+                # Las ventanas de las funciones SECURITY DEFINER: login (`users`) y slug
+                # público (`tenant_settings`, F5).
+                esperado = 2 if tabla in ("users", "tenant_settings") else 0
                 assert total == esperado, f"{tabla}: el dueño sin contexto ve {total}"
         async with engine.connect() as conn, conn.begin():
             await conn.execute(text(f"SET LOCAL app.tenant_id = '{tenant_b}'"))

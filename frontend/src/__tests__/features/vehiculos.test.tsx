@@ -250,7 +250,8 @@ describe("Configuración → Vehículos", () => {
     const { unmount } = withClient(<ConfigPage />);
     expect(await screen.findByRole("tab", { name: "Vehículos" })).toBeInTheDocument();
     unmount();
-    as(staff, ["AGENDA_VER"]);
+    // F5: con AGENDA_VER entra a Configuración, pero solo ve "Bloqueos y aperturas".
+    as(staff, ["JOBS_OPERAR"]);
     withClient(<ConfigPage />);
     expect(screen.queryByRole("tab", { name: "Vehículos" })).not.toBeInTheDocument();
     expect(screen.getByText("No tenés acceso a esta sección")).toBeInTheDocument();
