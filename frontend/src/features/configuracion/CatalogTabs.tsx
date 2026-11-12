@@ -83,7 +83,7 @@ export function ResourcesTab() {
       toCreate={(v) => ({ name: v.name, sort_order: Number(v.sort_order) })}
       toPatch={(v) => ({ name: v.name, sort_order: Number(v.sort_order) })}
       Form={ResourceForm}
-      deleteHint="No se puede quitar un puesto que tenga turnos próximos."
+      deleteHint="No se puede quitar un puesto que tenga turnos próximos (también en lista de espera o a cotizar)."
     />
   );
 }

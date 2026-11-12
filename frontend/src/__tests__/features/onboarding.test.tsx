@@ -99,6 +99,9 @@ const settings: BusinessSettings = {
   logo_key: null,
   logo_url: null,
   onboarding_completed_at: null,
+  booking_horizon_days: 14,
+  slot_step_min: 30,
+  deposit_instructions: null,
 };
 
 const color = (hex: string) => ({ hex, oklch: `oklch(${hex})` });

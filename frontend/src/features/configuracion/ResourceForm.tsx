@@ -30,7 +30,7 @@ export function ResourceForm({
           name="sort_order"
           label="Orden en las listas"
           inputMode="numeric"
-          hint="Los más chicos van primero."
+          hint="Los más chicos van primero. El turnero asigna el primer puesto libre en este orden."
         />
         <DialogFormFooter
           formError={formError}

@@ -92,6 +92,9 @@ const settings: BusinessSettings = {
   logo_key: null,
   logo_url: null,
   onboarding_completed_at: null,
+  booking_horizon_days: 14,
+  slot_step_min: 30,
+  deposit_instructions: null,
 };
 
 const stamp = {
@@ -141,16 +144,28 @@ beforeEach(() => {
 });
 
 describe("/configuracion — acceso", () => {
-  it("sin dueño ni CATALOGO_EDITAR: aviso y ninguna consulta", () => {
+  it("sin dueño, CATALOGO_EDITAR ni permisos de agenda: aviso y ninguna consulta", () => {
     useAuthStore.setState({
       user: { ...owner, role: "STAFF", email: null, username: "ana" },
-      permissions: ["AGENDA_VER"],
+      permissions: ["JOBS_OPERAR"],
       permissionsLoaded: true,
     });
     renderPage();
     expect(screen.getByRole("heading", { name: /no tenés acceso/i })).toBeInTheDocument();
     expect(getSettings).not.toHaveBeenCalled();
     expect(resourcesApi.list).not.toHaveBeenCalled();
+  });
+
+  it("con AGENDA_VER solo ve la pestaña Bloqueos y aperturas", async () => {
+    useAuthStore.setState({
+      user: { ...owner, role: "STAFF", email: null, username: "ana" },
+      permissions: ["AGENDA_VER"],
+      permissionsLoaded: true,
+    });
+    renderPage();
+    expect(screen.getByRole("tab", { name: "Bloqueos y aperturas" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Puestos" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Negocio" })).toBeNull();
   });
 
   it("tras recargar, hasta que llegan los permisos muestra 'Cargando' y no un 'sin acceso' falso", () => {
@@ -240,6 +255,9 @@ describe("Seña y reservas", () => {
       tolerance_min: 20,
       late_cancel_threshold_min: 120,
       quote_validity_hours: 24,
+      booking_horizon_days: 14,
+      slot_step_min: 30,
+      deposit_instructions: null,
     });
   });
 

@@ -105,6 +105,22 @@ export type OnboardingRequirementCode = Schemas["OnboardingRequirement"];
 export type OnboardingMissingItem = Schemas["OnboardingMissing"];
 export type OnboardingIncomplete = Schemas["OnboardingIncompleteResponse"];
 
+// Agenda (PR 5.1, FASE-5-CONTRATO §3–§5): modo de reserva y reglas del servicio, bloqueos,
+// aperturas especiales y disponibilidad interna.
+/** `ServiceBookingMode` es el nombre del schema. */
+export type BookingModeCode = Schemas["ServiceBookingMode"];
+/** `BookingStatus` es el nombre del schema. */
+export type BookingStatusCode = Schemas["BookingStatus"];
+export type ScheduleRule = Schemas["ScheduleRuleResponse"];
+export type ScheduleRuleItem = Schemas["ScheduleRuleInput"];
+export type AgendaBlock = Schemas["BlockResponse"];
+export type AgendaBlockPayload = Schemas["BlockCreate"];
+export type AgendaBlockCreated = Schemas["BlockCreatedResponse"];
+export type AgendaOverlap = Schemas["OverlappingBooking"];
+export type AgendaOpening = Schemas["OpeningResponse"];
+export type AgendaOpeningPayload = Schemas["OpeningCreate"];
+export type AgendaAvailability = Schemas["AvailabilityResponse"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];

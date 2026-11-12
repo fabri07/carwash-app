@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isReservedSlug } from "@/lib/reservedSlugs";
 import { percentText } from "@/validation/percent";
 
 /**
@@ -31,7 +32,8 @@ export const businessSchema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .regex(SLUG_PATTERN, "De 3 a 40 caracteres: letras sin tilde, números o guiones"),
+    .regex(SLUG_PATTERN, "De 3 a 40 caracteres: letras sin tilde, números o guiones")
+    .refine((v) => !isReservedSlug(v), "Esa dirección la usa el sistema: elegí otra"),
   address: z.string().trim().max(300, "Máximo 300 caracteres"),
   whatsapp_e164: z
     .string()
@@ -55,6 +57,10 @@ export const depositSchema = z.object({
   late_cancel_threshold_min: wholeNumber(1, MAX_MINUTES, "Cancelación tardía"),
   min_advance_min: wholeNumber(0, MAX_MINUTES, "Anticipación mínima"),
   quote_validity_hours: wholeNumber(1, 24 * 30, "Vigencia de la cotización"),
+  // F5 (FASE-5-CONTRATO §3.4): turnero público.
+  booking_horizon_days: wholeNumber(1, 90, "Horizonte de reserva"),
+  slot_step_min: wholeNumber(5, 120, "Intervalo de la grilla"),
+  deposit_instructions: z.string().trim().max(500, "Máximo 500 caracteres"),
 });
 export type DepositInput = z.infer<typeof depositSchema>;
 

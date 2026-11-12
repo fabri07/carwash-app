@@ -47,6 +47,8 @@ describe("catalog.service (FASE-4-CONTRATO §4 y §11.5)", () => {
         name: "A",
         pricing_mode: "PRECIO_FIJO",
         prices: [{ vehicle_size_id: "z", price_cents: 100, duration_min: 30 }],
+        booking_mode: "TURNERO",
+        schedule_rules: [],
       },
       "clave-1",
     );

@@ -38,6 +38,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agenda/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Availability */
+        get: operations["get_availability_v1_agenda_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agenda/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Blocks
+         * @description Bloqueos vigentes (los que todavía no terminaron), por inicio.
+         */
+        get: operations["list_blocks_v1_agenda_blocks_get"];
+        put?: never;
+        /** Create Block */
+        post: operations["create_block_v1_agenda_blocks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agenda/blocks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Block */
+        delete: operations["delete_block_v1_agenda_blocks__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agenda/openings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Openings
+         * @description Aperturas especiales vigentes (las que todavía no terminaron), por inicio.
+         */
+        get: operations["list_openings_v1_agenda_openings_get"];
+        put?: never;
+        /** Create Opening */
+        post: operations["create_opening_v1_agenda_openings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agenda/openings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Opening */
+        delete: operations["delete_opening_v1_agenda_openings__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/change-password": {
         parameters: {
             query?: never;
@@ -771,6 +864,101 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AvailabilityResponse */
+        AvailabilityResponse: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Duration Min */
+            duration_min: number;
+            /** Slots */
+            slots: components["schemas"]["AvailableStart"][];
+            /** Timezone */
+            timezone: string;
+        };
+        /** AvailableStart */
+        AvailableStart: {
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Resource Ids */
+            resource_ids: string[];
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+        };
+        /** BlockCreate */
+        BlockCreate: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Start Time */
+            start_time?: string | null;
+        };
+        /** BlockCreatedResponse */
+        BlockCreatedResponse: {
+            block: components["schemas"]["BlockResponse"];
+            /** Overlapping Bookings */
+            overlapping_bookings: components["schemas"]["OverlappingBooking"][];
+        };
+        /** BlockResponse */
+        BlockResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By User Id
+             * Format: uuid
+             */
+            created_by_user_id: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string;
+            /** Resource Id */
+            resource_id: string | null;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** BodyTypeSizeInput */
         BodyTypeSizeInput: {
             body_type: components["schemas"]["VehicleBodyType"];
@@ -807,6 +995,12 @@ export interface components {
              */
             file: string;
         };
+        /**
+         * BookingStatus
+         * @description §2.1. Los que bloquean el intervalo del puesto: `BLOCKING_BOOKING_STATUSES`.
+         * @enum {string}
+         */
+        BookingStatus: "PENDIENTE_SEÑA" | "PENDIENTE_COTIZACION" | "CONFIRMADO" | "RECIBIDO" | "ATENDIDO" | "VENCIDO" | "CANCELADO_CLIENTE" | "AUSENTE_CON_AVISO_POSTERIOR" | "CANCELADO_OPERATIVO" | "CANCELADO_DEMORA" | "NO_ASISTIO" | "PENDIENTE_REVISION" | "RECHAZADO";
         /** BrandColor */
         BrandColor: {
             /** Hex */
@@ -1036,6 +1230,110 @@ export interface components {
             required: boolean;
             step: components["schemas"]["OnboardingStep"];
         };
+        /** OpeningCreate */
+        OpeningCreate: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Start Time */
+            start_time?: string | null;
+        };
+        /** OpeningResponse */
+        OpeningResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By User Id
+             * Format: uuid
+             */
+            created_by_user_id: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string;
+            /** Resource Id */
+            resource_id: string | null;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * OverlappingBooking
+         * @description Un turno activo que quedó dentro de un bloqueo nuevo: hay que avisarle al cliente.
+         */
+        OverlappingBooking: {
+            /** Code */
+            code: string;
+            /** Customer Name */
+            customer_name: string;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Resource Id
+             * Format: uuid
+             */
+            resource_id: string;
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            status: components["schemas"]["BookingStatus"];
+        };
+        /** PaginatedResponse[BlockResponse] */
+        PaginatedResponse_BlockResponse_: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            items: components["schemas"]["BlockResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** PaginatedResponse[BodyTypeSizeResponse] */
         PaginatedResponse_BodyTypeSizeResponse_: {
             /** Has More */
@@ -1055,6 +1353,19 @@ export interface components {
             readonly has_more: boolean;
             /** Items */
             items: components["schemas"]["BusinessHoursResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** PaginatedResponse[OpeningResponse] */
+        PaginatedResponse_OpeningResponse_: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            items: components["schemas"]["OpeningResponse"][];
             /** Limit */
             limit: number;
             /** Offset */
@@ -1417,6 +1728,53 @@ export interface components {
          * @enum {string}
          */
         Role: "OWNER" | "STAFF";
+        /**
+         * ScheduleRuleInput
+         * @description Una fila de regla horaria (FASE-5-CONTRATO §3.2): el servicio puede **arrancar** entre
+         *     `window_start` y `last_start` (inclusive) del día ISO `weekday`. Hora local del negocio.
+         */
+        ScheduleRuleInput: {
+            /**
+             * Last Start
+             * Format: time
+             */
+            last_start: string;
+            /** Weekday */
+            weekday: number;
+            /**
+             * Window Start
+             * Format: time
+             */
+            window_start: string;
+        };
+        /** ScheduleRuleResponse */
+        ScheduleRuleResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Start
+             * Format: time
+             */
+            last_start: string;
+            /** Weekday */
+            weekday: number;
+            /**
+             * Window Start
+             * Format: time
+             */
+            window_start: string;
+        };
+        /**
+         * ServiceBookingMode
+         * @description FASE-5-CONTRATO §3.1: `SOLO_A_MANO` no se ofrece ni se acepta en el turnero (lo agenda el
+         *     negocio). Un servicio `A_COTIZAR` se muestra en el turnero pero no se reserva (D5-5),
+         *     independientemente de este modo.
+         * @enum {string}
+         */
+        ServiceBookingMode: "TURNERO" | "SOLO_A_MANO";
         /** ServiceCategoryCreate */
         ServiceCategoryCreate: {
             /** Name */
@@ -1463,6 +1821,8 @@ export interface components {
         };
         /** ServiceCreate */
         ServiceCreate: {
+            /** @default TURNERO */
+            booking_mode: components["schemas"]["ServiceBookingMode"];
             /** Category Id */
             category_id?: string | null;
             /** Deposit Bps */
@@ -1474,6 +1834,11 @@ export interface components {
             /** Prices */
             prices: components["schemas"]["ServicePriceInput"][];
             pricing_mode: components["schemas"]["PricingMode"];
+            /**
+             * Schedule Rules
+             * @default []
+             */
+            schedule_rules: components["schemas"]["ScheduleRuleInput"][];
         };
         /**
          * ServicePriceInput
@@ -1523,6 +1888,7 @@ export interface components {
         };
         /** ServiceResponse */
         ServiceResponse: {
+            booking_mode: components["schemas"]["ServiceBookingMode"];
             /** Category Id */
             category_id: string | null;
             /**
@@ -1548,6 +1914,8 @@ export interface components {
             /** Prices */
             prices: components["schemas"]["ServicePriceResponse"][];
             pricing_mode: components["schemas"]["PricingMode"];
+            /** Schedule Rules */
+            schedule_rules: components["schemas"]["ScheduleRuleResponse"][];
             /**
              * Tenant Id
              * Format: uuid
@@ -1562,19 +1930,27 @@ export interface components {
         /**
          * ServiceUpdate
          * @description Sin precios ni modalidad. `notes: null` o `category_id: null` explícitos las borran.
+         *
+         *     F5: `booking_mode` y `schedule_rules` (lista **completa**: reemplaza las reglas vivas; `[]` las
+         *     borra; ausente no las toca). Ninguno de los dos acepta `null`.
          */
         ServiceUpdate: {
+            booking_mode?: components["schemas"]["ServiceBookingMode"] | null;
             /** Category Id */
             category_id?: string | null;
             /** Name */
             name?: string | null;
             /** Notes */
             notes?: string | null;
+            /** Schedule Rules */
+            schedule_rules?: components["schemas"]["ScheduleRuleInput"][] | null;
         };
         /** SettingsResponse */
         SettingsResponse: {
             /** Address */
             address: string | null;
+            /** Booking Horizon Days */
+            booking_horizon_days: number;
             /** Cancellation Policy */
             cancellation_policy: string | null;
             /** Currency */
@@ -1583,6 +1959,8 @@ export interface components {
             deposit_bps: number;
             /** Deposit Enabled */
             deposit_enabled: boolean;
+            /** Deposit Instructions */
+            deposit_instructions: string | null;
             /** Font */
             font: string;
             /** Hold Min */
@@ -1605,6 +1983,8 @@ export interface components {
             palette: string;
             /** Quote Validity Hours */
             quote_validity_hours: number;
+            /** Slot Step Min */
+            slot_step_min: number;
             /** Slug */
             slug: string;
             /** Timezone */
@@ -1623,12 +2003,16 @@ export interface components {
         SettingsUpdate: {
             /** Address */
             address?: string | null;
+            /** Booking Horizon Days */
+            booking_horizon_days?: number | null;
             /** Cancellation Policy */
             cancellation_policy?: string | null;
             /** Deposit Bps */
             deposit_bps?: number | null;
             /** Deposit Enabled */
             deposit_enabled?: boolean | null;
+            /** Deposit Instructions */
+            deposit_instructions?: string | null;
             /** Font */
             font?: string | null;
             /** Hold Min */
@@ -1643,6 +2027,8 @@ export interface components {
             palette?: string | null;
             /** Quote Validity Hours */
             quote_validity_hours?: number | null;
+            /** Slot Step Min */
+            slot_step_min?: number | null;
             /** Slug */
             slug?: string | null;
             /** Tolerance Min */
@@ -2084,6 +2470,465 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+        };
+    };
+    get_availability_v1_agenda_availability_get: {
+        parameters: {
+            query: {
+                date: string;
+                vehicle_size_id: string;
+                service_ids: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_blocks_v1_agenda_blocks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_BlockResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_block_v1_agenda_blocks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockCreatedResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_block_v1_agenda_blocks__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_openings_v1_agenda_openings_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_OpeningResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_opening_v1_agenda_openings_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_opening_v1_agenda_openings__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
