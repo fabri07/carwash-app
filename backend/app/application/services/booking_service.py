@@ -189,7 +189,8 @@ class BookingService(ServiceBase):
         - Con seña requerida > 0 → `PENDIENTE_SEÑA`, con `hold_expires_at = now + hold_min`.
         - Sin seña → `CONFIRMADO`.
         - `for_review` (lista de espera, D5-9) → `PENDIENTE_REVISION`: **sin ocupar el puesto y
-          sin hold y sin seña** (`deposit_required_cents = 0`; se recalcula al aprobar, §3.5). No admite un ítem `A_COTIZAR`.
+          sin hold y sin seña** (`deposit_required_cents = 0`; se recalcula al aprobar, §3.5).
+          No admite un ítem `A_COTIZAR`.
 
         Reservar con menos de `min_advance_min` de anticipación es `GuardFailedError`. Un choque
         del `EXCLUDE` es `SlotTakenError`; un código repetido, `AlreadyExistsError`.

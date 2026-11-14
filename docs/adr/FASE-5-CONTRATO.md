@@ -443,4 +443,3 @@ Donde el contrato era ambiguo se eligió la lectura más conservadora.
 | `TOO_MANY_ACTIVE_BOOKINGS` revela si un WhatsApp tiene 2 turnos activos | Es la UX decidida en D5-4: el cliente tiene que saber por qué no puede reservar. Lo acota el límite de 5/min por IP y hay que conocer el número. Riesgo aceptado, a reevaluar con el checkpoint del dueño. |
 | Dos observaciones menores del T3 sobre los cupos `GET` por ruta (cada ruta de lectura tiene su propio cupo de 60/min por IP) | El contrato §4.2 fija los cupos por ruta; un cupo compartido castigaría el flujo normal (varias lecturas por paso). Se reevalúa con tráfico real. |
 | `_require_bookable` consulta servicio y precio de a uno | Son como mucho 20 ids por pedido y corre una vez por `POST`; el catálogo (que se pide en cada visita) sí se pasó a una consulta. |
-
