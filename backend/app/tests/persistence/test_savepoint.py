@@ -101,7 +101,7 @@ def test_is_deadlock_mira_el_sqlstate_del_driver_y_el_de_su_causa():
     assert is_deadlock(_driver_error("40P01"))
     assert not is_deadlock(_driver_error("23P01"))
     envuelto = OperationalError("x", {}, Exception("adaptador"))
-    envuelto.orig.__cause__ = _DriverError("40P01")  # type: ignore[union-attr]
+    envuelto.orig.__cause__ = _DriverError("40P01")
     assert is_deadlock(envuelto)
     assert not is_deadlock(ValueError("no es del driver"))
 
