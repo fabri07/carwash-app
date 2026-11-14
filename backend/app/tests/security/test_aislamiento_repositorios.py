@@ -355,6 +355,9 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("ServicePriceRepository", "list_for_service"): lambda r, a, t: r.list_for_service(
         a.ids["services"], t
     ),
+    ("ServicePriceRepository", "list_for_services"): lambda r, a, t: r.list_for_services(
+        [a.ids["services"]], t
+    ),
     ("PaymentMethodRepository", "find_by_code"): lambda r, a, t: r.find_by_code(
         a.claves["code"], t
     ),

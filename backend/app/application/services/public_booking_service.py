@@ -30,7 +30,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.idempotency import claim_idempotency_key
-from app.application.services._base import ServiceBase, require_instant, require_key
+from app.application.services._base import ServiceBase, as_aware, require_instant, require_key
 from app.application.services._items import (
     deposit_bps_snapshot,
     item_deposit_bps,
@@ -60,7 +60,7 @@ from app.domain.phone import normalize_phone_ar
 from app.domain.plate import normalize_plate
 from app.persistence.models.agenda import Booking, BookingItem
 from app.persistence.models.cancellation import Cancellation
-from app.persistence.models.catalog import Service, ServiceCategory, VehicleSize
+from app.persistence.models.catalog import Service, ServiceCategory, ServicePrice, VehicleSize
 from app.persistence.models.idempotency_key import IdempotencyKey
 from app.persistence.models.tenant import Tenant, TenantSettings
 from app.persistence.repositories.agenda import BookingItemRepository, BookingRepository
@@ -81,6 +81,14 @@ MAX_ACTIVE_BOOKINGS = 2
 REVIEW_INCIDENTS = 2
 #: Largo de `terms_version`: los primeros hex del SHA-256 de la política vigente (§4.2 paso 8).
 TERMS_VERSION_LENGTH = 12
+#: Un turno cancelado no se "repite" con la misma clave: el cliente lo canceló, otro pedido es otro.
+CANCELLED_BOOKING_STATUSES = frozenset(
+    {
+        BookingStatus.CANCELADO_CLIENTE,
+        BookingStatus.AUSENTE_CON_AVISO_POSTERIOR,
+        BookingStatus.CANCELADO_OPERATIVO,
+    }
+)
 _ALL_ROWS = 10_000  # tamaños, categorías y servicios de un negocio: decenas
 
 
@@ -212,7 +220,12 @@ class PublicBookingService(ServiceBase):
             self._tenant_id, limit=_ALL_ROWS, order_by=(Service.name.asc(),)
         )
         size_ids = {s.id for s in sizes.items}
-        prices = ServicePriceRepository(self._session)
+        # Una consulta para todos los precios (antes, una por servicio).
+        by_service: dict[uuid.UUID, list[ServicePrice]] = {}
+        for price in await ServicePriceRepository(self._session).list_for_services(
+            [service.id for service in services.items], self._tenant_id
+        ):
+            by_service.setdefault(price.service_id, []).append(price)
         out: list[tuple[tuple[int, str], PublicService]] = []
         for service in services.items:
             if service.booking_mode == ServiceBookingMode.SOLO_A_MANO:
@@ -220,9 +233,7 @@ class PublicBookingService(ServiceBase):
             bps = item_deposit_bps(business_bps, service.deposit_bps)
             quoted = service.pricing_mode == PricingMode.A_COTIZAR
             rows = [
-                row
-                for row in await prices.list_for_service(service.id, self._tenant_id)
-                if row.vehicle_size_id in size_ids
+                row for row in by_service.get(service.id, []) if row.vehicle_size_id in size_ids
             ]
             if not rows:
                 continue  # sin precio para ningún tamaño no se puede ofrecer
@@ -299,7 +310,7 @@ class PublicBookingService(ServiceBase):
         if not await claim_idempotency_key(
             self._session, self._tenant_id, key, PUBLIC_BOOKING_ACTION
         ):
-            return await self._replayed(key, phone.e164)
+            return await self._replayed(key, phone.e164, request)
 
         await self._require_bookable(request.service_ids, request.vehicle_size_id)
         settings = await self._settings()
@@ -324,6 +335,9 @@ class PublicBookingService(ServiceBase):
         notes = None
         if not resolution.created and typed_name.casefold() != customer.name.casefold():
             notes = f"Nombre en la web: {typed_name}"
+        # D5-4 atómico: el lock de la fila del cliente serializa los pedidos simultáneos del mismo
+        # WhatsApp hasta que cada transacción confirma; el segundo cuenta después del primero.
+        await self._lock(CustomerRepository(self._session), customer.id)
         bookings = BookingRepository(self._session)
         active = await bookings.count_active_for_customer(customer.id, now, self._tenant_id)
         if active >= MAX_ACTIVE_BOOKINGS:
@@ -411,7 +425,13 @@ class PublicBookingService(ServiceBase):
             await vehicles.link_customer(customer_id, resolution.vehicle.id, is_primary=True)
         return resolution.vehicle.id
 
-    async def _replayed(self, key: str, phone_e164: str) -> PublicBookingView:
+    async def _replayed(
+        self, key: str, phone_e164: str, request: PublicBookingRequest
+    ) -> PublicBookingView:
+        """Reenvío de una clave ya usada: devuelve el turno **solo si es el mismo pedido** (mismo
+        WhatsApp, horario, tamaño y servicios) y sigue en pie. Con otro cuerpo, o si ya se
+        canceló, es `IdempotencyKeyReusedError` (409 `DUPLICATE_IDEMPOTENT`): devolver el turno
+        original como si fuera el pedido nuevo sería mentirle al cliente."""
         row = await self._session.scalar(
             select(IdempotencyKey).where(
                 IdempotencyKey.tenant_id == self._tenant_id, IdempotencyKey.key == key
@@ -424,6 +444,16 @@ class PublicBookingService(ServiceBase):
             uuid.UUID(row.action.removeprefix(prefix)), self._tenant_id, include_voided=True
         )
         if booking is None or not await self._belongs_to(booking, phone_e164):
+            raise IdempotencyKeyReusedError(key)
+        items = await BookingItemRepository(self._session).list_for_booking(
+            booking.id, self._tenant_id
+        )
+        same_request = (
+            as_aware(booking.start_at) == request.start_at
+            and booking.vehicle_size_id == request.vehicle_size_id
+            and {item.service_id for item in items} == set(request.service_ids)
+        )
+        if not same_request or booking.status in CANCELLED_BOOKING_STATUSES:
             raise IdempotencyKeyReusedError(key)
         return await self._view(booking)
 

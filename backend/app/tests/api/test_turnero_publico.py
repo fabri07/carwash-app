@@ -404,7 +404,7 @@ async def test_la_patente_nueva_se_vincula_y_la_existente_no(client, db_session,
 
 async def test_una_patente_larga_es_422_y_una_vacia_no_crea_vehiculo(client, db_session, lav):
     r = await _reservar(client, lav, plate="ABCDEFGHIJK")
-    assert r.status_code == 422 and _codigo(r) == "VALIDATION_ERROR"
+    assert r.status_code == 422  # el schema corta en 10 (`MAX_PLATE_LENGTH`)
     r = await _reservar(client, lav, plate="SIN000")
     assert r.status_code == 201, r.text
     turno = await db_session.scalar(select(Booking).where(Booking.code == r.json()["code"]))
@@ -544,3 +544,79 @@ async def test_el_lookup_corta_a_las_diez_por_minuto(client, lav):
         for _ in range(11)
     ]
     assert codigos == [404] * 10 + [429]
+
+
+# ── Ronda de arreglos de 5.2 (code-review y T3) ───────────────────────────────
+
+
+async def test_la_misma_clave_con_otro_horario_servicios_o_tamano_es_409(client, db_session, lav):
+    clave = "web-misma-clave"
+    original = await _reservar(client, lav, clave=clave)
+    assert original.status_code == 201, original.text
+    variantes = [
+        {"start_at": _inicio(12)},
+        {"service_ids": [str(lav.lavado), str(lav.lavado_con_sena)]},
+        {"vehicle_size_id": str(lav.suv)},
+    ]
+    for cambio in variantes:
+        r = await _reservar(client, lav, clave=clave, **cambio)
+        assert r.status_code == 409 and _codigo(r) == "DUPLICATE_IDEMPOTENT", (cambio, r.text)
+        assert original.json()["code"] not in r.text
+    assert await _contar(db_session, Booking, Booking.tenant_id == lav.tenant_id) == 1
+    # El mismo pedido sigue devolviendo el turno original.
+    assert (await _reservar(client, lav, clave=clave)).json() == original.json()
+
+
+async def test_la_misma_clave_con_el_turno_ya_cancelado_es_409(client, lav):
+    clave = "web-cancelado"
+    codigo = (await _reservar(client, lav, clave=clave)).json()["code"]
+    cancelado = await client.post(
+        "/v1/public/lavadero-norte/bookings/cancel", json={"code": codigo, "phone": TEL}
+    )
+    assert cancelado.status_code == 200
+    r = await _reservar(client, lav, clave=clave)
+    assert r.status_code == 409 and _codigo(r) == "DUPLICATE_IDEMPOTENT"
+
+
+async def test_si_se_agotan_los_reintentos_del_codigo_es_503_limpio(
+    client, db_session, lav, monkeypatch
+):
+    from app.domain import booking_code
+
+    ocupado = (await _reservar(client, lav)).json()["code"]
+    monkeypatch.setattr(booking_code, "new_booking_code", lambda *a, **k: ocupado)
+    r = await _reservar(client, lav, start_at=_inicio(14), phone=OTRO_TEL)
+    assert r.status_code == 503 and _codigo(r) == "SERVICE_UNAVAILABLE", r.text
+    assert ocupado not in r.text
+    # Nada a medias: el cliente no quedó con un turno.
+    assert await _contar(db_session, Booking, Booking.tenant_id == lav.tenant_id) == 1
+
+
+async def test_la_lista_de_espera_se_guarda_sin_sena_y_conserva_el_porcentaje_de_los_items(
+    client, db_session, lav
+):
+    from app.persistence.models.agenda import BookingItem
+
+    await lav.activar_sena()
+    cliente = await lav.clientes.resolve_by_phone(TEL, name="Cliente Web")
+    for motivo in ("No vino", "Llegó tarde"):
+        db_session.add(
+            CustomerIncidentMark(
+                tenant_id=lav.tenant_id,
+                customer_id=cliente.customer.id,
+                reason=motivo,
+                created_by_user_id=lav.owner_id,
+            )
+        )
+    await db_session.flush()
+    r = await _reservar(client, lav, service_ids=[str(lav.lavado_con_sena)])
+    assert r.status_code == 201, r.text
+    turno = await db_session.scalar(select(Booking).where(Booking.code == r.json()["code"]))
+    assert turno.status == BookingStatus.PENDIENTE_REVISION
+    assert turno.deposit_required_cents == 0 and turno.hold_expires_at is None
+    items = list(
+        await db_session.scalars(select(BookingItem).where(BookingItem.booking_id == turno.id))
+    )
+    # El % queda en el ítem: la aprobación (5.3, adenda 5.3-2) recalcula la seña con la
+    # configuración vigente a partir de ahí.
+    assert [i.deposit_bps for i in items] == [3000]

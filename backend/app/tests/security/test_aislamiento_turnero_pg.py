@@ -8,7 +8,8 @@ Escrito por quien NO implementó el 5.2. Lo que SQLite no puede probar (ver
    por pedido.
 2. **Carreras**: cinco reservas simultáneas al mismo horario con dos puestos (ganan exactamente
    dos); la misma clave con dos WhatsApp distintos (uno solo crea); y el tope de 2 activos con
-   pedidos simultáneos del mismo WhatsApp (hallazgo conocido, adenda 5.2-13: `xfail` estricto).
+   pedidos simultáneos del mismo WhatsApp (hallazgo T3-5.2-A, cerrado con un lock por cliente,
+   adenda 5.2-13).
 3. **RLS con el rol de runtime**: después de reservar sin sesión, `carwash_app` sin contexto no ve
    nada y con el contexto de B no ve nada de A, en cada tabla que toca el turnero; la función
    pública no se deja usar para listar negocios.
@@ -249,15 +250,6 @@ async def test_la_misma_clave_con_dos_whatsapp_distintos_en_simultaneo_crea_un_s
     assert await _contar(pg_admin_engine, "bookings", a.tenant_id) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "HALLAZGO T3-5.2-A (media, aceptado en la adenda 5.2-13): el tope de 2 turnos activos por "
-        "WhatsApp no es atómico. Con pedidos simultáneos del mismo número cada uno cuenta los "
-        "activos antes de que el otro confirme, y se pasan de 2. El contrato §6 lo lista como "
-        "defensa contra el spam; los límites por IP (5/min) lo acotan pero no lo cierran."
-    ),
-)
 async def test_el_tope_de_dos_activos_aguanta_pedidos_simultaneos_del_mismo_whatsapp(
     http, lavaderos, pg_admin_engine
 ):

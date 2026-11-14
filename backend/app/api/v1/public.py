@@ -27,6 +27,7 @@ from app.api.v1.deps import DbSession
 from app.api.v1.errors import ApiError, duplicate_idempotent, not_found
 from app.application.services._base import as_aware
 from app.application.services.errors import (
+    AlreadyExistsError,
     IdempotencyKeyReusedError,
     NotFoundError,
     SlotTakenError,
@@ -84,7 +85,13 @@ SLUG_CANCEL_LIMIT = "60/minute"
 
 _E = {"model": ErrorResponse}
 READ_RESPONSES: dict[int | str, dict[str, Any]] = {404: _E, 422: _E, 429: _E}
-WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {404: _E, 409: _E, 422: _E, 429: _E}
+WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    404: _E,
+    409: _E,
+    422: _E,
+    429: _E,
+    503: _E,
+}
 
 #: Header obligatorio del alta (§4.2 paso 1): un doble envío devuelve el mismo turno.
 RequiredIdempotencyKey = Annotated[
@@ -124,6 +131,13 @@ async def _guard[T](call: Coroutine[Any, Any, T]) -> T:
             status.HTTP_409_CONFLICT,
             ErrorCode.TOO_MANY_ACTIVE_BOOKINGS,
             "This WhatsApp number already has the maximum of active bookings.",
+        ) from exc
+    except AlreadyExistsError as exc:
+        # Se agotaron los reintentos del código del turno (5 choques seguidos: casi imposible).
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            ErrorCode.SERVICE_UNAVAILABLE,
+            "Could not allocate a booking code: try again.",
         ) from exc
     except IdempotencyKeyReusedError as exc:
         raise duplicate_idempotent() from exc

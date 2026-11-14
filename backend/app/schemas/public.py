@@ -18,6 +18,7 @@ from app.domain.enums import (
     DepositStatus,
     PricingMode,
 )
+from app.domain.plate import MAX_PLATE_LENGTH
 from app.schemas.auth import _sin_nul
 from app.schemas.branding import FontOut, PaletteOut
 from app.schemas.common import CamelModel
@@ -37,7 +38,10 @@ Name = Annotated[
 Phone = Annotated[str, BeforeValidator(_sin_nul), Field(min_length=1, max_length=40)]
 Code = Annotated[str, BeforeValidator(_sin_nul), Field(min_length=1, max_length=20)]
 Plate = Annotated[
-    str, BeforeValidator(_sin_nul), BeforeValidator(_trim), Field(min_length=1, max_length=12)
+    str,
+    BeforeValidator(_sin_nul),
+    BeforeValidator(_trim),
+    Field(min_length=1, max_length=MAX_PLATE_LENGTH),
 ]
 Reason = Annotated[
     str,
