@@ -331,6 +331,8 @@ def _contado_tabla(tabla: str, caso: "Caso") -> "Caso":
         n = await caso(repo, a, tenant_id)
         return [SimpleNamespace(id=a.ids[tabla])] if n else None
 
+    return _caso
+
 
 async def _items(pagina: Awaitable[Page[Any]]) -> list[Any]:
     """Una `Page` como lista (y su `total` coherente con lo que trae)."""
