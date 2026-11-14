@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Collection
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.domain.enums import CancellationClassification
 from app.persistence.models.agenda import Booking
@@ -27,18 +27,19 @@ class CancellationRepository(BaseRepository[Cancellation]):
             ),
         )
 
-    async def list_for_customer_since(
+    async def count_for_customer_since(
         self,
         customer_id: uuid.UUID,
         classifications: Collection[CancellationClassification],
         since: datetime,
         tenant_id: uuid.UUID,
-    ) -> list[Cancellation]:
-        """Cancelaciones vivas de turnos del cliente con esas clasificaciones, pedidas desde
+    ) -> int:
+        """Cuántas cancelaciones vivas de turnos del cliente con esas clasificaciones, pedidas desde
         `since` (incidencias, D-014). El cruce con `bookings` es por la FK compuesta; un turno
         anulado (cargado por error) no cuenta aunque su cancelación siga viva (adenda 5.1-7)."""
-        result = await self._session.scalars(
-            select(Cancellation)
+        count = await self._session.scalar(
+            select(func.count())
+            .select_from(Cancellation)
             .join(
                 Booking,
                 (Booking.tenant_id == Cancellation.tenant_id)
@@ -51,6 +52,5 @@ class CancellationRepository(BaseRepository[Cancellation]):
                 Cancellation.requested_at >= since,
                 *self._scope(tenant_id, False),
             )
-            .order_by(Cancellation.requested_at, Cancellation.id)
         )
-        return list(result.all())
+        return int(count or 0)

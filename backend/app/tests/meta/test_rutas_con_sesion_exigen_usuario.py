@@ -19,6 +19,14 @@ SIN_USUARIO_PERMITIDAS = {
     "/v1/auth/login",
     "/v1/auth/refresh",
     "/v1/auth/logout",
+    # Turnero público (FASE-5-CONTRATO §4.2, Z7): sin sesión a propósito; el negocio sale del
+    # slug por la función `SECURITY DEFINER` y el servicio fija su contexto.
+    "/v1/public/{slug}",
+    "/v1/public/{slug}/catalog",
+    "/v1/public/{slug}/availability",
+    "/v1/public/{slug}/bookings",
+    "/v1/public/{slug}/bookings/lookup",
+    "/v1/public/{slug}/bookings/cancel",
 }
 
 

@@ -60,6 +60,19 @@ class ServicePriceRepository(BaseRepository[ServicePrice]):
         )
         return list(result.all())
 
+    async def list_for_services(
+        self, service_ids: Collection[uuid.UUID], tenant_id: uuid.UUID
+    ) -> list[ServicePrice]:
+        """Los precios vivos de varios servicios en una consulta (el catálogo público)."""
+        if not service_ids:
+            return []
+        result = await self._session.scalars(
+            select(ServicePrice)
+            .where(ServicePrice.service_id.in_(tuple(service_ids)), *self._scope(tenant_id, False))
+            .order_by(ServicePrice.service_id, ServicePrice.id)
+        )
+        return list(result.all())
+
 
 class ResourceRepository(BaseRepository[Resource]):
     model = Resource

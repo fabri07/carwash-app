@@ -11,6 +11,7 @@ from app.api.v1 import (
     catalog,
     onboarding,
     permission_profiles,
+    public,
     services,
     settings,
     staff,
@@ -42,6 +43,7 @@ api_router.include_router(
 api_router.include_router(branding.router, prefix="/branding", tags=["Personalización"])
 api_router.include_router(onboarding.router, prefix="/onboarding", tags=["Alta"])
 api_router.include_router(agenda.router, prefix="/agenda", tags=["Agenda"])
+api_router.include_router(public.router, prefix="/public", tags=["Turnero público"])
 api_router.include_router(bookings.router, prefix="/bookings", tags=["Turnos"])
 api_router.include_router(bookings.incident_marks, prefix="/incident-marks", tags=["Turnos"])
 api_router.include_router(cancellations.router, prefix="/cancellations", tags=["Turnos"])

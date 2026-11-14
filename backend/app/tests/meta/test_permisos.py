@@ -49,6 +49,13 @@ SIN_AUTORIZACION_PERMITIDAS: dict[str, str] = {
     "/v1/auth/logout": "lee su propia cookie de refresh",
     "/v1/auth/me": "toda sesión válida, aun con cambio de clave pendiente (§2.3)",
     "/v1/auth/change-password": "toda sesión válida: es la salida del cambio obligatorio",
+    # Turnero público (FASE-5-CONTRATO §4.2, PR 5.2): el cliente no tiene cuenta.
+    "/v1/public/{slug}": "público: el negocio sale del slug (Z7)",
+    "/v1/public/{slug}/catalog": "público",
+    "/v1/public/{slug}/availability": "público",
+    "/v1/public/{slug}/bookings": "público: reservar",
+    "/v1/public/{slug}/bookings/lookup": "público: código + WhatsApp (D5-8)",
+    "/v1/public/{slug}/bookings/cancel": "público: código + WhatsApp (D5-8)",
     "/v1/debug/boom": "solo fuera de producción; levanta un error sin tocar datos (A13)",
 }
 

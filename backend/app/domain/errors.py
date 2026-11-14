@@ -25,6 +25,11 @@ class ErrorCode(StrEnum):
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
     ONBOARDING_INCOMPLETE = "ONBOARDING_INCOMPLETE"
     CONFLICT = "CONFLICT"
+    # Turnero público (FASE-5-CONTRATO §4.2, PR 5.2).
+    TOO_MANY_ACTIVE_BOOKINGS = "TOO_MANY_ACTIVE_BOOKINGS"
+    SERVICE_NOT_BOOKABLE = "SERVICE_NOT_BOOKABLE"
+    INVALID_PHONE = "INVALID_PHONE"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
     #: El `EXCLUDE` de `bookings` rechazó el horario (FASE-5-CONTRATO Z5).
     SLOT_TAKEN = "SLOT_TAKEN"
     #: Un bloqueo de agenda pisa el horario pedido (D5-10: el dueño no se sale de un bloqueo).

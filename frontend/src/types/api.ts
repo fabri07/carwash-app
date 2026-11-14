@@ -121,6 +121,19 @@ export type AgendaOpening = Schemas["OpeningResponse"];
 export type AgendaOpeningPayload = Schemas["OpeningCreate"];
 export type AgendaAvailability = Schemas["AvailabilityResponse"];
 
+// Turnero público (PR 5.2, FASE-5-CONTRATO §4.2): `/v1/public/{slug}/…`, sin sesión.
+export type TurneroBusiness = Schemas["PublicBusinessResponse"];
+export type TurneroCatalog = Schemas["PublicCatalogResponse"];
+export type TurneroService = Schemas["PublicServiceOut"];
+export type TurneroSize = Schemas["PublicVehicleSize"];
+export type TurneroAvailability = Schemas["PublicAvailabilityResponse"];
+export type TurneroSlot = Schemas["PublicSlot"];
+export type TurneroBookingPayload = Schemas["PublicBookingCreate"];
+export type TurneroBooking = Schemas["PublicBookingResponse"];
+export type TurneroLookupPayload = Schemas["PublicBookingLookup"];
+export type TurneroCancelPayload = Schemas["PublicBookingCancel"];
+export type TurneroCancellation = Schemas["PublicCancellationResponse"];
+
 // Bandeja del dueño (PR 5.3, FASE-5-CONTRATO §4.1): turnos, señas, lista de espera y
 // cancelaciones con la seña a resolver.
 export type InboxBooking = Schemas["BookingSummary"];

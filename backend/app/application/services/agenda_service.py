@@ -346,13 +346,13 @@ class AgendaService(ServiceBase):
         require_instant(now)
         await self._require(CustomerRepository(self._session), customer_id)
         since = now - INCIDENT_WINDOW
-        cancellations = await CancellationRepository(self._session).list_for_customer_since(
+        cancellations = await CancellationRepository(self._session).count_for_customer_since(
             customer_id, INCIDENT_CANCELLATIONS, since, self._tenant_id
         )
-        bookings = await BookingRepository(self._session).list_for_customer_with_status_since(
+        bookings = await BookingRepository(self._session).count_for_customer_with_status_since(
             customer_id, INCIDENT_BOOKING_STATUSES, since, self._tenant_id
         )
-        marks = await CustomerIncidentMarkRepository(self._session).list_for_customer_since(
+        marks = await CustomerIncidentMarkRepository(self._session).count_for_customer_since(
             customer_id, since, self._tenant_id
         )
-        return len(cancellations) + len(bookings) + len(marks)
+        return cancellations + bookings + marks
