@@ -37,6 +37,7 @@ import app.persistence.repositories as paquete_repos
 from app.domain.enums import BookingStatus, CancellationClassification
 from app.domain.void import VoidReason
 from app.persistence.db.base import Base
+from app.persistence.models.agenda import Booking
 from app.persistence.repositories.base import BaseRepository, Page
 from app.tests.conftest import make_tenant
 from app.tests.security._poblar_dominio import INICIO_TURNO, RECETAS, _Contexto, tablas_tenant
@@ -255,7 +256,6 @@ Caso = Callable[[Any, Lavadero, uuid.UUID], Awaitable[Any]]
 async def _ocupa_el_horario(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
     """`slot_taken` con un turno sonda en el puesto y el horario del turno de A: devuelve el
     turno de A si lo ve ocupando (bool → fila, para compararlo como los demás casos)."""
-    from app.persistence.models import Booking  # noqa: PLC0415
 
     turno = await repo._session.get(Booking, a.ids["bookings"])
     sonda = Booking(
@@ -323,6 +323,23 @@ def _de_a(tabla: str, caso: "Caso") -> "Caso":
     return _caso
 
 
+def _contado(tabla: str, caso: "Caso") -> "Caso":
+    """Un caso que devuelve un número (los `count_*` de las incidencias y del tope D5-4): se
+    traduce a "encontró la fila de A de `tabla`" si cuenta algo, como `_perfil_en_uso`."""
+
+    async def _caso(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+        n = await caso(repo, a, tenant_id)
+        return [SimpleNamespace(id=a.ids[tabla])] if n else None
+
+    return _caso
+
+
+async def _turno_por_codigo(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+    """`find_by_code` con el código del turno sembrado de A (el turnero público, 5.2)."""
+    codigo = await repo._session.scalar(select(Booking.code).where(Booking.id == a.ids["bookings"]))
+    return await repo.find_by_code(codigo, tenant_id)
+
+
 #: Cada caso recibe (repo, datos de A, tenant con el que se pregunta).
 CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("BookingRepository", "lock_expired_holds"): lambda r, a, t: r.lock_expired_holds(
@@ -387,18 +404,26 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
             t,
         ),
     ),
-    ("BookingRepository", "list_for_customer_with_status_since"): lambda r, a, t: (
-        r.list_for_customer_with_status_since(
+    ("BookingRepository", "count_for_customer_with_status_since"): _contado(
+        "customers",
+        lambda r, a, t: r.count_for_customer_with_status_since(
             a.ids["customers"], frozenset(BookingStatus), MUY_TEMPRANO, t
-        )
+        ),
     ),
-    ("CancellationRepository", "list_for_customer_since"): lambda r, a, t: (
-        r.list_for_customer_since(
+    ("BookingRepository", "count_active_for_customer"): _contado(
+        "customers",
+        lambda r, a, t: r.count_active_for_customer(a.ids["customers"], MUY_TEMPRANO, t),
+    ),
+    ("BookingRepository", "find_by_code"): _turno_por_codigo,
+    ("CancellationRepository", "count_for_customer_since"): _contado(
+        "customers",
+        lambda r, a, t: r.count_for_customer_since(
             a.ids["customers"], frozenset(CancellationClassification), MUY_TEMPRANO, t
-        )
+        ),
     ),
-    ("CustomerIncidentMarkRepository", "list_for_customer_since"): lambda r, a, t: (
-        r.list_for_customer_since(a.ids["customers"], MUY_TEMPRANO, t)
+    ("CustomerIncidentMarkRepository", "count_for_customer_since"): _contado(
+        "customers",
+        lambda r, a, t: r.count_for_customer_since(a.ids["customers"], MUY_TEMPRANO, t),
     ),
     ("ScheduleBlockRepository", "list_overlapping"): _de_a(
         "schedule_blocks", lambda r, a, t: r.list_overlapping(MUY_TEMPRANO, None, t)

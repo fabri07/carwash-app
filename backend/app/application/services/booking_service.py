@@ -173,6 +173,7 @@ class BookingService(ServiceBase):
         notes: str | None = None,
         terms_version: str | None = None,
         terms_accepted_at: datetime | None = None,
+        for_review: bool = False,
     ) -> Booking:
         """Alta de un turno con estado, precio, duración y seña **snapshot** del catálogo.
 
@@ -187,6 +188,9 @@ class BookingService(ServiceBase):
           `quote_validity_hours` (D4-16).
         - Con seña requerida > 0 → `PENDIENTE_SEÑA`, con `hold_expires_at = now + hold_min`.
         - Sin seña → `CONFIRMADO`.
+        - `for_review` (lista de espera, D5-9) → `PENDIENTE_REVISION`: **sin ocupar el puesto y
+          sin hold**; guarda precio y seña calculados como cualquier turno (FASE-5-CONTRATO §3.5:
+          la seña se recalcula al aprobar). No admite un ítem `A_COTIZAR`.
 
         Reservar con menos de `min_advance_min` de anticipación es `GuardFailedError`. Un choque
         del `EXCLUDE` es `SlotTakenError`; un código repetido, `AlreadyExistsError`.
@@ -215,7 +219,11 @@ class BookingService(ServiceBase):
         quoted = next((item for item in items if item.quoted), None)
         price = sum(item.price_cents for item in items)
         deposit = booking_deposit_cents(items)
-        if quoted is not None:
+        if for_review:
+            if quoted is not None:
+                raise GuardFailedError("a service to be quoted cannot go to the waiting list")
+            action = BookingAction.CREATE_FOR_REVIEW
+        elif quoted is not None:
             action = BookingAction.CREATE_FOR_QUOTE
         elif deposit > 0:
             action = BookingAction.CREATE_WITH_DEPOSIT

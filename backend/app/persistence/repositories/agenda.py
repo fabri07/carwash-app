@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Collection
 from datetime import datetime
 
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 
 from app.domain.booking_state import BLOCKING_BOOKING_STATUSES
 from app.domain.enums import BookingStatus
@@ -15,7 +15,7 @@ from app.persistence.models.agenda import (
     ScheduleBlock,
     ScheduleOpening,
 )
-from app.persistence.repositories.base import BaseRepository
+from app.persistence.repositories.base import BaseRepository, one_or_none
 
 #: Estados con hold (`hold_expires_at`): los únicos que vencen por reloj del turno (§2.1).
 #: `PENDIENTE_COTIZACION` no: no ocupa el puesto y vence con su cotización (D4-15).
@@ -121,25 +121,61 @@ class BookingRepository(BaseRepository[Booking]):
         )
         return list(result.all())
 
-    async def list_for_customer_with_status_since(
+    async def count_for_customer_with_status_since(
         self,
         customer_id: uuid.UUID,
         statuses: Collection[BookingStatus],
         since: datetime,
         tenant_id: uuid.UUID,
-    ) -> list[Booking]:
-        """Turnos vivos del cliente en `statuses` con `start_at >= since` (incidencias, D-014)."""
-        result = await self._session.scalars(
-            select(Booking)
+    ) -> int:
+        """Cuántos turnos vivos del cliente en `statuses` con `start_at >= since` (incidencias,
+        D-014). `COUNT(*)`: corre en cada pedido del turnero público (diferido de 5.1)."""
+        count = await self._session.scalar(
+            select(func.count())
+            .select_from(Booking)
             .where(
                 Booking.customer_id == customer_id,
                 Booking.status.in_(tuple(statuses)),
                 Booking.start_at >= since,
                 *self._scope(tenant_id, False),
             )
-            .order_by(Booking.start_at, Booking.id)
         )
-        return list(result.all())
+        return int(count or 0)
+
+    async def count_active_for_customer(
+        self, customer_id: uuid.UUID, now: datetime, tenant_id: uuid.UUID
+    ) -> int:
+        """Turnos "activos a futuro" del cliente para el tope D5-4 (FASE-5-CONTRATO §4.2, paso 5).
+
+        `PENDIENTE_SEÑA` con el hold vigente (`hold_expires_at > now`, el complemento de
+        `hold_expired`), `PENDIENTE_REVISION` y `CONFIRMADO`, siempre con `start_at > now`.
+        """
+        count = await self._session.scalar(
+            select(func.count())
+            .select_from(Booking)
+            .where(
+                Booking.customer_id == customer_id,
+                Booking.start_at > now,
+                or_(
+                    Booking.status.in_(
+                        (BookingStatus.CONFIRMADO, BookingStatus.PENDIENTE_REVISION)
+                    ),
+                    and_(
+                        Booking.status.in_(HOLD_STATUSES),
+                        Booking.hold_expires_at > now,
+                    ),
+                ),
+                *self._scope(tenant_id, False),
+            )
+        )
+        return int(count or 0)
+
+    async def find_by_code(self, code: str, tenant_id: uuid.UUID) -> Booking | None:
+        """El turno vivo con ese código público (único entre vivos del negocio)."""
+        return await one_or_none(
+            self._session,
+            select(Booking).where(Booking.code == code, *self._scope(tenant_id, False)),
+        )
 
 
 class BookingItemRepository(BaseRepository[BookingItem]):
@@ -196,17 +232,18 @@ class ScheduleOpeningRepository(BaseRepository[ScheduleOpening]):
 class CustomerIncidentMarkRepository(BaseRepository[CustomerIncidentMark]):
     model = CustomerIncidentMark
 
-    async def list_for_customer_since(
+    async def count_for_customer_since(
         self, customer_id: uuid.UUID, since: datetime, tenant_id: uuid.UUID
-    ) -> list[CustomerIncidentMark]:
-        """Marcas vivas del cliente creadas desde `since` (D-014: las anuladas no cuentan)."""
-        result = await self._session.scalars(
-            select(CustomerIncidentMark)
+    ) -> int:
+        """Cuántas marcas vivas del cliente se crearon desde `since` (D-014: las anuladas no
+        cuentan)."""
+        count = await self._session.scalar(
+            select(func.count())
+            .select_from(CustomerIncidentMark)
             .where(
                 CustomerIncidentMark.customer_id == customer_id,
                 CustomerIncidentMark.created_at >= since,
                 *self._scope(tenant_id, False),
             )
-            .order_by(CustomerIncidentMark.created_at, CustomerIncidentMark.id)
         )
-        return list(result.all())
+        return int(count or 0)
