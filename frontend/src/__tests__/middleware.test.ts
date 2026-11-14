@@ -83,6 +83,13 @@ describe("middleware (ADR-0009)", () => {
     expect(middleware(req("/configuracionx")).headers.get("location")).toBeNull();
   });
 
+  it("protege la bandeja de turnos (FASE 5, PR 5.3)", () => {
+    const res = middleware(req("/turnos"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe(`${APP}/login?next=${encodeURIComponent("/turnos")}`);
+    expect(middleware(req("/turnos", { access_token: jwt({ exp: future }) })).status).toBe(200);
+  });
+
   it("toda carpeta de ruta con sesión está cubierta por un prefijo protegido", () => {
     // Una pantalla nueva bajo `(protected)` o `(account)` sin prefijo acá le
     // mandaría el HTML al anónimo.
