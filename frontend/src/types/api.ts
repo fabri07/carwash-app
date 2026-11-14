@@ -121,6 +121,19 @@ export type AgendaOpening = Schemas["OpeningResponse"];
 export type AgendaOpeningPayload = Schemas["OpeningCreate"];
 export type AgendaAvailability = Schemas["AvailabilityResponse"];
 
+// Turnero público (PR 5.2, FASE-5-CONTRATO §4.2): `/v1/public/{slug}/…`, sin sesión.
+export type TurneroBusiness = Schemas["PublicBusinessResponse"];
+export type TurneroCatalog = Schemas["PublicCatalogResponse"];
+export type TurneroService = Schemas["PublicServiceOut"];
+export type TurneroSize = Schemas["PublicVehicleSize"];
+export type TurneroAvailability = Schemas["PublicAvailabilityResponse"];
+export type TurneroSlot = Schemas["PublicSlot"];
+export type TurneroBookingPayload = Schemas["PublicBookingCreate"];
+export type TurneroBooking = Schemas["PublicBookingResponse"];
+export type TurneroLookupPayload = Schemas["PublicBookingLookup"];
+export type TurneroCancelPayload = Schemas["PublicBookingCancel"];
+export type TurneroCancellation = Schemas["PublicCancellationResponse"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];
