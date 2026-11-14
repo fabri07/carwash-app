@@ -204,3 +204,38 @@ def _resource_free(
     ):
         return False
     return not any(_overlaps(start, end, s, e) for s, e in occupied.get(resource, ()))
+
+
+def fits_schedule(
+    *,
+    start_at: datetime,
+    duration_min: int,
+    resource_id: uuid.UUID,
+    tz: ZoneInfo,
+    business_hours: Sequence[BusinessHour],
+    rules: Sequence[Sequence[RuleRow]],
+    openings: Sequence[Span],
+) -> bool:
+    """¿Un turno `[start_at, start_at + duración)` en ese puesto cae en el horario y las reglas?
+
+    Lo usa la bandeja al reprogramar (D5-10, PR 5.3): el dueño **puede** salirse del horario y de
+    las reglas del servicio, y la respuesta lo marca (`outside_rules`) para que la pantalla avise.
+    Mismas reglas que `free_starts` (pasos 2 y 4), sin la grilla (`step_min`: el dueño elige
+    cualquier minuto), sin anticipación ni horizonte y sin mirar ocupación ni bloqueos (de eso se
+    encargan el `EXCLUDE` y la guarda de bloqueos del servicio).
+    """
+    start = require_aware(start_at).astimezone(UTC)
+    if duration_min <= 0:
+        raise InvalidParameterError(f"duration must be > 0: {duration_min}")
+    end = start + timedelta(minutes=duration_min)
+    day = start.astimezone(tz).date()
+    for window in _windows(day, tz, business_hours, openings):
+        if window.resources is not None and resource_id not in window.resources:
+            continue
+        if (
+            window.start <= start
+            and end <= window.end
+            and _meets_rules(start, tz, rules, opening=window.opening)
+        ):
+            return True
+    return False

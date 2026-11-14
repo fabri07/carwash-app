@@ -322,6 +322,254 @@
         "title": "Body_upload_logo_v1_branding_logo_post",
         "type": "object"
       },
+      "BookingCountsResponse": {
+        "properties": {
+          "deposit_cases": {
+            "title": "Deposit Cases",
+            "type": "integer"
+          },
+          "in_review": {
+            "title": "In Review",
+            "type": "integer"
+          },
+          "pending_deposit": {
+            "title": "Pending Deposit",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending_deposit",
+          "in_review",
+          "deposit_cases",
+          "total"
+        ],
+        "title": "BookingCountsResponse",
+        "type": "object"
+      },
+      "BookingDetailResponse": {
+        "properties": {
+          "cancellation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CancellationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deposit_paid_cents": {
+            "title": "Deposit Paid Cents",
+            "type": "integer"
+          },
+          "deposit_required_cents": {
+            "title": "Deposit Required Cents",
+            "type": "integer"
+          },
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "hold_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_marks": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentMarkResponse"
+            },
+            "title": "Incident Marks",
+            "type": "array"
+          },
+          "incidents": {
+            "title": "Incidents",
+            "type": "integer"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentBrief"
+            },
+            "title": "Payments",
+            "type": "array"
+          },
+          "price_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Cents"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/BookingServiceLine"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BookingSource"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          },
+          "vehicle_plate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vehicle Plate"
+          },
+          "vehicle_size_id": {
+            "format": "uuid",
+            "title": "Vehicle Size Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "status",
+          "source",
+          "channel",
+          "resource_id",
+          "start_at",
+          "end_at",
+          "hold_expires_at",
+          "duration_min",
+          "vehicle_size_id",
+          "price_cents",
+          "deposit_required_cents",
+          "deposit_paid_cents",
+          "customer",
+          "vehicle_plate",
+          "services",
+          "notes",
+          "created_at",
+          "payments",
+          "cancellation",
+          "incidents",
+          "incident_marks"
+        ],
+        "title": "BookingDetailResponse",
+        "type": "object"
+      },
+      "BookingServiceLine": {
+        "properties": {
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_cents": {
+            "title": "Price Cents",
+            "type": "integer"
+          },
+          "pricing_mode": {
+            "$ref": "#/components/schemas/PricingMode"
+          },
+          "service_id": {
+            "format": "uuid",
+            "title": "Service Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_id",
+          "name",
+          "duration_min",
+          "price_cents",
+          "pricing_mode"
+        ],
+        "title": "BookingServiceLine",
+        "type": "object"
+      },
+      "BookingSource": {
+        "description": "Quién cargó el turno. Distinto del canal (R-C-013: `AGENDA_INTERNA_LJ` no es un canal).",
+        "enum": [
+          "TURNERO_WEB",
+          "PANEL",
+          "AGENDA_INTERNA",
+          "LISTA_ESPERA"
+        ],
+        "title": "BookingSource",
+        "type": "string"
+      },
       "BookingStatus": {
         "description": "§2.1. Los que bloquean el intervalo del puesto: `BLOCKING_BOOKING_STATUSES`.",
         "enum": [
@@ -341,6 +589,150 @@
         ],
         "title": "BookingStatus",
         "type": "string"
+      },
+      "BookingSummary": {
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deposit_paid_cents": {
+            "title": "Deposit Paid Cents",
+            "type": "integer"
+          },
+          "deposit_required_cents": {
+            "title": "Deposit Required Cents",
+            "type": "integer"
+          },
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "hold_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "price_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Cents"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/BookingServiceLine"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BookingSource"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          },
+          "vehicle_plate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vehicle Plate"
+          },
+          "vehicle_size_id": {
+            "format": "uuid",
+            "title": "Vehicle Size Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "status",
+          "source",
+          "channel",
+          "resource_id",
+          "start_at",
+          "end_at",
+          "hold_expires_at",
+          "duration_min",
+          "vehicle_size_id",
+          "price_cents",
+          "deposit_required_cents",
+          "deposit_paid_cents",
+          "customer",
+          "vehicle_plate",
+          "services",
+          "notes",
+          "created_at"
+        ],
+        "title": "BookingSummary",
+        "type": "object"
       },
       "BrandColor": {
         "properties": {
@@ -514,6 +906,142 @@
         "title": "BusinessHoursUpdate",
         "type": "object"
       },
+      "CancellationClassification": {
+        "description": "Valores exactos del código (R-T-037, C-06), no los del inventario.",
+        "enum": [
+          "NORMAL",
+          "TARDIA",
+          "POSTERIOR_AL_TURNO",
+          "OPERATIVA"
+        ],
+        "title": "CancellationClassification",
+        "type": "string"
+      },
+      "CancellationInitiator": {
+        "enum": [
+          "CLIENTE",
+          "NEGOCIO"
+        ],
+        "title": "CancellationInitiator",
+        "type": "string"
+      },
+      "CancellationResponse": {
+        "properties": {
+          "anticipation_min": {
+            "title": "Anticipation Min",
+            "type": "integer"
+          },
+          "booking_id": {
+            "format": "uuid",
+            "title": "Booking Id",
+            "type": "string"
+          },
+          "classification": {
+            "$ref": "#/components/schemas/CancellationClassification"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deposit_paid_cents": {
+            "title": "Deposit Paid Cents",
+            "type": "integer"
+          },
+          "deposit_status": {
+            "$ref": "#/components/schemas/DepositStatus"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "initiator": {
+            "$ref": "#/components/schemas/CancellationInitiator"
+          },
+          "previous_status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "refund_payment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refund Payment Id"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "resolution_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Reason"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resulting_status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "created_at",
+          "updated_at",
+          "booking_id",
+          "initiator",
+          "classification",
+          "requested_at",
+          "anticipation_min",
+          "reason",
+          "previous_status",
+          "resulting_status",
+          "deposit_paid_cents",
+          "deposit_status",
+          "resolved_at",
+          "resolution_reason",
+          "refund_payment_id"
+        ],
+        "title": "CancellationResponse",
+        "type": "object"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -535,6 +1063,138 @@
         ],
         "title": "ChangePasswordRequest",
         "type": "object"
+      },
+      "Channel": {
+        "description": "D-004 — de dónde vino el cliente. El mapeo desde los 5 vocabularios legacy es de F8.",
+        "enum": [
+          "TURNERO_WEB",
+          "WHATSAPP",
+          "INSTAGRAM",
+          "REFERIDO",
+          "CALLE",
+          "CLIENTE_ANTERIOR",
+          "CARGA_MANUAL",
+          "OTRO"
+        ],
+        "title": "Channel",
+        "type": "string"
+      },
+      "ConfirmDepositBody": {
+        "properties": {
+          "amount_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000000000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cents"
+          },
+          "payment_method_id": {
+            "format": "uuid",
+            "title": "Payment Method Id",
+            "type": "string"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "required": [
+          "payment_method_id"
+        ],
+        "title": "ConfirmDepositBody",
+        "type": "object"
+      },
+      "ConfirmDepositResponse": {
+        "properties": {
+          "booking": {
+            "$ref": "#/components/schemas/BookingSummary"
+          },
+          "late": {
+            "title": "Late",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "booking",
+          "late"
+        ],
+        "title": "ConfirmDepositResponse",
+        "type": "object"
+      },
+      "CustomerBrief": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone_e164": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone E164"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "phone_e164"
+        ],
+        "title": "CustomerBrief",
+        "type": "object"
+      },
+      "DepositCaseResponse": {
+        "properties": {
+          "booking": {
+            "$ref": "#/components/schemas/BookingSummary"
+          },
+          "cancellation": {
+            "$ref": "#/components/schemas/CancellationResponse"
+          }
+        },
+        "required": [
+          "cancellation",
+          "booking"
+        ],
+        "title": "DepositCaseResponse",
+        "type": "object"
+      },
+      "DepositStatus": {
+        "description": "§2.4. Los cuatro primeros abren un caso (legacy); los tres últimos lo cierran (nuevos).",
+        "enum": [
+          "SIN_PAGO",
+          "DEVOLUCION_PENDIENTE",
+          "EN_REVISION",
+          "REPROGRAMACION_O_DEVOLUCION_PENDIENTE",
+          "DEVUELTA",
+          "RETENIDA",
+          "REPROGRAMADA"
+        ],
+        "title": "DepositStatus",
+        "type": "string"
       },
       "ErrorCode": {
         "enum": [
@@ -559,6 +1219,8 @@
           "STORAGE_UNAVAILABLE",
           "ONBOARDING_INCOMPLETE",
           "CONFLICT",
+          "SLOT_TAKEN",
+          "BLOCKED",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
           "INTERNAL_ERROR"
@@ -681,6 +1343,68 @@
           "db_fingerprint"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "IncidentMarkResponse": {
+        "properties": {
+          "booking_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "format": "uuid",
+            "title": "Created By User Id",
+            "type": "string"
+          },
+          "customer_id": {
+            "format": "uuid",
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "created_at",
+          "updated_at",
+          "customer_id",
+          "booking_id",
+          "reason",
+          "created_by_user_id"
+        ],
+        "title": "IncidentMarkResponse",
         "type": "object"
       },
       "LoginRequest": {
@@ -1193,6 +1917,43 @@
         "title": "PaginatedResponse[BodyTypeSizeResponse]",
         "type": "object"
       },
+      "PaginatedResponse_BookingSummary_": {
+        "properties": {
+          "has_more": {
+            "readOnly": true,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BookingSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "title": "PaginatedResponse[BookingSummary]",
+        "type": "object"
+      },
       "PaginatedResponse_BusinessHoursResponse_": {
         "properties": {
           "has_more": {
@@ -1228,6 +1989,43 @@
           "has_more"
         ],
         "title": "PaginatedResponse[BusinessHoursResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_DepositCaseResponse_": {
+        "properties": {
+          "has_more": {
+            "readOnly": true,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DepositCaseResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "title": "PaginatedResponse[DepositCaseResponse]",
         "type": "object"
       },
       "PaginatedResponse_OpeningResponse_": {
@@ -1696,6 +2494,55 @@
         "title": "PaletteSuggestion",
         "type": "object"
       },
+      "PaymentBrief": {
+        "properties": {
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PaymentKind"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payment_method_id": {
+            "format": "uuid",
+            "title": "Payment Method Id",
+            "type": "string"
+          },
+          "voided": {
+            "title": "Voided",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "amount_cents",
+          "payment_method_id",
+          "occurred_at",
+          "voided"
+        ],
+        "title": "PaymentBrief",
+        "type": "object"
+      },
+      "PaymentKind": {
+        "enum": [
+          "SEÑA",
+          "SALDO",
+          "DEVOLUCION"
+        ],
+        "title": "PaymentKind",
+        "type": "string"
+      },
       "PaymentMethodCreate": {
         "properties": {
           "code": {
@@ -2055,6 +2902,41 @@
         "title": "ReadyResponse",
         "type": "object"
       },
+      "ReasonBody": {
+        "properties": {
+          "reason": {
+            "maxLength": 160,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReasonBody",
+        "type": "object"
+      },
+      "RefundBody": {
+        "properties": {
+          "amount_cents": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000000.0,
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "payment_method_id": {
+            "format": "uuid",
+            "title": "Payment Method Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payment_method_id",
+          "amount_cents"
+        ],
+        "title": "RefundBody",
+        "type": "object"
+      },
       "RegisterRequest": {
         "properties": {
           "email": {
@@ -2081,6 +2963,89 @@
           "tenant"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RescheduleBody": {
+        "description": "Horario nuevo y/o puesto nuevo (D5-10). Con zona: el front manda el instante en UTC.",
+        "properties": {
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At"
+          }
+        },
+        "title": "RescheduleBody",
+        "type": "object"
+      },
+      "RescheduleResponse": {
+        "properties": {
+          "booking": {
+            "$ref": "#/components/schemas/BookingSummary"
+          },
+          "outside_rules": {
+            "title": "Outside Rules",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "booking",
+          "outside_rules"
+        ],
+        "title": "RescheduleResponse",
+        "type": "object"
+      },
+      "ResolveBody": {
+        "description": "Cierre del caso de seña (D-005). `DEVUELTA` exige `refund` (el pago que sale de caja).",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          },
+          "refund": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefundBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "DEVUELTA",
+              "RETENIDA",
+              "REPROGRAMADA"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ],
+        "title": "ResolveBody",
         "type": "object"
       },
       "ResourceCreate": {
@@ -5232,6 +6197,1040 @@
         ]
       }
     },
+    "/v1/bookings": {
+      "get": {
+        "description": "Turnos por estado (repetible) y por día **local** de inicio (`to` inclusive), por inicio.",
+        "operationId": "list_bookings_v1_bookings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/BookingStatus"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_BookingSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Bookings",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/counts": {
+      "get": {
+        "description": "Pendientes de seña + lista de espera + señas a resolver: el número del menú.",
+        "operationId": "get_counts_v1_bookings_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingCountsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Get Counts",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}": {
+      "get": {
+        "operationId": "get_booking_v1_bookings__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Booking",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/approve": {
+      "post": {
+        "description": "Aprueba un pedido de la lista de espera en la misma fila (D5-9): pasa a pendiente de seña\n(hold nuevo) o a confirmado, según la seña vigente. 409 `SLOT_TAKEN` si el horario ya no está.",
+        "operationId": "approve_v1_bookings__id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Approve",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/cancel": {
+      "post": {
+        "description": "Cancelación operativa (la decide el negocio, no es incidencia del cliente). Con seña\ncobrada abre el caso en \"Señas a resolver\". Repetir devuelve la misma cancelación.",
+        "operationId": "cancel_v1_bookings__id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Cancel",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/confirm-deposit": {
+      "post": {
+        "description": "Registra la seña: confirma el turno, o lo confirma tarde si el hold venció y el horario\nsigue libre (`late: true`; si no, 409 `SLOT_TAKEN`).",
+        "operationId": "confirm_deposit_v1_bookings__id__confirm_deposit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDepositBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmDepositResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Confirm Deposit",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/incident-marks": {
+      "post": {
+        "description": "Marca una incidencia del cliente del turno: cuenta para la lista de espera.",
+        "operationId": "mark_incident_v1_bookings__id__incident_marks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentMarkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Mark Incident",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/no-show": {
+      "post": {
+        "description": "`CONFIRMADO → NO_ASISTIO`. Cuenta como incidencia del cliente (D-014).",
+        "operationId": "no_show_v1_bookings__id__no_show_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "No Show",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/reject": {
+      "post": {
+        "description": "Rechaza un pedido de la lista de espera con motivo. Repetir devuelve el mismo rechazo.",
+        "operationId": "reject_v1_bookings__id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Reject",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/bookings/{id}/reschedule": {
+      "post": {
+        "description": "Otro horario y/o puesto (D5-10). Fuera del horario o de las reglas se guarda igual con\n`outside_rules: true`; un bloqueo no (409 `BLOCKED`), ni un puesto ocupado (409\n`SLOT_TAKEN`).",
+        "operationId": "reschedule_v1_bookings__id__reschedule_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RescheduleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Reschedule",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
     "/v1/branding/catalog": {
       "get": {
         "operationId": "get_catalog_v1_branding_catalog_get",
@@ -5919,6 +7918,282 @@
         "summary": "Update Business Hours",
         "tags": [
           "Configuración"
+        ]
+      }
+    },
+    "/v1/cancellations": {
+      "get": {
+        "operationId": "list_open_cases_v1_cancellations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_DepositCaseResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Open Cases",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/cancellations/{id}/resolve": {
+      "post": {
+        "description": "Cierra el caso de la seña. Reenviar el mismo cierre devuelve el caso sin efectos.",
+        "operationId": "resolve_v1_cancellations__id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Resolve",
+        "tags": [
+          "Turnos"
+        ]
+      }
+    },
+    "/v1/incident-marks/{id}": {
+      "delete": {
+        "description": "Desmarcar = anular (nunca se borra).",
+        "operationId": "void_incident_mark_v1_incident_marks__id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Void Incident Mark",
+        "tags": [
+          "Turnos"
         ]
       }
     },

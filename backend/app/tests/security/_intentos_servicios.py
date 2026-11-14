@@ -27,13 +27,20 @@ from typing import Any
 from app.application import services as paquete_servicios
 from app.application.services._base import ServiceBase
 from app.application.services.agenda_service import LocalRange
+from app.application.services.booking_inbox_service import BookingInboxService
 from app.domain.enums import BookingSource, Channel, DepositStatus, PricingMode
 from app.tests.application._armado import AHORA, PRECIO_FIJO, SENA, Lavadero, T
+from app.tests.application._bandeja import en_revision
 
 Ids = dict[str, uuid.UUID]
 
 #: Un día sin turnos sembrados para los bloqueos y aperturas de la agenda (F5).
 DIA_AGENDA = LocalRange((T + timedelta(days=30)).date())
+
+
+def bandeja(lv: Lavadero) -> BookingInboxService:
+    """La bandeja del dueño (PR 5.3) del lavadero."""
+    return BookingInboxService(lv.session, lv.tenant_id, lv.owner_id)
 
 
 def k() -> str:
@@ -120,6 +127,10 @@ async def armar_a(lv: Lavadero) -> Ids:
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
     ids["bloqueo"] = (await lv.agenda.create_block(DIA_AGENDA, resource_id=lv.puesto)).block.id
     ids["apertura"] = (await lv.agenda.create_opening(DIA_AGENDA)).id
+    # Bandeja (PR 5.3): un pedido en lista de espera en un horario libre (puesto 1, T+20h) y una
+    # marca de incidencia viva.
+    ids["booking_revision"] = (await en_revision(lv, inicio=T + timedelta(hours=20))).id
+    ids["marca"] = (await bandeja(lv).mark_incident(ids["booking_conf"], reason="Llegó tarde")).id
 
     async def cotizacion() -> Any:
         return await lv.cotizaciones.create(
@@ -150,6 +161,7 @@ async def armar_b(lv: Lavadero) -> Ids:
     """Lo propio de B que algunas operaciones combinan con un id de A."""
     ids = _catalogo(lv)
     ids["job_finalizado"] = (await lv.finalizado()).id
+    ids["booking_conf"] = (await lv.turno(inicio=T + timedelta(hours=2))).id
     ids["booking_pend_sena"] = (await lv.turno_con_sena(inicio=T + timedelta(hours=4))).id
     ids["cancelacion"] = (await cancelada(lv, T + timedelta(hours=10))).id
     ids["booking_vencido"] = await vencido_con_sena(lv)
@@ -455,6 +467,63 @@ INTENTOS: dict[str, Intento] = {
             starts_at=T, ends_at=T + timedelta(hours=1), resource_id=x
         ),
         "BookingService.add_block",
+    ),
+    # ── Bandeja del dueño (PR 5.3) ──
+    "booking.confirm_deposit_or_late": Intento(
+        "booking_pend_sena",
+        "bookings",
+        lambda lv, ib, x: lv.turnos.confirm_deposit_or_late(x, lv.pago(SENA), now=AHORA),
+        "BookingService.confirm_deposit_or_late",
+    ),
+    "booking.confirm_deposit_or_late.medio": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: lv.turnos.confirm_deposit_or_late(
+            ib["booking_pend_sena"], lv.pago(SENA, medio=x), now=AHORA
+        ),
+        "BookingService.confirm_deposit_or_late:payment.payment_method_id",
+    ),
+    "booking.approve_review": Intento(
+        "booking_revision",
+        "bookings",
+        lambda lv, ib, x: lv.turnos.approve_review(x, now=AHORA),
+        "BookingService.approve_review",
+    ),
+    "booking.reject_review": Intento(
+        "booking_revision",
+        "bookings",
+        lambda lv, ib, x: lv.turnos.reject_review(x, reason="Sin lugar", now=AHORA),
+        "BookingService.reject_review",
+    ),
+    "booking.reschedule": Intento(
+        "booking_conf",
+        "bookings",
+        lambda lv, ib, x: lv.turnos.reschedule(x, now=AHORA, resource_id=ib["puesto"]),
+        "BookingService.reschedule",
+    ),
+    "booking.reschedule.resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: lv.turnos.reschedule(ib["booking_conf"], now=AHORA, resource_id=x),
+        "BookingService.reschedule",
+    ),
+    "inbox.detail": Intento(
+        "booking_conf",
+        "bookings",
+        lambda lv, ib, x: bandeja(lv).detail(x, now=AHORA),
+        "BookingInboxService.detail",
+    ),
+    "inbox.mark_incident": Intento(
+        "booking_conf",
+        "bookings",
+        lambda lv, ib, x: bandeja(lv).mark_incident(x, reason="No avisó"),
+        "BookingInboxService.mark_incident",
+    ),
+    "inbox.void_incident_mark": Intento(
+        "marca",
+        "customer_incident_marks",
+        lambda lv, ib, x: bandeja(lv).void_incident_mark(x),
+        "BookingInboxService.void_incident_mark",
     ),
     # ── AgendaService (F5) ──
     "agenda.create_block": Intento(

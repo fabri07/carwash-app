@@ -410,3 +410,28 @@ Donde el contrato era ambiguo se eligió la lectura más conservadora.
 |---|---|
 | `_replace_rules` y `void_service` anulan a mano en vez de usar `BaseRepository.void`; `check_rules` corre dos veces | Es el mismo patrón que ya usa `void_service` con precios desde F4. Unificar la anulación toca todos los servicios y va en su propio PR. El front ya no manda reglas sin cambios. |
 | `count_incidents` lee filas en vez de hacer `COUNT(*)`; `create_block` busca los clientes con N+1 | Con 90 días por cliente son pocas filas, y un bloqueo pisa decenas de turnos como mucho. Se pasa a `COUNT` en 5.2, donde el conteo corre en cada pedido público. |
+
+## 14. Adenda del PR 5.3 — bandeja del dueño (2026-11-12)
+
+### Decisiones tomadas al construir
+
+Donde el contrato era ambiguo se eligió la lectura más conservadora. Sin migración (Z2).
+
+| # | Decisión |
+|---|---|
+| 5.3-1 | **Rechazar deja su fila en `cancellations`** (`NEGOCIO`, `OPERATIVA`, `PENDIENTE_REVISION → RECHAZADO`, motivo, actor y hora): sin migración no hay otra columna para el motivo de un rechazo, y es la fila que ya guarda la decisión del negocio sobre un turno. `OPERATIVA` no cuenta como incidencia; sin seña cobrada nace `SIN_PAGO` y no aparece en "Señas a resolver". Rechazar dos veces devuelve la misma fila. |
+| 5.3-2 | **Aprobar** recalcula la seña con la configuración vigente (el % de cada servicio o el del negocio, D4-17) y actualiza también el `deposit_bps` de cada ítem. Elige el puesto otra vez (D5-6): el primero por `sort_order` sin bloqueo que el `EXCLUDE` acepte; si un bloqueo cubre todos los puestos → 409 `BLOCKED`; si ninguno entra → 409 `SLOT_TAKEN` y el pedido sigue en lista de espera. No se aprueba un pedido cuyo horario ya pasó (422) ni uno con un servicio a cotizar (422: se agenda a mano). |
+| 5.3-3 | **Reprogramar** al pasado es 422; cambiar **solo el puesto** de un turno que ya empezó, sí. Un `PENDIENTE_SEÑA` con el hold vencido se vence primero (perezoso) y entonces es 409 `CONFLICT`: corresponde confirmar la seña tarde. `outside_rules` mira franjas del día, aperturas especiales (las del puesto o globales) y reglas de los servicios del turno, **sin la grilla** (`slot_step_min`): el dueño elige cualquier minuto. Es la función pura `fits_schedule` de `domain/availability.py`. |
+| 5.3-4 | **`POST /bookings/{id}/confirm-deposit`**: `Idempotency-Key` **obligatorio** (es la clave del pago: un reenvío devuelve el turno, 200). `amount_cents` opcional: sin importe, la seña pedida. Un solo método de servicio (`confirm_deposit_or_late`) vence el hold si corresponde y elige entre `confirm_deposit` y `confirm_late`; la respuesta dice `late`. Un turno sin seña pedida → 409 `CONFLICT`. |
+| 5.3-5 | **Códigos de error nuevos:** `SLOT_TAKEN` (el `EXCLUDE`) y `BLOCKED` (un bloqueo). Una transición que el estado no admite → 409 `CONFLICT`. 5.2 también usa `SLOT_TAKEN`: si los dos PR lo agregan, es el mismo valor. |
+| 5.3-6 | **Endpoints de lectura no listados en §4.1:** `GET /cancellations` (casos de seña abiertos, el más viejo primero, `AGENDA_VER`). `GET /bookings` filtra por `status` (repetible) y por **día local** `from`/`to` (inclusive) del inicio, como bloqueos y aperturas (5.1-1). `BookingSummary` trae cliente (nombre y WhatsApp), patente, servicios, seña cobrada y `vehicle_size_id` (para pedir la disponibilidad al reprogramar). |
+| 5.3-7 | **Contador del menú** (`GET /bookings/counts`): `PENDIENTE_SEÑA` + `PENDIENTE_REVISION` que todavía no empezaron + casos de seña abiertos. "Pendientes de seña" muestra además los `VENCIDO` con seña de hoy en adelante (para la seña tardía), pero no los cuenta. El front lo refresca cada minuto y al volver a la pestaña. |
+| 5.3-8 | **Las acciones sin pago** (aprobar, rechazar, cancelar, no asistió, marcar incidencia, reprogramar) aceptan `Idempotency-Key` opcional (`claim_idempotency_key`): un doble toque es `DUPLICATE_IDEMPOTENT`, que el front trata como hecho. Resolver una seña con devolución exige la clave (es la del pago `DEVOLUCION`). |
+| 5.3-9 | **La marca manual de incidencia** cuelga del turno desde el que se marca (`booking_id`) y del cliente de ese turno. "Desmarcar" anula con `PEDIDO_DEL_USUARIO`. El detalle del turno trae las incidencias de 90 días y las marcas vivas del cliente. |
+| 5.3-10 | **Lecturas en un servicio nuevo** (`BookingInboxService`, con su repositorio `repositories/inbox.py`) para no pisar `AgendaService`/repositorios de agenda que toca 5.2; las transiciones nuevas (`approve_review`, `reject_review`, `reschedule`, `confirm_deposit_or_late`) van en `BookingService`, al final de la clase. |
+
+### Queda abierto
+
+- La seña que llega con el horario ya tomado (`record_deposit_after_slot_lost`) sigue sin botón: la bandeja responde 409 `SLOT_TAKEN` y el caso queda como hoy (A16 de F3, §4.1).
+- El historial de quién movió qué en la agenda es de F6 (§4.1).
+- `EXPIRE_REVIEW` (pedido en lista de espera cuya hora pasó sin decisión) no tiene job todavía: la bandeja solo los deja de mostrar y contar.
