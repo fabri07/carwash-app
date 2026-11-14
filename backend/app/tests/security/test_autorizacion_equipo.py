@@ -425,8 +425,8 @@ def _rutas_cerradas_por_la_compuerta() -> list[tuple[str, str]]:
     rutas = []
     for ruta in app.routes:
         if isinstance(ruta, APIRoute) and ruta.path.startswith("/v1/"):
-            if ruta.path in abiertas:
-                continue
+            if ruta.path in abiertas or ruta.path.startswith("/v1/public/"):
+                continue  # el turnero público (5.2) no tiene sesión: no hay clave que cambiar
             for metodo in sorted(ruta.methods):
                 rutas.append((metodo, ruta.path))
     return rutas
