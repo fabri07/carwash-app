@@ -410,3 +410,28 @@ Donde el contrato era ambiguo se eligió la lectura más conservadora.
 |---|---|
 | `_replace_rules` y `void_service` anulan a mano en vez de usar `BaseRepository.void`; `check_rules` corre dos veces | Es el mismo patrón que ya usa `void_service` con precios desde F4. Unificar la anulación toca todos los servicios y va en su propio PR. El front ya no manda reglas sin cambios. |
 | `count_incidents` lee filas en vez de hacer `COUNT(*)`; `create_block` busca los clientes con N+1 | Con 90 días por cliente son pocas filas, y un bloqueo pisa decenas de turnos como mucho. Se pasa a `COUNT` en 5.2, donde el conteo corre en cada pedido público. |
+
+## 13. Adenda del PR 5.2 — turnero público (2026-11-12)
+
+### Decisiones tomadas al construir
+
+Donde el contrato era ambiguo se eligió la lectura más conservadora.
+
+| # | Decisión |
+|---|---|
+| 5.2-1 | **Límites también por negocio**, además de los del contrato por IP: `GET` 600/min, `POST /bookings` 60/min y 500/día, `lookup` 120/min y `cancel` 60/min por slug. Muchas IPs no le llenan la agenda a un mismo lavadero. Los de IP quedan como dice §4.2 (60/min, 5/min + 20/día, 10/min, 5/min). **Se cuentan con `shared_limit` y un scope fijo por ruta**: el scope por defecto de slowapi es la URL, y con una URL distinta por slug cada intento de enumeración caía en un cupo nuevo (los 60/min por IP no cortaban nunca; lo cazó el test de enumeración). |
+| 5.2-2 | **`Idempotency-Key` del alta:** se reclama con la acción `public_booking` y, creado el turno, la fila pasa a `public_booking:<id>`. El reenvío con la misma clave devuelve el mismo turno (201, mismo cuerpo) **solo si trae el mismo WhatsApp**; con otro (o una clave usada en otra operación) es 409 `DUPLICATE_IDEMPOTENT` sin datos del turno. Dos envíos simultáneos con la misma clave crean uno (test PG). |
+| 5.2-3 | **El WhatsApp se valida antes que nada** (`normalize_phone_ar`): inválido o ambiguo es 422 `INVALID_PHONE` y no se crea ningún cliente. A diferencia del panel, el turnero no crea clientes sin `phone_e164`. |
+| 5.2-4 | **El nombre tipeado va a notas solo si difiere** (sin distinguir mayúsculas) del nombre del cliente existente: `Nombre en la web: …`. |
+| 5.2-5 | **Patente (D5-3, opcional):** si es nueva se crea el vehículo **vinculado** al cliente; si ya existe, el turno la referencia pero **no** se vincula al cliente (cualquiera puede tipear una patente ajena, como un WhatsApp). Al existente solo se le completa el tamaño si le faltaba (regla de siempre de `resolve_by_plate`). Una patente de más de 10 caracteres es 422; una vacía o centinela (`SIN000`) es "sin patente". |
+| 5.2-6 | **Qué es "no reservable":** un servicio inexistente, de otro negocio, anulado, `SOLO_A_MANO`, `A_COTIZAR` o sin precio para el tamaño es 422 `SERVICE_NOT_BOOKABLE`, en el `POST` **y** en la disponibilidad pública. Un tamaño inexistente o ajeno es 422 `VALIDATION_ERROR`. Nunca 404: en el turnero el 404 queda para el negocio (Z8) y el turno (D5-8). |
+| 5.2-7 | **Lista de espera:** `BookingService.create` suma `for_review=True` (acción `CREATE_FOR_REVIEW`): `PENDIENTE_REVISION`, sin hold, en el primer puesto libre (§4.2). Guarda precio y seña calculados (§3.5); la respuesta pública muestra seña 0 ("por ahora no tenés que pagar nada"). |
+| 5.2-8 | **`terms_version`** = primeros 12 hex del SHA-256 de `cancellation_policy`; sin política cargada queda `NULL` (con `terms_accepted_at` igual). `accept_policy: false` es 422. |
+| 5.2-9 | **Ver y cancelar:** el código se normaliza (minúsculas, sin prefijo, con espacios); un código imposible, un WhatsApp con formato inválido, uno ajeno o un turno de otro negocio son **el mismo 404** que un código inexistente. Cancelar un turno que ya no se puede cancelar (`ATENDIDO`, `VENCIDO`…) es 409 `CONFLICT`; uno ya cancelado devuelve la misma cancelación (idempotente, R-T-035). |
+| 5.2-10 | **`GET /public/{slug}`** devuelve además `hold_min` (para decir hasta cuándo se guarda el horario), `currency` y la paleta y la tipografía **completas** (el catálogo de marca de `/branding/catalog` exige sesión). Nunca `tenant_id`, ids de puesto ni datos de clientes. |
+| 5.2-11 | **Catálogo público:** un servicio sin precio para ningún tamaño vivo no aparece; el orden es categoría (por `sort_order`) y nombre. La seña por tamaño se calcula como al reservar (`item_deposit_bps` + `deposit_required`); 0 en `A_COTIZAR`. |
+| 5.2-12 | **`count_incidents` pasa a `COUNT(*)`** (diferido de 5.1): los `list_for_customer_*` de los tres repositorios pasan a `count_for_customer_*`. `BookingRepository` suma `count_active_for_customer` (tope D5-4) y `find_by_code`, con su caso en `test_aislamiento_repositorios.py`. |
+| 5.2-13 | **El tope D5-4 no es atómico** entre dos pedidos simultáneos del mismo WhatsApp (los dos pueden ver 1 activo). Se acepta: el límite por IP y los holds que vencen solos acotan el abuso; un lock por cliente es más caro que el problema. |
+| 5.2-14 | **`PublicBookingService` no se exporta** desde `application/services/__init__.py`: no recibe ids de otros recursos para operar (el negocio sale del slug y el turno del código + WhatsApp), y su aislamiento se prueba por HTTP (`test_turnero_publico.py` y `_pg.py`). |
+| 5.2-15 | **Front:** cliente axios propio (`services/public.service.ts`) **sin cookies** (`withCredentials: false`) ni interceptores: una sesión abierta de otro negocio no participa, y un error no redirige a `/login`. La marca se aplica sobre `<html>` como en la app con sesión. `/<slug>` y `/<slug>/mi-turno` no están en `PROTECTED_PREFIXES`. |
+| 5.2-16 | **Códigos de error nuevos:** `SLOT_TAKEN`, `TOO_MANY_ACTIVE_BOOKINGS`, `SERVICE_NOT_BOOKABLE`, `INVALID_PHONE` (5.3 puede necesitar `SLOT_TAKEN` y `BLOCKED`: el primero ya está). |
