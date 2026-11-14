@@ -1206,7 +1206,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "SLOT_TAKEN" | "TOO_MANY_ACTIVE_BOOKINGS" | "SERVICE_NOT_BOOKABLE" | "INVALID_PHONE" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
+        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "SLOT_TAKEN" | "TOO_MANY_ACTIVE_BOOKINGS" | "SERVICE_NOT_BOOKABLE" | "INVALID_PHONE" | "SERVICE_UNAVAILABLE" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             code: components["schemas"]["ErrorCode"];
@@ -5094,6 +5094,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     cancel_booking_v1_public__slug__bookings_cancel_post: {
@@ -5156,6 +5165,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     lookup_booking_v1_public__slug__bookings_lookup_post: {
@@ -5211,6 +5229,15 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
