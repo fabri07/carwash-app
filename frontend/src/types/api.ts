@@ -121,6 +121,23 @@ export type AgendaOpening = Schemas["OpeningResponse"];
 export type AgendaOpeningPayload = Schemas["OpeningCreate"];
 export type AgendaAvailability = Schemas["AvailabilityResponse"];
 
+// Bandeja del dueño (PR 5.3, FASE-5-CONTRATO §4.1): turnos, señas, lista de espera y
+// cancelaciones con la seña a resolver.
+export type InboxBooking = Schemas["BookingSummary"];
+export type InboxBookingDetail = Schemas["BookingDetailResponse"];
+export type InboxCounts = Schemas["BookingCountsResponse"];
+export type DepositPayload = Schemas["ConfirmDepositBody"];
+export type DepositConfirmed = Schemas["ConfirmDepositResponse"];
+export type ReasonPayload = Schemas["ReasonBody"];
+export type ReschedulePayload = Schemas["RescheduleBody"];
+export type RescheduleResult = Schemas["RescheduleResponse"];
+export type IncidentMark = Schemas["IncidentMarkResponse"];
+export type BookingCancellation = Schemas["CancellationResponse"];
+export type DepositCase = Schemas["DepositCaseResponse"];
+export type ResolvePayload = Schemas["ResolveBody"];
+/** `DepositStatus` es el nombre del schema. */
+export type DepositStatusCode = Schemas["DepositStatus"];
+
 /** Envelope único de errores: `{ detail: { code, message, field } }`. */
 export type ApiError = Schemas["ErrorResponse"];
 export type ApiErrorCode = Schemas["ErrorCode"];

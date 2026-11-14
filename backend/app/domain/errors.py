@@ -25,6 +25,10 @@ class ErrorCode(StrEnum):
     STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
     ONBOARDING_INCOMPLETE = "ONBOARDING_INCOMPLETE"
     CONFLICT = "CONFLICT"
+    #: El `EXCLUDE` de `bookings` rechazó el horario (FASE-5-CONTRATO Z5).
+    SLOT_TAKEN = "SLOT_TAKEN"
+    #: Un bloqueo de agenda pisa el horario pedido (D5-10: el dueño no se sale de un bloqueo).
+    BLOCKED = "BLOCKED"
     VALIDATION_ERROR = "VALIDATION_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"

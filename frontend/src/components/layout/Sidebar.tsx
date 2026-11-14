@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  CalendarClock,
   ChevronLeft,
   ChevronRight,
   Droplets,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { InboxBadge } from "@/features/turnos/InboxBadge";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -40,11 +42,21 @@ export interface NavItem {
   anyPermission?: PermissionCode[];
   /** Solo el dueño (configuración del negocio y del equipo, Y5). */
   ownerOnly?: boolean;
+  /** Contador al lado del ítem (p. ej. lo pendiente de la bandeja de turnos). */
+  badge?: ComponentType<{ collapsed: boolean }>;
 }
 
 // Cada fase agrega acá sus pantallas, con el permiso que las habilita.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Inicio", href: "/dashboard", icon: LayoutDashboard },
+  // Bandeja del dueño (PR 5.3): lo que espera una decisión lleva su número al lado.
+  {
+    label: "Turnos",
+    href: "/turnos",
+    icon: CalendarClock,
+    permission: "AGENDA_VER",
+    badge: InboxBadge,
+  },
   {
     label: "Catálogo",
     href: "/catalogo",
@@ -115,7 +127,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
   const current = activeItem(pathname, items);
   return (
     <nav aria-label="Principal" className="flex flex-1 flex-col gap-1 p-2">
-      {items.map(({ label, href, icon: Icon, section }, i) => {
+      {items.map(({ label, href, icon: Icon, section, badge: Badge }, i) => {
         const active = current?.href === href;
         const startsSection = section !== undefined && section !== items[i - 1]?.section;
         return (
@@ -136,7 +148,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
               aria-current={active ? "page" : undefined}
               title={collapsed ? label : undefined}
               className={cn(
-                "flex min-h-touch items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+                "relative flex min-h-touch items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 active
                   ? "bg-sidebar-accent text-sidebar-foreground"
@@ -146,6 +158,7 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
             >
               <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
               <span className={cn(collapsed && "sr-only")}>{label}</span>
+              {Badge && <Badge collapsed={collapsed} />}
             </Link>
           </div>
         );

@@ -59,7 +59,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -100,16 +100,32 @@ class SavepointConflictError(Exception):
     ``"idempotency_key"``), no el nombre crudo del índice.
     """
 
-    def __init__(self, constraint: str, original: IntegrityError) -> None:
+    def __init__(self, constraint: str, original: DBAPIError) -> None:
         super().__init__(f"constraint violado en savepoint: {constraint}")
         self.constraint = constraint
         self.original = original
+
+
+#: SQLSTATE de un deadlock detectado por Postgres.
+DEADLOCK_SQLSTATE = "40P01"
+
+
+def is_deadlock(exc: BaseException) -> bool:
+    """¿Es un deadlock de Postgres (`40P01`)? Mira el `sqlstate` del driver y su causa."""
+    orig = getattr(exc, "orig", None)
+    for candidate in (orig, getattr(orig, "__cause__", None)):
+        code = getattr(candidate, "sqlstate", None) or getattr(candidate, "pgcode", None)
+        if code == DEADLOCK_SQLSTATE:
+            return True
+    return False
 
 
 @asynccontextmanager
 async def guarded_savepoint(
     session: AsyncSession,
     classify: Callable[[IntegrityError], str | None],
+    *,
+    deadlock_label: str | None = None,
 ) -> AsyncIterator[None]:
     """Ejecuta el bloque dentro de un SAVEPOINT, con el ordenamiento correcto.
 
@@ -121,8 +137,14 @@ async def guarded_savepoint(
     ``None`` la excepción se re-propaga intacta: convertir una violación de FK en
     "ya existía, lo reuso" es peor que fallar.
 
+    ``deadlock_label`` (opt-in): dos escrituras concurrentes sobre un ``EXCLUDE`` pueden terminar en
+    deadlock (``40P01``: cada una espera la fila sin commitear de la otra) en vez de ``23P01``. Con
+    la etiqueta, el deadlock sale como ``SavepointConflictError(deadlock_label)``: para quien vigila
+    un ``EXCLUDE`` es lo mismo que un choque (el perdedor es 409, no 500). Sin ella se propaga.
+
     Raises:
-        SavepointConflictError: si ``classify`` reconoció el constraint.
+        SavepointConflictError: si ``classify`` reconoció el constraint (o hubo deadlock y se pidió
+            ``deadlock_label``).
         IntegrityError: si la violación no era la vigilada.
     """
     # 1. Drenar lo pendiente FUERA del try. Sin esto, el flush incondicional de
@@ -143,3 +165,7 @@ async def guarded_savepoint(
         if constraint is None:
             raise
         raise SavepointConflictError(constraint, exc) from exc
+    except DBAPIError as exc:
+        if deadlock_label is not None and is_deadlock(exc):
+            raise SavepointConflictError(deadlock_label, exc) from exc
+        raise

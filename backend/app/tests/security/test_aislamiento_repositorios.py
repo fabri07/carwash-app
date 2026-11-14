@@ -34,7 +34,7 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.persistence.repositories as paquete_repos
-from app.domain.enums import BookingStatus, CancellationClassification
+from app.domain.enums import BookingStatus, CancellationClassification, DepositStatus
 from app.domain.void import VoidReason
 from app.persistence.db.base import Base
 from app.persistence.repositories.base import BaseRepository, Page
@@ -323,6 +323,45 @@ def _de_a(tabla: str, caso: "Caso") -> "Caso":
     return _caso
 
 
+async def _items(pagina: Awaitable[Page[Any]]) -> list[Any]:
+    """Una `Page` como lista (y su `total` coherente con lo que trae)."""
+    page = await pagina
+    assert page.total == len(page.items)
+    return page.items
+
+
+async def _valores(dic: Awaitable[dict[Any, Any]]) -> list[Any]:
+    return list((await dic).values())
+
+
+async def _listas(dic: Awaitable[dict[Any, list[Any]]]) -> list[Any]:
+    return [x for filas in (await dic).values() for x in filas]
+
+
+async def _suma(dic: Awaitable[dict[Any, int]]) -> int:
+    return sum((await dic).values())
+
+
+def _conteo_sin_fuga(tabla: str, metodo: Callable[[Any, uuid.UUID], Awaitable[int]]) -> Caso:
+    """Un conteo (PR 5.3): con el tenant A tiene que contar algo; con B no puede pasarse de las
+    filas propias de B (las dos tienen la misma siembra). Si cuenta de más, "encontró" la de A."""
+
+    async def _caso(repo: Any, a: Lavadero, tenant_id: uuid.UUID) -> Any:
+        n = await metodo(repo, tenant_id)
+        fila = [SimpleNamespace(id=a.ids[tabla])]
+        if tenant_id == a.tenant_id:
+            return fila if n else None
+        propias = len(await _filas_de(repo._session, tabla, tenant_id))
+        return fila if n > propias else None
+
+    return _caso
+
+
+async def _contado(n: Awaitable[int], id_: uuid.UUID) -> Any:
+    """Un número que solo puede salir de las filas de A (los ids que se pasan son de A)."""
+    return [SimpleNamespace(id=id_)] if await n else None
+
+
 #: Cada caso recibe (repo, datos de A, tenant con el que se pregunta).
 CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ("BookingRepository", "lock_expired_holds"): lambda r, a, t: r.lock_expired_holds(
@@ -408,6 +447,47 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ),
     ("ServiceScheduleRuleRepository", "list_for_services"): lambda r, a, t: (
         r.list_for_services([a.ids["services"]], t)
+    ),
+    # ── F5 · bandeja del dueño (PR 5.3) ──
+    ("InboxBookingRepository", "list_filtered"): _de_a(
+        "bookings",
+        lambda r, a, t: _items(
+            r.list_filtered(
+                t,
+                statuses=None,
+                starts_from=MUY_TEMPRANO,
+                starts_before=MUY_TARDE,
+                limit=1000,
+                offset=0,
+            )
+        ),
+    ),
+    ("InboxBookingRepository", "count_upcoming"): _conteo_sin_fuga(
+        "bookings",
+        lambda r, t: r.count_upcoming(BookingStatus.PENDIENTE_SENA, MUY_TEMPRANO, t),
+    ),
+    ("InboxBookingRepository", "by_ids"): lambda r, a, t: _valores(
+        r.by_ids([a.ids["bookings"]], t, include_voided=True)
+    ),
+    ("InboxBookingRepository", "customers"): lambda r, a, t: _valores(
+        r.customers([a.ids["customers"]], t)
+    ),
+    ("InboxBookingRepository", "vehicles"): lambda r, a, t: _valores(
+        r.vehicles([a.ids["vehicles"]], t)
+    ),
+    ("InboxBookingRepository", "items"): lambda r, a, t: _listas(r.items([a.ids["bookings"]], t)),
+    ("InboxBookingRepository", "deposits_paid"): lambda r, a, t: _contado(
+        _suma(r.deposits_paid([a.ids["bookings"]], t)), a.ids["bookings"]
+    ),
+    ("InboxCancellationRepository", "list_open"): _de_a(
+        "cancellations",
+        lambda r, a, t: _items(r.list_open(frozenset(DepositStatus), t, limit=1000, offset=0)),
+    ),
+    ("InboxCancellationRepository", "count_open"): _conteo_sin_fuga(
+        "cancellations", lambda r, t: r.count_open(frozenset(DepositStatus), t)
+    ),
+    ("InboxIncidentMarkRepository", "list_for_customer"): lambda r, a, t: (
+        r.list_for_customer(a.ids["customers"], t)
     ),
 }
 
