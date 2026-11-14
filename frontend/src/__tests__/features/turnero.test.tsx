@@ -234,7 +234,7 @@ describe("turnero: reservar (B13)", () => {
     const whatsapp = screen.getByRole("link", { name: /Enviar comprobante por WhatsApp/ });
     expect(whatsapp.getAttribute("href")).toMatch(/^https:\/\/wa\.me\/5493510009999\?text=/);
     expect(decodeURIComponent(whatsapp.getAttribute("href")!)).toContain("TUR-K7M2QX");
-    expect(screen.getByRole("link", { name: "Mi turno" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Mi turno/ })).toHaveLength(2); // cabecera y confirmación
   });
 
   it("muestra las instrucciones de seña del negocio y la lista de espera sin seña", async () => {
