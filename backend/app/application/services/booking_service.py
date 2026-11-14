@@ -21,8 +21,9 @@ cotización → turno. Nadie toma turno → job, así que no hay ciclo de espera
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,20 +39,24 @@ from app.application.services._items import (
     booking_deposit_cents,
     catalog_items,
     deposit_bps_snapshot,
+    item_deposit_bps,
 )
 from app.application.services._payments import PaymentInput, create_payment
 from app.application.services.errors import (
     AlreadyExistsError,
+    BlockedError,
     IdempotencyKeyReusedError,
+    NotFoundError,
     SlotTakenError,
 )
+from app.domain.availability import BusinessHour, RuleRow, Span, fits_schedule
 from app.domain.booking_state import (
     BookingAction,
     anticipation_min,
     classify_cancellation,
     next_booking_status,
 )
-from app.domain.deposit import deposit_status_for
+from app.domain.deposit import deposit_required, deposit_status_for
 from app.domain.enums import (
     BookingSource,
     BookingStatus,
@@ -80,18 +85,24 @@ from app.persistence.models.cancellation import (
     DEFAULT_REASON,
     Cancellation,
 )
-from app.persistence.models.catalog import PaymentMethod
+from app.persistence.models.catalog import BusinessHours, PaymentMethod, Resource
 from app.persistence.models.money import Payment
 from app.persistence.models.quote import Quote
+from app.persistence.models.tenant import Tenant
 from app.persistence.repositories.agenda import (
     HOLD_STATUSES,
     BookingItemRepository,
     BookingRepository,
+    ScheduleBlockRepository,
+    ScheduleOpeningRepository,
 )
 from app.persistence.repositories.cancellations import CancellationRepository
 from app.persistence.repositories.catalog import (
+    BusinessHoursRepository,
     PaymentMethodRepository,
     ResourceRepository,
+    ServiceRepository,
+    ServiceScheduleRuleRepository,
     VehicleSizeRepository,
 )
 from app.persistence.repositories.customers import CustomerRepository, VehicleRepository
@@ -116,6 +127,36 @@ _CANCELLATION = unique_violation_classifier(
 class DepositConfirmation:
     booking: Booking
     payment: Payment
+
+
+@dataclass(frozen=True, slots=True)
+class Rescheduled:
+    """Resultado de reprogramar (D5-10, PR 5.3)."""
+
+    booking: Booking
+    #: El horario nuevo cae fuera del horario del negocio o de las reglas de sus servicios. Se
+    #: acepta igual (es decisión del dueño); la pantalla lo avisa.
+    outside_rules: bool
+
+
+@dataclass(frozen=True, slots=True)
+class InboxDeposit:
+    """Seña confirmada desde la bandeja (PR 5.3)."""
+
+    booking: Booking
+    #: Se confirmó tarde (`VENCIDO → CONFIRMADO`): el hold ya había vencido.
+    late: bool
+
+
+#: Desde dónde se reprograma un turno (FASE-5-CONTRATO §4.1, D5-10).
+RESCHEDULABLE_STATUSES: frozenset[BookingStatus] = frozenset(
+    {BookingStatus.PENDIENTE_SENA, BookingStatus.CONFIRMADO, BookingStatus.PENDIENTE_REVISION}
+)
+#: Marca en `payments.notes` de la seña que confirmó un turno `VENCIDO` (confirmación tardía):
+#: así un reenvío con la misma clave devuelve `late` correcto sin columna nueva.
+LATE_DEPOSIT_NOTE = "late-confirmation"
+#: Puestos y franjas de un negocio: decenas, se leen enteros.
+_ALL_ROWS = 10_000
 
 
 def _conflict_error(exc: SavepointConflictError) -> Exception:
@@ -248,7 +289,9 @@ class BookingService(ServiceBase):
             terms_accepted_at=terms_accepted_at,
         )
         try:
-            async with guarded_savepoint(self._session, first_match(_OVERLAP, _CODE)):
+            async with guarded_savepoint(
+                self._session, first_match(_OVERLAP, _CODE), deadlock_label="overlap"
+            ):
                 self._session.add(booking)
         except SavepointConflictError as exc:
             raise _conflict_error(exc) from exc
@@ -420,7 +463,7 @@ class BookingService(ServiceBase):
         method = await self._deposit_method(payment) if payment is not None else None
         await self.expire_holds(booking.resource_id, now)
         try:
-            async with guarded_savepoint(self._session, _OVERLAP):
+            async with guarded_savepoint(self._session, _OVERLAP, deadlock_label="overlap"):
                 booking.status = target
                 booking.hold_expires_at = None
         except SavepointConflictError as exc:
@@ -595,15 +638,277 @@ class BookingService(ServiceBase):
             return winner
         return cancellation
 
-    async def mark_no_show(self, booking_id: uuid.UUID) -> Booking:
-        """`CONFIRMADO → NO_ASISTIO` (**[diseñar]**, C-04). Sin fila en `cancellations`."""
+    async def mark_no_show(self, booking_id: uuid.UUID, *, now: datetime) -> Booking:
+        """`CONFIRMADO → NO_ASISTIO` (**[diseñar]**, C-04). Sin fila en `cancellations`.
+
+        Solo con el turno ya empezado (`start_at <= now`): marcar la inasistencia de un turno
+        futuro es un error de toque (PR 5.3), y cuenta como incidencia del cliente (D-014).
+        """
         await self._enter()
         self._actor()
+        require_instant(now)
         booking = await self._lock(self._bookings, booking_id)
-        booking.status = next_booking_status(booking.status, BookingAction.MARK_NO_SHOW)
+        target = next_booking_status(booking.status, BookingAction.MARK_NO_SHOW)
+        if as_aware(booking.start_at) > now:
+            raise GuardFailedError("the booking has not started yet: it cannot be a no-show")
+        booking.status = target
         await self._session.flush()
         return booking
 
     async def get(self, booking_id: uuid.UUID) -> Booking:
         await self._enter()
         return await self._require(self._bookings, booking_id)
+
+    # ── Bandeja del dueño (FASE-5-CONTRATO §4.1, PR 5.3) ──────────────────────
+
+    async def confirm_deposit_or_late(
+        self, booking_id: uuid.UUID, payment: PaymentInput, *, now: datetime
+    ) -> InboxDeposit:
+        """La seña que confirma el negocio desde la bandeja (§4.1): `confirm_deposit` si el hold
+        sigue vigente; si ya venció, `confirm_late` con el pago (el `EXCLUDE` decide: si otro
+        turno tomó el horario, `SlotTakenError` y el caso queda como hoy, A16 de F3).
+
+        Vence primero los holds del puesto (perezoso): un `PENDIENTE_SEÑA` con el hold vencido pasa
+        a `VENCIDO` en la misma transacción y se confirma tarde. Idempotente por la clave del pago.
+        """
+        await self._enter()
+        key = require_key(payment.idempotency_key)
+        require_instant(now)
+        booking = await self._lock(self._bookings, booking_id)
+        replayed = await self._replayed_deposit(booking, key)
+        if replayed is not None:
+            return InboxDeposit(booking, late=replayed.notes == LATE_DEPOSIT_NOTE)
+        await self.expire_holds(booking.resource_id, now)
+        if booking.status == BookingStatus.PENDIENTE_SENA:
+            confirmed = await self.confirm_deposit(booking_id, payment, now=now)
+            return InboxDeposit(confirmed.booking, late=False)
+        if booking.status == BookingStatus.VENCIDO and booking.deposit_required_cents == 0:
+            # Sin seña pedida no hay nada que confirmar tarde: la acción no corresponde (409).
+            raise InvalidTransition("booking", booking.status, "RECORD_DEPOSIT")
+        late = await self.confirm_late(
+            booking_id, now=now, payment=replace(payment, notes=LATE_DEPOSIT_NOTE)
+        )
+        return InboxDeposit(late, late=True)
+
+    async def approve_review(self, booking_id: uuid.UUID, *, now: datetime) -> Booking:
+        """Aprueba un pedido de la lista de espera **en la misma fila** (D5-9, §3.5).
+
+        La seña se **recalcula** con la configuración vigente (el % del negocio o el propio de cada
+        servicio, D4-17): con seña → `PENDIENTE_SEÑA` con un hold nuevo desde `now`; sin seña →
+        `CONFIRMADO`. El puesto se vuelve a elegir (D5-6): el primero por `sort_order` sin bloqueo
+        que el `EXCLUDE` acepte. Si ninguno entra, `SlotTakenError` (el horario ya no está); si un
+        bloqueo lo pisa en todos los puestos, `BlockedError`. Un pedido cuyo horario ya pasó no se
+        aprueba (`GuardFailedError`), y uno con un servicio a cotizar tampoco (se agenda a mano).
+        """
+        await self._enter()
+        self._actor()
+        require_instant(now)
+        booking = await self._lock(self._bookings, booking_id)
+        if booking.status != BookingStatus.PENDIENTE_REVISION:
+            raise InvalidTransition(
+                "booking", booking.status, BookingAction.APPROVE_REVIEW_CONFIRMED
+            )
+        start, end = as_aware(booking.start_at), as_aware(booking.end_at)
+        if start <= now:
+            raise GuardFailedError("the requested time already passed: reject the request")
+        items = await BookingItemRepository(self._session).list_for_booking(
+            booking.id, self._tenant_id
+        )
+        if any(item.pricing_mode == PricingMode.A_COTIZAR for item in items):
+            raise GuardFailedError("a booking with a service to be quoted is scheduled by hand")
+        settings = await self._settings()
+        business_bps = deposit_bps_snapshot(settings)
+        services = ServiceRepository(self._session)
+        rates: list[int] = []
+        for item in items:
+            service = await services.get_by_id(
+                item.service_id, self._tenant_id, include_voided=True
+            )
+            rates.append(item_deposit_bps(business_bps, service.deposit_bps if service else None))
+        deposit = sum(
+            deposit_required(item.price_cents, bps) for item, bps in zip(items, rates, strict=True)
+        )
+        action = (
+            BookingAction.APPROVE_REVIEW_WITH_DEPOSIT
+            if deposit > 0
+            else BookingAction.APPROVE_REVIEW_CONFIRMED
+        )
+        target = next_booking_status(booking.status, action)
+        hold = now + timedelta(minutes=settings.hold_min) if target in HOLD_STATUSES else None
+
+        blocks = await ScheduleBlockRepository(self._session).list_overlapping(
+            start, end, self._tenant_id
+        )
+        if any(block.resource_id is None for block in blocks):
+            raise BlockedError("a block covers the whole business at that time")
+        blocked = {block.resource_id for block in blocks}
+        resources = await ResourceRepository(self._session).list_by_tenant(
+            self._tenant_id,
+            limit=_ALL_ROWS,
+            order_by=(Resource.sort_order.asc(), Resource.name.asc()),
+        )
+        candidates = [r.id for r in resources.items if r.id not in blocked]
+        if resources.items and not candidates:
+            raise BlockedError("every resource is blocked at that time")
+        for resource_id in candidates:
+            await self.expire_holds(resource_id, now)
+            try:
+                async with guarded_savepoint(self._session, _OVERLAP, deadlock_label="overlap"):
+                    booking.resource_id = resource_id
+                    booking.status = target
+                    booking.hold_expires_at = hold
+                    booking.deposit_required_cents = deposit
+            except SavepointConflictError:
+                # El SAVEPOINT revirtió el UPDATE: se relee la fila (sigue tomada por esta
+                # transacción) y se prueba el puesto siguiente.
+                await self._session.refresh(booking)
+                continue
+            for item, bps in zip(items, rates, strict=True):
+                item.deposit_bps = bps
+            await self._session.flush()
+            return booking
+        raise SlotTakenError("no resource is free at that time")
+
+    async def reject_review(
+        self, booking_id: uuid.UUID, *, reason: str, now: datetime
+    ) -> Cancellation:
+        """Rechaza un pedido de la lista de espera: `PENDIENTE_REVISION → RECHAZADO` (D5-9).
+
+        El motivo, quién y cuándo quedan en `cancellations` (`NEGOCIO`, `OPERATIVA`: no es
+        incidencia del cliente), sin migración: es la fila que ya guarda la decisión del negocio
+        sobre un turno. Sin seña cobrada el caso nace `SIN_PAGO` y no aparece en "Señas a
+        resolver". Idempotente: rechazar otra vez devuelve la misma fila.
+        """
+        await self._enter()
+        actor = self._actor()
+        require_instant(now)
+        cleaned = (reason or "").strip()
+        if not cleaned:
+            raise GuardFailedError("a rejection needs a reason")
+        if len(cleaned) > MAX_CANCELLATION_REASON:
+            raise GuardFailedError(f"reason must have at most {MAX_CANCELLATION_REASON} chars")
+        cancellations = CancellationRepository(self._session)
+        booking = await self._lock(self._bookings, booking_id)
+        existing = await cancellations.find_by_booking(booking.id, self._tenant_id)
+        if existing is not None and booking.status == BookingStatus.RECHAZADO:
+            return existing
+        target = next_booking_status(booking.status, BookingAction.REJECT_REVIEW)
+        paid = deposits_paid(await self._payments.list_for_booking(booking.id, self._tenant_id))
+        classification = CancellationClassification.OPERATIVA
+        cancellation = Cancellation(
+            tenant_id=self._tenant_id,
+            booking_id=booking.id,
+            initiator=CancellationInitiator.NEGOCIO,
+            classification=classification,
+            requested_at=now,
+            anticipation_min=anticipation_min(as_aware(booking.start_at), now),
+            reason=cleaned,
+            previous_status=booking.status,
+            resulting_status=target,
+            deposit_paid_cents=paid,
+            deposit_status=deposit_status_for(classification, paid),
+            actor_user_id=actor,
+            terms_version=booking.terms_version,
+        )
+        async with guarded_savepoint(self._session, _CANCELLATION):
+            booking.status = target
+            self._session.add(cancellation)
+        return cancellation
+
+    async def reschedule(
+        self,
+        booking_id: uuid.UUID,
+        *,
+        now: datetime,
+        start_at: datetime | None = None,
+        resource_id: uuid.UUID | None = None,
+    ) -> Rescheduled:
+        """Mueve un turno a otro horario y/o puesto (D5-10, §4.1).
+
+        Desde `PENDIENTE_SEÑA`, `CONFIRMADO` o `PENDIENTE_REVISION`. `end_at = start_at +
+        duration_min` (snapshot, no el catálogo de hoy). No cambia estado, seña ni hold. El
+        `EXCLUDE` decide si entra (`SlotTakenError`); un bloqueo vivo del puesto o de todo el
+        lavadero que lo pisa es `BlockedError`. Fuera del horario del negocio o de las reglas de
+        sus servicios **se acepta** y vuelve con `outside_rules=True`. Un horario ya pasado no
+        (`GuardFailedError`); cambiar solo el puesto de un turno que ya empezó, sí.
+        """
+        await self._enter()
+        self._actor()
+        require_instant(now)
+        if start_at is None and resource_id is None:
+            raise GuardFailedError("a reschedule needs a new start, a new resource or both")
+        if start_at is not None:
+            require_instant(start_at)
+            if start_at <= now:
+                raise GuardFailedError("a booking cannot be moved to the past")
+        booking = await self._lock(self._bookings, booking_id)
+        if resource_id is not None:
+            await self._require(ResourceRepository(self._session), resource_id)
+        # Vencimiento perezoso: un hold vencido de este mismo turno lo deja `VENCIDO`, y un
+        # `VENCIDO` no se mueve (corresponde confirmar la seña tarde).
+        await self.expire_holds(booking.resource_id, now)
+        if booking.status not in RESCHEDULABLE_STATUSES:
+            raise InvalidTransition("booking", booking.status, "RESCHEDULE")
+        target = resource_id or booking.resource_id
+        new_start = start_at.astimezone(UTC) if start_at is not None else as_aware(booking.start_at)
+        new_end = new_start + timedelta(minutes=booking.duration_min)
+
+        blocks = await ScheduleBlockRepository(self._session).list_overlapping(
+            new_start, new_end, self._tenant_id
+        )
+        if any(block.resource_id in (None, target) for block in blocks):
+            raise BlockedError("a block covers that time")
+        outside = not await self._fits_schedule(booking, new_start, target)
+
+        await self.expire_holds(target, now)
+        try:
+            async with guarded_savepoint(self._session, _OVERLAP, deadlock_label="overlap"):
+                booking.resource_id = target
+                booking.start_at = new_start
+                booking.end_at = new_end
+        except SavepointConflictError as exc:
+            raise _conflict_error(exc) from exc
+        return Rescheduled(booking, outside_rules=outside)
+
+    async def _fits_schedule(
+        self, booking: Booking, start_at: datetime, resource_id: uuid.UUID
+    ) -> bool:
+        """¿El turno en ese inicio y puesto cae en el horario del negocio y en las reglas (§5)?"""
+        tenant = await self._session.get(Tenant, self._tenant_id)
+        if tenant is None:  # pragma: no cover  # el del token
+            raise NotFoundError("tenants", self._tenant_id)
+        tz = ZoneInfo(tenant.timezone)
+        items = await BookingItemRepository(self._session).list_for_booking(
+            booking.id, self._tenant_id
+        )
+        rule_rows = await ServiceScheduleRuleRepository(self._session).list_for_services(
+            [item.service_id for item in items], self._tenant_id
+        )
+        rules = [
+            [
+                RuleRow(r.weekday, r.window_start, r.last_start)
+                for r in rule_rows
+                if r.service_id == item.service_id
+            ]
+            for item in items
+        ]
+        hours = await BusinessHoursRepository(self._session).list_by_tenant(
+            self._tenant_id, limit=_ALL_ROWS, order_by=(BusinessHours.weekday.asc(),)
+        )
+        local_day = start_at.astimezone(tz).date()
+        day_start = datetime.combine(local_day, time(0), tzinfo=tz).astimezone(UTC)
+        day_end = datetime.combine(local_day + timedelta(days=1), time(0), tzinfo=tz)
+        openings = await ScheduleOpeningRepository(self._session).list_overlapping(
+            day_start, day_end.astimezone(UTC), self._tenant_id
+        )
+        return fits_schedule(
+            start_at=start_at,
+            duration_min=booking.duration_min,
+            resource_id=resource_id,
+            tz=tz,
+            business_hours=[BusinessHour(h.weekday, h.opens_at, h.closes_at) for h in hours.items],
+            rules=rules,
+            openings=[
+                Span(o.resource_id, as_aware(o.starts_at), as_aware(o.ends_at)) for o in openings
+            ],
+        )

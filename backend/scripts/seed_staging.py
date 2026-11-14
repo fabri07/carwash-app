@@ -601,7 +601,8 @@ async def _seed_domain(
     vencible = await turno(4, 2 * 24 * 60, premium.id, puesto_2.id, con_sena=True)
     await turnos.expire_holds(vencible.resource_id, RESERVA + timedelta(hours=1))
     ausente = await turno(0, 3 * 24 * 60, lavado.id, puesto_1.id)
-    await turnos.mark_no_show(ausente.id)
+    # Sintético: el seed marca la inasistencia "después" de la hora del turno (5.3 lo exige).
+    await turnos.mark_no_show(ausente.id, now=ausente.end_at)
 
     # 6. Walk-in presente, sin turno.
     await jobs.receive(

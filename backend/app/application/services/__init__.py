@@ -12,7 +12,13 @@ from app.application.services.agenda_service import (
     BlockCreated,
     LocalRange,
 )
-from app.application.services.booking_service import BookingService, DepositConfirmation
+from app.application.services.booking_inbox_service import BookingInboxService
+from app.application.services.booking_service import (
+    BookingService,
+    DepositConfirmation,
+    InboxDeposit,
+    Rescheduled,
+)
 from app.application.services.catalog_service import CatalogService, check_price
 from app.application.services.customer_service import (
     CustomerResolution,
@@ -29,15 +35,18 @@ __all__ = [
     "Availability",
     "BlockCreated",
     "LocalRange",
+    "BookingInboxService",
     "BookingService",
     "CatalogService",
     "CustomerResolution",
     "CustomerService",
     "DepositConfirmation",
     "DepositResolutionService",
+    "InboxDeposit",
     "JobService",
     "PaymentInput",
     "QuoteService",
+    "Rescheduled",
     "VehicleResolution",
     "VehicleService",
     "check_price",

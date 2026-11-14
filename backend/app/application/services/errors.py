@@ -30,6 +30,12 @@ class SlotTakenError(DomainError):
     """El `EXCLUDE` de `bookings` rechazó el intervalo: el puesto está ocupado (§1.3)."""
 
 
+class BlockedError(DomainError):
+    """Un bloqueo de agenda vivo (del puesto o de todo el lavadero) pisa el intervalo pedido. El
+    dueño puede salirse de las reglas y del horario al reprogramar, pero no de un bloqueo (D5-10).
+    La API la traduce a 409 `BLOCKED`."""
+
+
 class AlreadyExistsError(DomainError):
     """Choque con un único "entre vivos" (código, nombre, patente, teléfono)."""
 

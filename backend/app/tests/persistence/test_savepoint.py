@@ -4,11 +4,12 @@ import uuid
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 
 from app.persistence.db._savepoint import (
     SavepointConflictError,
     guarded_savepoint,
+    is_deadlock,
     unique_violation_classifier,
 )
 from app.persistence.models import IdempotencyKey, Tenant
@@ -84,3 +85,41 @@ def test_clasificador_sqlite_por_columnas():
 
 def test_clasificador_por_nombre_en_el_texto():
     assert CLASSIFY(_err(_Orig(text="duplicate uq_idempotency_keys_tenant_id_key"))) == "idem"
+
+
+class _DriverError(Exception):
+    def __init__(self, sqlstate: str) -> None:
+        super().__init__("driver error")
+        self.sqlstate = sqlstate
+
+
+def _driver_error(sqlstate: str) -> DBAPIError:
+    return OperationalError("UPDATE bookings", {}, _DriverError(sqlstate))
+
+
+def test_is_deadlock_mira_el_sqlstate_del_driver_y_el_de_su_causa():
+    assert is_deadlock(_driver_error("40P01"))
+    assert not is_deadlock(_driver_error("23P01"))
+    envuelto = OperationalError("x", {}, Exception("adaptador"))
+    envuelto.orig.__cause__ = _DriverError("40P01")
+    assert is_deadlock(envuelto)
+    assert not is_deadlock(ValueError("no es del driver"))
+
+
+async def test_un_deadlock_es_conflicto_solo_si_se_pidio_y_la_transaccion_sigue_usable(
+    db_session, tenant_a
+):
+    with pytest.raises(SavepointConflictError) as info:
+        async with guarded_savepoint(db_session, CLASSIFY, deadlock_label="overlap"):
+            raise _driver_error("40P01")
+    assert info.value.constraint == "overlap"
+    # Sin la etiqueta (los demás llamadores) se propaga tal cual: no se disfraza de otra cosa.
+    with pytest.raises(OperationalError):
+        async with guarded_savepoint(db_session, CLASSIFY):
+            raise _driver_error("40P01")
+    # Con la etiqueta, otro error del driver tampoco se traduce.
+    with pytest.raises(OperationalError):
+        async with guarded_savepoint(db_session, CLASSIFY, deadlock_label="overlap"):
+            raise _driver_error("08006")
+    db_session.add(IdempotencyKey(tenant_id=tenant_a.id, key="ok", action="a"))
+    await db_session.flush()

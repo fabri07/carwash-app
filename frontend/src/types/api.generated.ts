@@ -264,6 +264,209 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Bookings
+         * @description Turnos por estado (repetible) y por día **local** de inicio (`to` inclusive), por inicio.
+         */
+        get: operations["list_bookings_v1_bookings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Counts
+         * @description Pendientes de seña + lista de espera + señas a resolver: el número del menú.
+         */
+        get: operations["get_counts_v1_bookings_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Booking */
+        get: operations["get_booking_v1_bookings__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve
+         * @description Aprueba un pedido de la lista de espera en la misma fila (D5-9): pasa a pendiente de seña
+         *     (hold nuevo) o a confirmado, según la seña vigente. 409 `SLOT_TAKEN` si el horario ya no
+         *     está.
+         */
+        post: operations["approve_v1_bookings__id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel
+         * @description Cancelación operativa (la decide el negocio, no es incidencia del cliente). Con seña
+         *     cobrada abre el caso en "Señas a resolver". Repetir devuelve la misma cancelación.
+         */
+        post: operations["cancel_v1_bookings__id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/confirm-deposit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Deposit
+         * @description Registra la seña: confirma el turno, o lo confirma tarde si el hold venció y el horario
+         *     sigue libre (`late: true`; si no, 409 `SLOT_TAKEN`).
+         */
+        post: operations["confirm_deposit_v1_bookings__id__confirm_deposit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/incident-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Incident
+         * @description Marca una incidencia del cliente del turno: cuenta para la lista de espera.
+         */
+        post: operations["mark_incident_v1_bookings__id__incident_marks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/no-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * No Show
+         * @description `CONFIRMADO → NO_ASISTIO`. Cuenta como incidencia del cliente (D-014).
+         */
+        post: operations["no_show_v1_bookings__id__no_show_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject
+         * @description Rechaza un pedido de la lista de espera con motivo. Repetir devuelve el mismo rechazo.
+         */
+        post: operations["reject_v1_bookings__id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/reschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reschedule
+         * @description Otro horario y/o puesto (D5-10). Fuera del horario o de las reglas se guarda igual con
+         *     `outside_rules: true`; un bloqueo no (409 `BLOCKED`), ni un puesto ocupado (409
+         *     `SLOT_TAKEN`).
+         */
+        post: operations["reschedule_v1_bookings__id__reschedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/branding/catalog": {
         parameters: {
             query?: never;
@@ -354,6 +557,63 @@ export interface paths {
         head?: never;
         /** Update Business Hours */
         patch: operations["update_business_hours_v1_business_hours__id__patch"];
+        trace?: never;
+    };
+    "/v1/cancellations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Open Cases */
+        get: operations["list_open_cases_v1_cancellations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cancellations/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve
+         * @description Cierra el caso de la seña. Reenviar el mismo cierre devuelve el caso sin efectos.
+         */
+        post: operations["resolve_v1_cancellations__id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/incident-marks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Void Incident Mark
+         * @description Desmarcar = anular (nunca se borra).
+         */
+        delete: operations["void_incident_mark_v1_incident_marks__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/onboarding/complete": {
@@ -995,12 +1255,161 @@ export interface components {
              */
             file: string;
         };
+        /** BookingCountsResponse */
+        BookingCountsResponse: {
+            /** Deposit Cases */
+            deposit_cases: number;
+            /** In Review */
+            in_review: number;
+            /** Pending Deposit */
+            pending_deposit: number;
+            /** Total */
+            total: number;
+        };
+        /** BookingDetailResponse */
+        BookingDetailResponse: {
+            cancellation: components["schemas"]["CancellationResponse"] | null;
+            channel: components["schemas"]["Channel"];
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            customer: components["schemas"]["CustomerBrief"] | null;
+            /** Deposit Paid Cents */
+            deposit_paid_cents: number;
+            /** Deposit Required Cents */
+            deposit_required_cents: number;
+            /** Duration Min */
+            duration_min: number;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Hold Expires At */
+            hold_expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Incident Marks */
+            incident_marks: components["schemas"]["IncidentMarkResponse"][];
+            /** Incidents */
+            incidents: number;
+            /** Notes */
+            notes: string | null;
+            /** Payments */
+            payments: components["schemas"]["PaymentBrief"][];
+            /** Price Cents */
+            price_cents: number | null;
+            /**
+             * Resource Id
+             * Format: uuid
+             */
+            resource_id: string;
+            /** Services */
+            services: components["schemas"]["BookingServiceLine"][];
+            source: components["schemas"]["BookingSource"];
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            status: components["schemas"]["BookingStatus"];
+            /** Vehicle Plate */
+            vehicle_plate: string | null;
+            /**
+             * Vehicle Size Id
+             * Format: uuid
+             */
+            vehicle_size_id: string;
+        };
+        /** BookingServiceLine */
+        BookingServiceLine: {
+            /** Duration Min */
+            duration_min: number;
+            /** Name */
+            name: string;
+            /** Price Cents */
+            price_cents: number;
+            pricing_mode: components["schemas"]["PricingMode"];
+            /**
+             * Service Id
+             * Format: uuid
+             */
+            service_id: string;
+        };
+        /**
+         * BookingSource
+         * @description Quién cargó el turno. Distinto del canal (R-C-013: `AGENDA_INTERNA_LJ` no es un canal).
+         * @enum {string}
+         */
+        BookingSource: "TURNERO_WEB" | "PANEL" | "AGENDA_INTERNA" | "LISTA_ESPERA";
         /**
          * BookingStatus
          * @description §2.1. Los que bloquean el intervalo del puesto: `BLOCKING_BOOKING_STATUSES`.
          * @enum {string}
          */
         BookingStatus: "PENDIENTE_SEÑA" | "PENDIENTE_COTIZACION" | "CONFIRMADO" | "RECIBIDO" | "ATENDIDO" | "VENCIDO" | "CANCELADO_CLIENTE" | "AUSENTE_CON_AVISO_POSTERIOR" | "CANCELADO_OPERATIVO" | "CANCELADO_DEMORA" | "NO_ASISTIO" | "PENDIENTE_REVISION" | "RECHAZADO";
+        /** BookingSummary */
+        BookingSummary: {
+            channel: components["schemas"]["Channel"];
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            customer: components["schemas"]["CustomerBrief"] | null;
+            /** Deposit Paid Cents */
+            deposit_paid_cents: number;
+            /** Deposit Required Cents */
+            deposit_required_cents: number;
+            /** Duration Min */
+            duration_min: number;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Hold Expires At */
+            hold_expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Notes */
+            notes: string | null;
+            /** Price Cents */
+            price_cents: number | null;
+            /**
+             * Resource Id
+             * Format: uuid
+             */
+            resource_id: string;
+            /** Services */
+            services: components["schemas"]["BookingServiceLine"][];
+            source: components["schemas"]["BookingSource"];
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            status: components["schemas"]["BookingStatus"];
+            /** Vehicle Plate */
+            vehicle_plate: string | null;
+            /**
+             * Vehicle Size Id
+             * Format: uuid
+             */
+            vehicle_size_id: string;
+        };
         /** BrandColor */
         BrandColor: {
             /** Hex */
@@ -1081,6 +1490,67 @@ export interface components {
             /** Weekday */
             weekday?: number | null;
         };
+        /**
+         * CancellationClassification
+         * @description Valores exactos del código (R-T-037, C-06), no los del inventario.
+         * @enum {string}
+         */
+        CancellationClassification: "NORMAL" | "TARDIA" | "POSTERIOR_AL_TURNO" | "OPERATIVA";
+        /**
+         * CancellationInitiator
+         * @enum {string}
+         */
+        CancellationInitiator: "CLIENTE" | "NEGOCIO";
+        /** CancellationResponse */
+        CancellationResponse: {
+            /** Anticipation Min */
+            anticipation_min: number;
+            /**
+             * Booking Id
+             * Format: uuid
+             */
+            booking_id: string;
+            classification: components["schemas"]["CancellationClassification"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Deposit Paid Cents */
+            deposit_paid_cents: number;
+            deposit_status: components["schemas"]["DepositStatus"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            initiator: components["schemas"]["CancellationInitiator"];
+            previous_status: components["schemas"]["BookingStatus"];
+            /** Reason */
+            reason: string;
+            /** Refund Payment Id */
+            refund_payment_id: string | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Resolution Reason */
+            resolution_reason: string | null;
+            /** Resolved At */
+            resolved_at: string | null;
+            resulting_status: components["schemas"]["BookingStatus"];
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
             /** Current Password */
@@ -1089,10 +1559,57 @@ export interface components {
             new_password: string;
         };
         /**
+         * Channel
+         * @description D-004 — de dónde vino el cliente. El mapeo desde los 5 vocabularios legacy es de F8.
+         * @enum {string}
+         */
+        Channel: "TURNERO_WEB" | "WHATSAPP" | "INSTAGRAM" | "REFERIDO" | "CALLE" | "CLIENTE_ANTERIOR" | "CARGA_MANUAL" | "OTRO";
+        /** ConfirmDepositBody */
+        ConfirmDepositBody: {
+            /** Amount Cents */
+            amount_cents?: number | null;
+            /**
+             * Payment Method Id
+             * Format: uuid
+             */
+            payment_method_id: string;
+            /** Reference */
+            reference?: string | null;
+        };
+        /** ConfirmDepositResponse */
+        ConfirmDepositResponse: {
+            booking: components["schemas"]["BookingSummary"];
+            /** Late */
+            late: boolean;
+        };
+        /** CustomerBrief */
+        CustomerBrief: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Phone E164 */
+            phone_e164: string | null;
+        };
+        /** DepositCaseResponse */
+        DepositCaseResponse: {
+            booking: components["schemas"]["BookingSummary"];
+            cancellation: components["schemas"]["CancellationResponse"];
+        };
+        /**
+         * DepositStatus
+         * @description §2.4. Los cuatro primeros abren un caso (legacy); los tres últimos lo cierran (nuevos).
+         * @enum {string}
+         */
+        DepositStatus: "SIN_PAGO" | "DEVOLUCION_PENDIENTE" | "EN_REVISION" | "REPROGRAMACION_O_DEVOLUCION_PENDIENTE" | "DEVUELTA" | "RETENIDA" | "REPROGRAMADA";
+        /**
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
+        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "SLOT_TAKEN" | "BLOCKED" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             code: components["schemas"]["ErrorCode"];
@@ -1134,6 +1651,43 @@ export interface components {
             env: string;
             /** Status */
             status: string;
+        };
+        /** IncidentMarkResponse */
+        IncidentMarkResponse: {
+            /** Booking Id */
+            booking_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By User Id
+             * Format: uuid
+             */
+            created_by_user_id: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1347,12 +1901,38 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PaginatedResponse[BookingSummary] */
+        PaginatedResponse_BookingSummary_: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            items: components["schemas"]["BookingSummary"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** PaginatedResponse[BusinessHoursResponse] */
         PaginatedResponse_BusinessHoursResponse_: {
             /** Has More */
             readonly has_more: boolean;
             /** Items */
             items: components["schemas"]["BusinessHoursResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** PaginatedResponse[DepositCaseResponse] */
+        PaginatedResponse_DepositCaseResponse_: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            items: components["schemas"]["DepositCaseResponse"][];
             /** Limit */
             limit: number;
             /** Offset */
@@ -1521,6 +2101,34 @@ export interface components {
             /** Palette */
             palette: string;
         };
+        /** PaymentBrief */
+        PaymentBrief: {
+            /** Amount Cents */
+            amount_cents: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["PaymentKind"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Payment Method Id
+             * Format: uuid
+             */
+            payment_method_id: string;
+            /** Voided */
+            voided: boolean;
+        };
+        /**
+         * PaymentKind
+         * @enum {string}
+         */
+        PaymentKind: "SEÑA" | "SALDO" | "DEVOLUCION";
         /** PaymentMethodCreate */
         PaymentMethodCreate: {
             /** Code */
@@ -1666,6 +2274,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ReasonBody */
+        ReasonBody: {
+            /** Reason */
+            reason: string;
+        };
+        /** RefundBody */
+        RefundBody: {
+            /** Amount Cents */
+            amount_cents: number;
+            /**
+             * Payment Method Id
+             * Format: uuid
+             */
+            payment_method_id: string;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /**
@@ -1677,6 +2300,36 @@ export interface components {
             password: string;
             /** Tenant */
             tenant: string;
+        };
+        /**
+         * RescheduleBody
+         * @description Horario nuevo y/o puesto nuevo (D5-10). Con zona: el front manda el instante en UTC.
+         */
+        RescheduleBody: {
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Start At */
+            start_at?: string | null;
+        };
+        /** RescheduleResponse */
+        RescheduleResponse: {
+            booking: components["schemas"]["BookingSummary"];
+            /** Outside Rules */
+            outside_rules: boolean;
+        };
+        /**
+         * ResolveBody
+         * @description Cierre del caso de seña (D-005). `DEVUELTA` exige `refund` (el pago que sale de caja).
+         */
+        ResolveBody: {
+            /** Reason */
+            reason: string;
+            refund?: components["schemas"]["RefundBody"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "DEVUELTA" | "RETENIDA" | "REPROGRAMADA";
         };
         /** ResourceCreate */
         ResourceCreate: {
@@ -3308,6 +3961,685 @@ export interface operations {
             };
         };
     };
+    list_bookings_v1_bookings_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["BookingStatus"][] | null;
+                from?: string | null;
+                to?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_BookingSummary_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_counts_v1_bookings_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingCountsResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_booking_v1_bookings__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDetailResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_v1_bookings__id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingSummary"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_v1_bookings__id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancellationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    confirm_deposit_v1_bookings__id__confirm_deposit_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDepositBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmDepositResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    mark_incident_v1_bookings__id__incident_marks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentMarkResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    no_show_v1_bookings__id__no_show_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingSummary"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reject_v1_bookings__id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReasonBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancellationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reschedule_v1_bookings__id__reschedule_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RescheduleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescheduleResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_catalog_v1_branding_catalog_get: {
         parameters: {
             query?: never;
@@ -3823,6 +5155,203 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BusinessHoursResponse"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_open_cases_v1_cancellations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_DepositCaseResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_v1_cancellations__id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancellationResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    void_incident_mark_v1_incident_marks__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
