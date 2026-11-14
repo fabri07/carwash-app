@@ -188,12 +188,12 @@ class BookingInboxService(ServiceBase):
         page = await InboxCancellationRepository(self._session).list_open(
             DEPOSIT_OPEN_CASE_STATUSES, self._tenant_id, limit=limit, offset=offset
         )
-        bookings = BookingRepository(self._session)
+        by_id = await InboxBookingRepository(self._session).by_ids(
+            {c.booking_id for c in page.items}, self._tenant_id, include_voided=True
+        )
         found: list[Booking] = []
         for cancellation in page.items:
-            booking = await bookings.get_by_id(
-                cancellation.booking_id, self._tenant_id, include_voided=True
-            )
+            booking = by_id.get(cancellation.booking_id)
             if booking is None:  # pragma: no cover  # FK compuesta: el turno existe
                 raise NotFoundError("bookings", cancellation.booking_id)
             found.append(booking)

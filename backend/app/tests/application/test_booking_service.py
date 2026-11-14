@@ -361,10 +361,12 @@ async def test_no_se_cancela_un_turno_recibido(lav):
 
 async def test_inasistencia_solo_desde_confirmado(lav):
     booking = await lav.turno()
-    assert (await lav.turnos.mark_no_show(booking.id)).status == S.NO_ASISTIO
+    assert (
+        await lav.turnos.mark_no_show(booking.id, now=T + timedelta(hours=1))
+    ).status == S.NO_ASISTIO
     pendiente = await _con_sena(lav, inicio=T + timedelta(hours=3))
     with pytest.raises(InvalidTransition):
-        await lav.turnos.mark_no_show(pendiente.id)
+        await lav.turnos.mark_no_show(pendiente.id, now=T + timedelta(days=1))
 
 
 async def test_get_y_turno_ajeno(lav, db_session):

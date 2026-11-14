@@ -351,6 +351,37 @@ async def test_la_marca_pide_motivo(lv):
 
 async def test_no_asistio_cuenta_como_incidencia(lv):
     turno = await lv.turno()
-    await lv.turnos.mark_no_show(turno.id)
+    await lv.turnos.mark_no_show(turno.id, now=T + timedelta(hours=1))
     d = await _bandeja(lv).detail(turno.id, now=T + timedelta(hours=2))
     assert d.row.booking.status == BookingStatus.NO_ASISTIO and d.incidents == 1
+
+
+async def test_no_asistio_rechaza_un_turno_que_no_empezo(lv):
+    turno = await lv.turno()
+    with pytest.raises(GuardFailedError):
+        await lv.turnos.mark_no_show(turno.id, now=T - timedelta(minutes=1))
+    assert (await lv.turnos.get(turno.id)).status == BookingStatus.CONFIRMADO
+    # En el borde (ya empezó) sí.
+    assert (await lv.turnos.mark_no_show(turno.id, now=T)).status == BookingStatus.NO_ASISTIO
+
+
+async def test_un_vencido_sin_sena_no_se_confirma_con_pago(lv):
+    pedido = await lv.turno()
+    pedido.status = BookingStatus.VENCIDO
+    await lv.session.flush()
+    with pytest.raises(InvalidTransition):
+        await lv.turnos.confirm_deposit_or_late(pedido.id, lv.pago(SENA), now=AHORA)
+
+
+async def test_el_reenvio_de_una_sena_tardia_sigue_diciendo_late(lv):
+    turno = await lv.turno_con_sena()
+    pago = lv.pago(SENA, "tarde-1")
+    tarde = AHORA + timedelta(hours=2)
+    primero = await lv.turnos.confirm_deposit_or_late(turno.id, pago, now=tarde)
+    otra = await lv.turnos.confirm_deposit_or_late(turno.id, pago, now=tarde)
+    assert primero.late is True and otra.late is True
+    normal = await lv.turno_con_sena(inicio=T + timedelta(hours=4))
+    pago2 = lv.pago(SENA, "normal-1")
+    uno = await lv.turnos.confirm_deposit_or_late(normal.id, pago2, now=AHORA)
+    dos = await lv.turnos.confirm_deposit_or_late(normal.id, pago2, now=AHORA)
+    assert uno.late is False and dos.late is False

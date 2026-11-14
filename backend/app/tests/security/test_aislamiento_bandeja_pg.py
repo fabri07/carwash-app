@@ -508,18 +508,6 @@ async def test_reprogramar_a_la_vez_al_mismo_horario_nunca_solapa_ni_gana_dos(
     assert codigos.count(200) == len(codigos) // 2, codigos
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "HALLAZGO T3 5.3 (media): dos reprogramaciones concurrentes al mismo puesto y horario "
-        "chocan en el EXCLUDE de `bookings` con DEADLOCK (40P01: ambos esperan la fila sin "
-        "commitear del otro) y el perdedor recibe 500 INTERNAL_ERROR en vez de 409 SLOT_TAKEN. "
-        "`guarded_savepoint(_OVERLAP)` solo traduce la violación 23P01, no 40P01. Sin pérdida ni "
-        "solape de datos. Arreglo posible: traducir 40P01 a SlotTakenError (o reintentar) en "
-        "`reschedule`/`approve_review`."
-    ),
-)
 async def test_el_perdedor_de_una_carrera_de_reprogramacion_recibe_409_no_500(
     http, pg_admin_engine, fabrica, dos
 ):

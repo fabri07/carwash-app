@@ -427,7 +427,7 @@ INTENTOS: dict[str, Intento] = {
     "booking.mark_no_show": Intento(
         "booking_conf",
         "bookings",
-        lambda lv, ib, x: lv.turnos.mark_no_show(x),
+        lambda lv, ib, x: lv.turnos.mark_no_show(x, now=T + timedelta(days=1)),
         "BookingService.mark_no_show",
     ),
     "booking.create.resource": Intento(

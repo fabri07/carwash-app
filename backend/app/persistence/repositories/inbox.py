@@ -73,6 +73,19 @@ class InboxBookingRepository(BaseRepository[Booking]):
         )
         return int(total or 0)
 
+    async def by_ids(
+        self, ids: Collection[uuid.UUID], tenant_id: uuid.UUID, *, include_voided: bool = False
+    ) -> dict[uuid.UUID, Booking]:
+        """Turnos por id en una sola consulta (la bandeja de señas no hace N+1)."""
+        if not ids:
+            return {}
+        result = await self._session.scalars(
+            select(Booking).where(
+                Booking.id.in_(tuple(ids)), *self._scope(tenant_id, include_voided)
+            )
+        )
+        return {b.id: b for b in result.all()}
+
     async def customers(
         self, ids: Collection[uuid.UUID], tenant_id: uuid.UUID
     ) -> dict[uuid.UUID, Customer]:

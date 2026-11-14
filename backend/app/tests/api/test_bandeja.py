@@ -198,7 +198,10 @@ async def test_cancelar_operativo_y_no_asistio(client, cookies_a, lav):
     assert r.status_code == 200, r.text
     assert r.json()["classification"] == "OPERATIVA"
     assert r.json()["resulting_status"] == "CANCELADO_OPERATIVO"
-    otro = await lav.turno(inicio=INICIO + timedelta(hours=1), ahora=HOY)
+    futuro = await lav.turno(inicio=INICIO + timedelta(hours=1), ahora=HOY)
+    antes = await client.post(f"/v1/bookings/{futuro.id}/no-show", cookies=cookies_a)
+    assert antes.status_code == 422 and _codigo(antes) == "VALIDATION_ERROR"
+    otro = await lav.turno(inicio=HOY - timedelta(hours=1), ahora=HOY - timedelta(days=3))
     r = await client.post(f"/v1/bookings/{otro.id}/no-show", cookies=cookies_a)
     assert r.status_code == 200 and r.json()["status"] == "NO_ASISTIO"
     dos = await client.post(f"/v1/bookings/{otro.id}/no-show", cookies=cookies_a)

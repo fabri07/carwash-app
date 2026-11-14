@@ -430,6 +430,23 @@ Donde el contrato era ambiguo se eligió la lectura más conservadora. Sin migra
 | 5.3-9 | **La marca manual de incidencia** cuelga del turno desde el que se marca (`booking_id`) y del cliente de ese turno. "Desmarcar" anula con `PEDIDO_DEL_USUARIO`. El detalle del turno trae las incidencias de 90 días y las marcas vivas del cliente. |
 | 5.3-10 | **Lecturas en un servicio nuevo** (`BookingInboxService`, con su repositorio `repositories/inbox.py`) para no pisar `AgendaService`/repositorios de agenda que toca 5.2; las transiciones nuevas (`approve_review`, `reject_review`, `reschedule`, `confirm_deposit_or_late`) van en `BookingService`, al final de la clase. |
 
+### Ronda de revisión (T3 y code-review, PR #25)
+
+| # | Qué cambió |
+|---|---|
+| 5.3-11 | **Deadlock contra el `EXCLUDE` → 409 `SLOT_TAKEN`.** Dos escrituras concurrentes sobre el mismo puesto y horario pueden terminar en deadlock (`40P01`, cada una espera la fila sin commitear de la otra) en vez de `23P01`. `guarded_savepoint` suma el parámetro opt-in `deadlock_label`; con él, el deadlock sale como `SavepointConflictError` y el servicio lo traduce a `SlotTakenError`. Lo usan `create`, `confirm_late`, `approve_review` (prueba el puesto siguiente) y `reschedule`. Sin la etiqueta (todos los demás llamadores, p. ej. pagos) el comportamiento no cambia. |
+| 5.3-12 | **`mark_no_show` pide `now` y rechaza un turno que no empezó** (`start_at > now` → `GuardFailedError`, 422). Cambia la firma (`now` obligatorio): se actualizaron sus llamadores. |
+| 5.3-13 | **Un `VENCIDO` sin seña pedida** (`deposit_required_cents == 0`) en `confirm-deposit` es 409 `CONFLICT`, como dice 5.3-4 (antes caía en 422). |
+| 5.3-14 | **El reenvío de una seña tardía devuelve `late: true`.** Sin columna nueva: la seña que confirma un `VENCIDO` se guarda con `payments.notes = "late-confirmation"` y el reenvío lo lee. |
+| 5.3-15 | **"Sin resolver"** en Próximos: turnos de días anteriores que siguen `CONFIRMADO` (`status=CONFIRMADO&to=ayer`, sin tope inferior) con "No asistió" y "Cancelar". `RECIBIDO` no entra: ya tiene su trabajo en curso (F6) y el negocio no cancela un turno recibido (R-T-036). El backend no cambió: el filtro `to` sin `from` ya existía. |
+| 5.3-16 | **Incidencias en la pantalla:** botón "Incidencias" en cada turno (con `AGENDA_VER`) con las marcas vivas del cliente y "Desmarcar" (`TURNOS_GESTIONAR`), sobre `GET /bookings/{id}` y `DELETE /incident-marks/{id}`. |
+| 5.3-17 | **Claves de idempotencia por acción:** el front reusa la clave mientras la acción falla y la descarta tras el éxito (una segunda incidencia sobre el mismo turno ya no se toma por reenvío). **Errores por acción:** un 422 o un 409 dicen qué falló según la acción (no asistió antes de hora, aprobar un pedido vencido o con servicio a cotizar, seña sin importe, etc.). |
+| 5.3-18 | `list_deposit_cases` pide los turnos en un solo lote (`InboxBookingRepository.by_ids`, con anulados), sin N+1. El medio de pago por defecto de los diálogos de seña se deriva en cada render (la lista puede llegar después). |
+
+### Informativo (heredado)
+
+- La `Idempotency-Key` es única por `(tenant, key)` **sin importar la acción** (F3, `idempotency_keys` y `payments.idempotency_key`): la misma clave usada en dos acciones distintas dará `DUPLICATE_IDEMPOTENT` o `IdempotencyKeyReusedError` en la segunda. El front arma una clave por acción y turno (`crypto.randomUUID()`), así que no ocurre en la práctica; un cliente HTTP externo tiene que usar claves distintas por operación.
+
 ### Queda abierto
 
 - La seña que llega con el horario ya tomado (`record_deposit_after_slot_lost`) sigue sin botón: la bandeja responde 409 `SLOT_TAKEN` y el caso queda como hoy (A16 de F3, §4.1).

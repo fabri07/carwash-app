@@ -242,7 +242,7 @@ async def no_show(
 ) -> BookingSummary:
     """`CONFIRMADO → NO_ASISTIO`. Cuenta como incidencia del cliente (D-014)."""
     await once(session, user, idempotency_key, "bookings.no_show")
-    booking = await guard_inbox(_bookings(session, user).mark_no_show(id))
+    booking = await guard_inbox(_bookings(session, user).mark_no_show(id, now=utcnow()))
     return await _summary(session, user, booking)
 
 

@@ -21,7 +21,7 @@ cotización → turno. Nadie toma turno → job, así que no hay ciclo de espera
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -152,6 +152,9 @@ class InboxDeposit:
 RESCHEDULABLE_STATUSES: frozenset[BookingStatus] = frozenset(
     {BookingStatus.PENDIENTE_SENA, BookingStatus.CONFIRMADO, BookingStatus.PENDIENTE_REVISION}
 )
+#: Marca en `payments.notes` de la seña que confirmó un turno `VENCIDO` (confirmación tardía):
+#: así un reenvío con la misma clave devuelve `late` correcto sin columna nueva.
+LATE_DEPOSIT_NOTE = "late-confirmation"
 #: Puestos y franjas de un negocio: decenas, se leen enteros.
 _ALL_ROWS = 10_000
 
@@ -286,7 +289,9 @@ class BookingService(ServiceBase):
             terms_accepted_at=terms_accepted_at,
         )
         try:
-            async with guarded_savepoint(self._session, first_match(_OVERLAP, _CODE)):
+            async with guarded_savepoint(
+                self._session, first_match(_OVERLAP, _CODE), deadlock_label="overlap"
+            ):
                 self._session.add(booking)
         except SavepointConflictError as exc:
             raise _conflict_error(exc) from exc
@@ -458,7 +463,7 @@ class BookingService(ServiceBase):
         method = await self._deposit_method(payment) if payment is not None else None
         await self.expire_holds(booking.resource_id, now)
         try:
-            async with guarded_savepoint(self._session, _OVERLAP):
+            async with guarded_savepoint(self._session, _OVERLAP, deadlock_label="overlap"):
                 booking.status = target
                 booking.hold_expires_at = None
         except SavepointConflictError as exc:
@@ -633,12 +638,20 @@ class BookingService(ServiceBase):
             return winner
         return cancellation
 
-    async def mark_no_show(self, booking_id: uuid.UUID) -> Booking:
-        """`CONFIRMADO → NO_ASISTIO` (**[diseñar]**, C-04). Sin fila en `cancellations`."""
+    async def mark_no_show(self, booking_id: uuid.UUID, *, now: datetime) -> Booking:
+        """`CONFIRMADO → NO_ASISTIO` (**[diseñar]**, C-04). Sin fila en `cancellations`.
+
+        Solo con el turno ya empezado (`start_at <= now`): marcar la inasistencia de un turno
+        futuro es un error de toque (PR 5.3), y cuenta como incidencia del cliente (D-014).
+        """
         await self._enter()
         self._actor()
+        require_instant(now)
         booking = await self._lock(self._bookings, booking_id)
-        booking.status = next_booking_status(booking.status, BookingAction.MARK_NO_SHOW)
+        target = next_booking_status(booking.status, BookingAction.MARK_NO_SHOW)
+        if as_aware(booking.start_at) > now:
+            raise GuardFailedError("the booking has not started yet: it cannot be a no-show")
+        booking.status = target
         await self._session.flush()
         return booking
 
@@ -662,13 +675,19 @@ class BookingService(ServiceBase):
         key = require_key(payment.idempotency_key)
         require_instant(now)
         booking = await self._lock(self._bookings, booking_id)
-        if await self._replayed_deposit(booking, key) is not None:
-            return InboxDeposit(booking, late=False)
+        replayed = await self._replayed_deposit(booking, key)
+        if replayed is not None:
+            return InboxDeposit(booking, late=replayed.notes == LATE_DEPOSIT_NOTE)
         await self.expire_holds(booking.resource_id, now)
         if booking.status == BookingStatus.PENDIENTE_SENA:
             confirmed = await self.confirm_deposit(booking_id, payment, now=now)
             return InboxDeposit(confirmed.booking, late=False)
-        late = await self.confirm_late(booking_id, now=now, payment=payment)
+        if booking.status == BookingStatus.VENCIDO and booking.deposit_required_cents == 0:
+            # Sin seña pedida no hay nada que confirmar tarde: la acción no corresponde (409).
+            raise InvalidTransition("booking", booking.status, "RECORD_DEPOSIT")
+        late = await self.confirm_late(
+            booking_id, now=now, payment=replace(payment, notes=LATE_DEPOSIT_NOTE)
+        )
         return InboxDeposit(late, late=True)
 
     async def approve_review(self, booking_id: uuid.UUID, *, now: datetime) -> Booking:
@@ -734,7 +753,7 @@ class BookingService(ServiceBase):
         for resource_id in candidates:
             await self.expire_holds(resource_id, now)
             try:
-                async with guarded_savepoint(self._session, _OVERLAP):
+                async with guarded_savepoint(self._session, _OVERLAP, deadlock_label="overlap"):
                     booking.resource_id = resource_id
                     booking.status = target
                     booking.hold_expires_at = hold
@@ -843,7 +862,7 @@ class BookingService(ServiceBase):
 
         await self.expire_holds(target, now)
         try:
-            async with guarded_savepoint(self._session, _OVERLAP):
+            async with guarded_savepoint(self._session, _OVERLAP, deadlock_label="overlap"):
                 booking.resource_id = target
                 booking.start_at = new_start
                 booking.end_at = new_end

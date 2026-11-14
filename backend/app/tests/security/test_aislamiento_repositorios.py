@@ -466,6 +466,9 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
         "bookings",
         lambda r, t: r.count_upcoming(BookingStatus.PENDIENTE_SENA, MUY_TEMPRANO, t),
     ),
+    ("InboxBookingRepository", "by_ids"): lambda r, a, t: _valores(
+        r.by_ids([a.ids["bookings"]], t, include_voided=True)
+    ),
     ("InboxBookingRepository", "customers"): lambda r, a, t: _valores(
         r.customers([a.ids["customers"]], t)
     ),
