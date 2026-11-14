@@ -10,19 +10,22 @@ import {
 
 import { InboxBadge } from "@/features/turnos/InboxBadge";
 import { COUNTS_REFRESH_MS, inboxErrorMessage, runAction } from "@/features/turnos/queries";
-import { addDays, formatDay, whatsappLink, zonedToUtcIso } from "@/features/turnos/time";
+import { formatDay, whatsappLink, zonedToUtcIso } from "@/features/turnos/time";
+import { addDays } from "@/lib/period";
 import { TurnosPageClient } from "@/features/turnos/TurnosPageClient";
 import { getAvailability } from "@/services/agenda.service";
 import {
   approveBooking,
   cancelBooking,
   confirmDeposit,
+  getBooking,
   getBookingCounts,
   listBookings,
   listDepositCases,
   markIncident,
   markNoShow,
   rejectBooking,
+  removeIncidentMark,
   rescheduleBooking,
   resolveDepositCase,
 } from "@/services/bookings.service";
@@ -149,8 +152,18 @@ const owner = {
 
 /** `listBookings` según los estados pedidos (cada pestaña pide los suyos). */
 function bookingsBy(byStatus: Partial<Record<string, InboxBooking[]>>) {
-  (listBookings as jest.Mock).mockImplementation(async (f: { status?: string[] }) =>
-    page((f.status ?? []).flatMap((s) => byStatus[s] ?? [])),
+  (listBookings as jest.Mock).mockImplementation(
+    async (f: { status?: string[]; from?: string; to?: string }) =>
+      page(
+        (f.status ?? [])
+          .flatMap((s) => byStatus[s] ?? [])
+          // Como el backend: día local de inicio (acá UTC alcanza para las fechas de prueba).
+          .filter(
+            (b) =>
+              (!f.from || b.start_at.slice(0, 10) >= f.from) &&
+              (!f.to || b.start_at.slice(0, 10) <= f.to),
+          ),
+      ),
   );
 }
 
@@ -219,25 +232,17 @@ describe("Bandeja: Próximos", () => {
     );
   });
 
-  it("marca una incidencia y el no asistió de un turno que ya empezó", async () => {
-    bookingsBy({
-      CONFIRMADO: [turno({ id: "b2", code: "TUR-PASADO", start_at: "2020-01-01T13:00:00Z" })],
-    });
+  it("marca una incidencia del cliente del turno", async () => {
     (markIncident as jest.Mock).mockResolvedValueOnce({});
-    (markNoShow as jest.Mock).mockResolvedValueOnce({});
     renderPage();
-    const fila = await screen.findByRole("listitem", { name: "Turno TUR-PASADO" });
+    const fila = await screen.findByRole("listitem", { name: "Turno TUR-ABC234" });
     await userEvent.click(within(fila).getByRole("button", { name: "Marcar incidencia" }));
     const dialog = await screen.findByRole("dialog", { name: /incidencia/i });
     await userEvent.type(within(dialog).getByLabelText("Qué pasó"), "No avisó");
     await userEvent.click(within(dialog).getByRole("button", { name: "Marcar incidencia" }));
     await waitFor(() =>
-      expect(markIncident).toHaveBeenCalledWith("b2", { reason: "No avisó" }, expect.any(String)),
+      expect(markIncident).toHaveBeenCalledWith("b1", { reason: "No avisó" }, expect.any(String)),
     );
-    await userEvent.click(within(fila).getByRole("button", { name: "No asistió" }));
-    const confirmar = await screen.findByRole("dialog", { name: /no vino/i });
-    await userEvent.click(within(confirmar).getByRole("button", { name: "No asistió" }));
-    await waitFor(() => expect(markNoShow).toHaveBeenCalledWith("b2", expect.any(String)));
   });
 
   it("reprograma eligiendo un horario libre y avisa si quedó fuera de reglas", async () => {
@@ -264,9 +269,11 @@ describe("Bandeja: Próximos", () => {
     await userEvent.click(await within(dialog).findByRole("button", { name: "12:00" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Guardar cambio" }));
     await waitFor(() =>
-      expect(rescheduleBooking).toHaveBeenCalledWith("b1", {
-        start_at: "2030-11-25T15:00:00.000Z",
-      }),
+      expect(rescheduleBooking).toHaveBeenCalledWith(
+        "b1",
+        { start_at: "2030-11-25T15:00:00.000Z" },
+        expect.any(String),
+      ),
     );
     expect((getAvailability as jest.Mock).mock.calls[0]![0]).toEqual({
       date: "2030-11-25",
@@ -302,7 +309,11 @@ describe("Bandeja: Próximos", () => {
     await userEvent.selectOptions(within(dialog).getByLabelText("Puesto"), "r2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Guardar cambio" }));
     await waitFor(() =>
-      expect(rescheduleBooking).toHaveBeenCalledWith("b1", { resource_id: "r2" }),
+      expect(rescheduleBooking).toHaveBeenCalledWith(
+        "b1",
+        { resource_id: "r2" },
+        expect.any(String),
+      ),
     );
     expect(await within(dialog).findByText(/ya no está libre/i)).toBeInTheDocument();
   });
@@ -315,7 +326,12 @@ describe("Bandeja: Próximos", () => {
     });
     renderPage();
     const fila = await screen.findByRole("listitem", { name: "Turno TUR-ABC234" });
-    expect(within(fila).queryByRole("button")).toBeNull();
+    // Solo puede mirar las incidencias: nada que modifique.
+    expect(
+      within(fila)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Incidencias"]);
   });
 
   it("sin AGENDA_VER no hay acceso", async () => {
@@ -504,5 +520,125 @@ describe("helpers de la bandeja", () => {
     await expect(runAction(() => Promise.reject(apiError(409, "SLOT_TAKEN")))).rejects.toThrow(
       /ya no está libre/,
     );
+  });
+});
+
+describe("Correcciones de la ronda de revisión", () => {
+  it("renueva la clave tras un éxito: una segunda incidencia no se toma por reenvío", async () => {
+    (markIncident as jest.Mock).mockResolvedValue({});
+    renderPage();
+    const fila = await screen.findByRole("listitem", { name: "Turno TUR-ABC234" });
+    for (const motivo of ["Primera", "Segunda"]) {
+      await userEvent.click(within(fila).getByRole("button", { name: "Marcar incidencia" }));
+      const dialog = await screen.findByRole("dialog", { name: /incidencia/i });
+      await userEvent.type(within(dialog).getByLabelText("Qué pasó"), motivo);
+      await userEvent.click(within(dialog).getByRole("button", { name: "Marcar incidencia" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
+    const claves = (markIncident as jest.Mock).mock.calls.map((c) => c[2]);
+    expect(claves).toHaveLength(2);
+    expect(claves[0]).not.toEqual(claves[1]);
+  });
+
+  it("reusa la clave si la acción falló (el reintento es el mismo pedido)", async () => {
+    (cancelBooking as jest.Mock)
+      .mockRejectedValueOnce(apiError(500, "INTERNAL_ERROR"))
+      .mockResolvedValueOnce({});
+    renderPage();
+    const fila = await screen.findByRole("listitem", { name: "Turno TUR-ABC234" });
+    await userEvent.click(within(fila).getByRole("button", { name: "Cancelar" }));
+    const dialog = await screen.findByRole("dialog", { name: "Cancelar el turno" });
+    await userEvent.type(within(dialog).getByLabelText("Motivo"), "Lluvia");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancelar turno" }));
+    await within(dialog).findByRole("alert");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancelar turno" }));
+    await waitFor(() => expect(cancelBooking).toHaveBeenCalledTimes(2));
+    const [a, b] = (cancelBooking as jest.Mock).mock.calls.map((c) => c[2]);
+    expect(a).toBe(b);
+  });
+
+  it("muestra los turnos de días pasados que siguen confirmados, para resolverlos", async () => {
+    const pasado = turno({ id: "b9", code: "TUR-VIEJO", start_at: "2020-01-01T13:00:00Z" });
+    bookingsBy({ CONFIRMADO: [pasado] });
+    (markNoShow as jest.Mock).mockResolvedValueOnce({});
+    renderPage();
+    const bloque = await screen.findByRole("region", { name: "Sin resolver" });
+    const fila = within(bloque).getByRole("listitem", { name: "Turno TUR-VIEJO" });
+    expect(within(fila).getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+    await userEvent.click(within(fila).getByRole("button", { name: "No asistió" }));
+    const confirmar = await screen.findByRole("dialog", { name: /no vino/i });
+    await userEvent.click(within(confirmar).getByRole("button", { name: "No asistió" }));
+    await waitFor(() => expect(markNoShow).toHaveBeenCalledWith("b9", expect.any(String)));
+    const pedido = (listBookings as jest.Mock).mock.calls.find((c) => c[0].to)![0];
+    expect(pedido.status).toEqual(["CONFIRMADO"]);
+    expect(pedido.from).toBeUndefined();
+  });
+
+  it("lista las marcas del cliente y permite desmarcar", async () => {
+    (getBooking as jest.Mock).mockResolvedValue({
+      ...turno(),
+      incidents: 2,
+      payments: [],
+      cancellation: null,
+      incident_marks: [
+        {
+          id: "k1",
+          customer_id: "c1",
+          booking_id: "b1",
+          reason: "Llegó tarde",
+          created_by_user_id: "u1",
+          ...stamp,
+        },
+      ],
+    });
+    (removeIncidentMark as jest.Mock).mockResolvedValueOnce(undefined);
+    renderPage();
+    const fila = await screen.findByRole("listitem", { name: "Turno TUR-ABC234" });
+    await userEvent.click(within(fila).getByRole("button", { name: "Incidencias" }));
+    const dialog = await screen.findByRole("dialog", { name: /incidencias de/i });
+    expect(await within(dialog).findByText("Llegó tarde")).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("lista de espera");
+    await userEvent.click(within(dialog).getByRole("button", { name: /desmarcar/i }));
+    await waitFor(() => expect(removeIncidentMark).toHaveBeenCalledWith("k1"));
+  });
+
+  it("el medio de pago por defecto aparece aunque la lista llegue después", async () => {
+    let resolver: (v: unknown) => void = () => undefined;
+    (paymentMethodsApi.list as jest.Mock).mockReturnValue(
+      new Promise((r) => {
+        resolver = r;
+      }),
+    );
+    bookingsBy({
+      PENDIENTE_SEÑA: [
+        turno({
+          id: "b8",
+          code: "TUR-LENTO",
+          status: "PENDIENTE_SEÑA",
+          deposit_required_cents: 600_000,
+        }),
+      ],
+    });
+    (confirmDeposit as jest.Mock).mockResolvedValueOnce({ booking: turno(), late: false });
+    renderPage();
+    await openTab(/pendientes de seña/i);
+    const fila = await screen.findByRole("listitem", { name: "Turno TUR-LENTO" });
+    await userEvent.click(within(fila).getByRole("button", { name: "Confirmar seña" }));
+    const dialog = await screen.findByRole("dialog", { name: /confirmar la seña/i });
+    await act(async () => resolver(page([efectivo])));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Confirmar seña" }));
+    await waitFor(() =>
+      expect((confirmDeposit as jest.Mock).mock.calls[0]![1].payment_method_id).toBe("m1"),
+    );
+  });
+
+  it("explica cada 422 y 409 según la acción", () => {
+    expect(inboxErrorMessage(apiError(422, "VALIDATION_ERROR"), "noShow")).toMatch(/no empezó/);
+    expect(inboxErrorMessage(apiError(422, "VALIDATION_ERROR"), "approve")).toMatch(/cotizar/);
+    expect(inboxErrorMessage(apiError(422, "VALIDATION_ERROR"), "deposit")).toMatch(/importe/);
+    expect(inboxErrorMessage(apiError(422, "VALIDATION_ERROR"), "reschedule")).toMatch(/futuro/);
+    expect(inboxErrorMessage(apiError(422, "VALIDATION_ERROR"), "cancel")).toMatch(/motivo/);
+    expect(inboxErrorMessage(apiError(409, "CONFLICT"), "deposit")).toMatch(/no espera una seña/);
+    expect(inboxErrorMessage(apiError(409, "CONFLICT"), "resolve")).toMatch(/retener/);
   });
 });

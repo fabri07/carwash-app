@@ -15,14 +15,17 @@ import {
   DEPOSIT_STATUS_LABELS,
   PAGE,
   runAction,
+  type ActionName,
   useBookings,
   useDepositCases,
   useInboxCounts,
   useRefreshInbox,
 } from "@/features/turnos/queries";
 import { ReasonDialog } from "@/features/turnos/ReasonDialog";
+import { IncidentsDialog } from "@/features/turnos/IncidentsDialog";
 import { RescheduleDialog } from "@/features/turnos/RescheduleDialog";
 import { formatDay } from "@/features/turnos/time";
+import { addDays } from "@/lib/period";
 import { useCan, useIsOwner, usePermissionsLoaded } from "@/hooks/usePermission";
 import { formatRange, localDate } from "@/lib/agenda";
 import { formatARS } from "@/lib/money";
@@ -44,7 +47,15 @@ const DEFAULT_TZ = "America/Argentina/Cordoba";
 
 type Action =
   | {
-      kind: "cancel" | "reject" | "incident" | "noShow" | "approve" | "reschedule" | "deposit";
+      kind:
+        | "cancel"
+        | "reject"
+        | "incident"
+        | "incidents"
+        | "noShow"
+        | "approve"
+        | "reschedule"
+        | "deposit";
       booking: InboxBooking;
     }
   | { kind: "resolve"; item: DepositCase };
@@ -109,15 +120,34 @@ export function TurnosPageClient() {
   const resourceName = (id: string) => resourceList.find((r) => r.id === id)?.name ?? "Puesto";
   const today = localDate(new Date(), timeZone);
   const close = () => setAction(null);
-  /** Una clave por acción y turno: un doble toque o un reintento no se aplican dos veces. */
-  const keyFor = (what: string, id: string) => {
+  /**
+   * Corre una acción con su `Idempotency-Key`. La clave se reusa mientras la acción falla (un
+   * reintento o un doble toque no se aplican dos veces) y se **descarta tras el éxito**: la
+   * próxima acción legítima sobre el mismo turno (otra incidencia) lleva una clave nueva y no
+   * se toma por un reenvío (`DUPLICATE_IDEMPOTENT`).
+   */
+  async function act<R>(
+    what: ActionName,
+    id: string,
+    fn: (key: string) => Promise<R>,
+  ): Promise<R | undefined> {
     const k = `${what}:${id}`;
     if (!keys.has(k)) keys.set(k, crypto.randomUUID());
-    return keys.get(k)!;
-  };
-  async function done(fn: () => Promise<unknown>, message: string) {
-    await runAction(fn);
+    let result: R | undefined;
+    await runAction(async () => {
+      result = await fn(keys.get(k)!);
+    }, what);
+    keys.delete(k);
     await refresh();
+    return result;
+  }
+  async function done<R>(
+    what: ActionName,
+    id: string,
+    fn: (key: string) => Promise<R>,
+    message: string,
+  ) {
+    await act(what, id, fn);
     toast.success(message);
   }
 
@@ -163,13 +193,10 @@ export function TurnosPageClient() {
           resources={resourceList}
           onClose={close}
           onSubmit={async (payload) => {
-            let outside = false;
-            await runAction(async () => {
-              const r = await rescheduleBooking(action.booking.id, payload);
-              outside = r.outside_rules;
-            });
-            await refresh();
-            if (outside) {
+            const r = await act("reschedule", action.booking.id, (key) =>
+              rescheduleBooking(action.booking.id, payload, key),
+            );
+            if (r?.outside_rules) {
               toast.warning(
                 "Turno movido fuera del horario del negocio o de las reglas del servicio. Avisale al cliente.",
               );
@@ -185,18 +212,11 @@ export function TurnosPageClient() {
           methods={methodList}
           onClose={close}
           onSubmit={async (payload) => {
-            let late = false;
-            await runAction(async () => {
-              const r = await confirmDeposit(
-                action.booking.id,
-                payload,
-                keyFor("deposit", action.booking.id),
-              );
-              late = r.late;
-            });
-            await refresh();
+            const r = await act("deposit", action.booking.id, (key) =>
+              confirmDeposit(action.booking.id, payload, key),
+            );
             toast.success(
-              late ? "Seña registrada: el turno se confirmó tarde." : "Seña confirmada.",
+              r?.late ? "Seña registrada: el turno se confirmó tarde." : "Seña confirmada.",
             );
           }}
         />
@@ -208,15 +228,20 @@ export function TurnosPageClient() {
           onClose={close}
           onSubmit={(payload) =>
             done(
-              () =>
-                resolveDepositCase(
-                  action.item.cancellation.id,
-                  payload,
-                  keyFor("resolve", action.item.cancellation.id),
-                ),
+              "resolve",
+              action.item.cancellation.id,
+              (key) => resolveDepositCase(action.item.cancellation.id, payload, key),
               "Seña resuelta.",
             )
           }
+        />
+      )}
+      {action?.kind === "incidents" && (
+        <IncidentsDialog
+          booking={action.booking}
+          timeZone={timeZone}
+          canManage={canManage}
+          onClose={close}
         />
       )}
       <ReasonDialog
@@ -230,8 +255,9 @@ export function TurnosPageClient() {
         onSubmit={(reason) =>
           action?.kind === "cancel"
             ? done(
-                () =>
-                  cancelBooking(action.booking.id, { reason }, keyFor("cancel", action.booking.id)),
+                "cancel",
+                action.booking.id,
+                (key) => cancelBooking(action.booking.id, { reason }, key),
                 "Turno cancelado. Avisale al cliente.",
               )
             : Promise.resolve()
@@ -248,8 +274,9 @@ export function TurnosPageClient() {
         onSubmit={(reason) =>
           action?.kind === "reject"
             ? done(
-                () =>
-                  rejectBooking(action.booking.id, { reason }, keyFor("reject", action.booking.id)),
+                "reject",
+                action.booking.id,
+                (key) => rejectBooking(action.booking.id, { reason }, key),
                 "Pedido rechazado.",
               )
             : Promise.resolve()
@@ -265,12 +292,9 @@ export function TurnosPageClient() {
         onSubmit={(reason) =>
           action?.kind === "incident"
             ? done(
-                () =>
-                  markIncident(
-                    action.booking.id,
-                    { reason },
-                    keyFor("incident", action.booking.id),
-                  ),
+                "incident",
+                action.booking.id,
+                (key) => markIncident(action.booking.id, { reason }, key),
                 "Incidencia marcada.",
               )
             : Promise.resolve()
@@ -286,7 +310,9 @@ export function TurnosPageClient() {
         onConfirm={() =>
           action?.kind === "noShow"
             ? done(
-                () => markNoShow(action.booking.id, keyFor("noShow", action.booking.id)),
+                "noShow",
+                action.booking.id,
+                (key) => markNoShow(action.booking.id, key),
                 "Marcado como no asistió.",
               )
             : undefined
@@ -305,7 +331,9 @@ export function TurnosPageClient() {
         onConfirm={() =>
           action?.kind === "approve"
             ? done(
-                () => approveBooking(action.booking.id, keyFor("approve", action.booking.id)),
+                "approve",
+                action.booking.id,
+                (key) => approveBooking(action.booking.id, key),
                 "Pedido aprobado. Avisale al cliente.",
               )
             : undefined
@@ -369,9 +397,15 @@ function ManageButtons({
   onAction: (a: Action) => void;
   noShow?: boolean;
 }) {
-  if (!canManage) return null;
+  const history = (
+    <Button size="sm" variant="ghost" onClick={() => onAction({ kind: "incidents", booking })}>
+      Incidencias
+    </Button>
+  );
+  if (!canManage) return history;
   return (
     <>
+      {history}
       {RESCHEDULABLE.has(booking.status) && (
         <Button
           size="sm"
@@ -404,6 +438,14 @@ function UpcomingTab({ timeZone, resourceName, canManage, today, onAction }: Tab
     status: ["CONFIRMADO", "PENDIENTE_SEÑA", "RECIBIDO"],
     from: today,
   });
+  // "Sin resolver": turnos de días anteriores que siguen `CONFIRMADO` (nadie marcó que vinieron ni
+  // que no). Sin esto desaparecerían de la bandeja. `RECIBIDO` no: ya tiene su trabajo en curso.
+  const unresolved = useBookings({
+    ...PAGE,
+    status: ["CONFIRMADO"],
+    to: addDays(today, -1),
+  });
+  const pending = unresolved.data?.items ?? [];
   const items = query.data?.items ?? [];
   const days = new Map<string, InboxBooking[]>();
   for (const b of items) {
@@ -415,10 +457,50 @@ function UpcomingTab({ timeZone, resourceName, canManage, today, onAction }: Tab
     <ListState
       loading={query.isLoading}
       error={query.isError}
-      empty={items.length === 0}
+      empty={items.length === 0 && pending.length === 0}
       emptyMessage="No hay turnos próximos."
     >
       <div className="space-y-4">
+        {pending.length > 0 && (
+          <section aria-label="Sin resolver" className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase text-destructive">Sin resolver</h2>
+            <p className="text-xs text-muted-foreground">
+              Turnos de días anteriores que siguen confirmados: marcá si el cliente no vino o
+              cancelalos.
+            </p>
+            <ul className="divide-y rounded-lg border border-destructive/40 bg-card">
+              {pending.map((b) => (
+                <BookingCard key={b.id} booking={b} timeZone={timeZone} resourceName={resourceName}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onAction({ kind: "incidents", booking: b })}
+                  >
+                    Incidencias
+                  </Button>
+                  {canManage && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onAction({ kind: "noShow", booking: b })}
+                      >
+                        No asistió
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onAction({ kind: "cancel", booking: b })}
+                      >
+                        Cancelar
+                      </Button>
+                    </>
+                  )}
+                </BookingCard>
+              ))}
+            </ul>
+          </section>
+        )}
         {[...days.entries()].map(([day, bookings]) => (
           <section key={day} aria-label={day} className="space-y-2">
             <h2 className="text-sm font-semibold uppercase text-muted-foreground">

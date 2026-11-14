@@ -42,12 +42,6 @@ export function zonedToUtcIso(date: string, time: string, timeZone: string): str
   return new Date(utc).toISOString();
 }
 
-/** `YYYY-MM-DD` de `date` más `days` días (para rangos de la lista). */
-export function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
-}
-
 /** "lunes 23/11": el día de un instante en la zona del negocio (encabezado de la lista). */
 export function formatDay(iso: string, timeZone: string): string {
   const parts = Object.fromEntries(

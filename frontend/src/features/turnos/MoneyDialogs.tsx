@@ -111,7 +111,10 @@ interface DepositDialogProps {
 export function DepositDialog({ booking, methods, onClose, onSubmit }: DepositDialogProps) {
   const ids = { method: useId(), amount: useId() };
   const income = methods.filter((m) => m.for_income);
-  const [methodId, setMethodId] = useState(income[0]?.id ?? "");
+  // El medio se deriva en cada render: si la lista llega después de abrir el diálogo, toma el
+  // primero; una elección del usuario que ya no está en la lista se descarta.
+  const [picked, setPicked] = useState("");
+  const methodId = income.some((m) => m.id === picked) ? picked : (income[0]?.id ?? "");
   const [amount, setAmount] = useState<number | null>(booking.deposit_required_cents || null);
   const { busy, error, setError, run } = useSubmit(onClose);
   const late = booking.status === "VENCIDO";
@@ -136,11 +139,7 @@ export function DepositDialog({ booking, methods, onClose, onSubmit }: DepositDi
     >
       <div className="space-y-2">
         <Label htmlFor={ids.method}>Medio de pago</Label>
-        <NativeSelect
-          id={ids.method}
-          value={methodId}
-          onChange={(e) => setMethodId(e.target.value)}
-        >
+        <NativeSelect id={ids.method} value={methodId} onChange={(e) => setPicked(e.target.value)}>
           {income.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
@@ -178,7 +177,8 @@ export function ResolveDialog({ item, methods, onClose, onSubmit }: ResolveDialo
       : ["DEVUELTA", "REPROGRAMADA"];
   const [status, setStatus] = useState<Resolution>(options[0]!);
   const [reason, setReason] = useState("");
-  const [methodId, setMethodId] = useState(methods[0]?.id ?? "");
+  const [picked, setPicked] = useState("");
+  const methodId = methods.some((m) => m.id === picked) ? picked : (methods[0]?.id ?? "");
   const [amount, setAmount] = useState<number | null>(cancellation.deposit_paid_cents);
   const { busy, error, setError, run } = useSubmit(onClose);
 
@@ -229,7 +229,7 @@ export function ResolveDialog({ item, methods, onClose, onSubmit }: ResolveDialo
             <NativeSelect
               id={ids.method}
               value={methodId}
-              onChange={(e) => setMethodId(e.target.value)}
+              onChange={(e) => setPicked(e.target.value)}
             >
               {methods.map((m) => (
                 <option key={m.id} value={m.id}>
