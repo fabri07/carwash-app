@@ -50,17 +50,22 @@ export function MyBooking({ slug }: { slug: string }) {
   }
 
   async function cancel(values: CancelValues) {
-    if (!credentials) return;
+    if (!credentials || !booking) return;
+    let result: TurneroCancellation;
     try {
-      const result = await cancelBooking(slug, {
-        ...credentials,
-        reason: values.reason || null,
-      });
-      setCancellation(result);
-      setBooking(await lookupBooking(slug, credentials));
-      setConfirming(false);
+      result = await cancelBooking(slug, { ...credentials, reason: values.reason || null });
     } catch (e) {
       throw new Error(turneroErrorMessage(e));
+    }
+    // La respuesta del cancel ya dice cómo quedó: se usa ella. Releer el turno es un extra; si
+    // falla, no se muestra un error de una cancelación que salió bien.
+    setCancellation(result);
+    setBooking({ ...booking, status: result.status, can_cancel: false });
+    setConfirming(false);
+    try {
+      setBooking(await lookupBooking(slug, credentials));
+    } catch {
+      /* queda el estado armado con la respuesta del cancel */
     }
   }
 

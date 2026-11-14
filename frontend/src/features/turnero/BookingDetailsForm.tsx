@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -23,17 +23,39 @@ interface BookingDetailsFormProps {
   /** Texto de la política del negocio; sin texto se acepta igual (se guarda sin versión). */
   policy: string | null;
   submitLabel: string;
+  /** Lo ya tipeado: al volver de un paso o de un "horario ocupado" no se pierde nada. */
+  initialValues: BookingDetailsValues;
+  /** Cada cambio sube al estado del flujo. */
+  onValuesChange: (values: BookingDetailsValues) => void;
   /** Un `FormSubmitError` con `field` va debajo de ese campo; cualquier otro, arriba del botón. */
   onSubmit: (values: BookingDetailsValues) => Promise<void>;
 }
 
 /** Datos del cliente: nombre, WhatsApp, patente opcional (D5-3) y la política (§4.2 paso 8). */
-export function BookingDetailsForm({ policy, submitLabel, onSubmit }: BookingDetailsFormProps) {
+export function BookingDetailsForm({
+  policy,
+  submitLabel,
+  initialValues,
+  onValuesChange,
+  onSubmit,
+}: BookingDetailsFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const form = useForm<BookingDetailsValues>({
     resolver: zodResolver(bookingDetailsSchema),
-    defaultValues: { name: "", phone: "", plate: "", acceptPolicy: false },
+    defaultValues: initialValues,
   });
+
+  useEffect(() => {
+    const subscription = form.watch((values) =>
+      onValuesChange({
+        name: values.name ?? "",
+        phone: values.phone ?? "",
+        plate: values.plate ?? "",
+        acceptPolicy: values.acceptPolicy === true,
+      }),
+    );
+    return () => subscription.unsubscribe();
+  }, [form, onValuesChange]);
 
   async function submit(values: BookingDetailsValues) {
     setFormError(null);

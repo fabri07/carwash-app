@@ -337,9 +337,86 @@ describe("turnero: reservar (B13)", () => {
 
   it("si el catálogo falla lo dice", async () => {
     // 4xx: sin reintentos (un 5xx reintentaría con espera).
-    jest.mocked(getCatalog).mockRejectedValue(apiError(422));
+    jest.mocked(getCatalog).mockRejectedValue(apiError(403));
     conMarco(<BookingFlow slug="lavadero-norte" />);
     expect(await screen.findByText(/Algo salió mal/)).toBeInTheDocument();
+  });
+});
+
+describe("turnero: arreglos de la ronda de revisión", () => {
+  it("un 429 (o un 5xx agotado) al cargar el negocio no dice 'no existe': ofrece reintentar", async () => {
+    // 429: un 4xx no se reintenta solo (un 5xx sí, con espera); acá se prueba el botón.
+    jest.mocked(getBusiness).mockRejectedValueOnce(apiError(429));
+    const user = userEvent.setup();
+    conMarco(<p>contenido</p>);
+    expect(await screen.findByText("No pudimos cargar el negocio")).toBeInTheDocument();
+    expect(screen.queryByText("No encontramos este negocio")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByText("Lavadero Norte")).toBeInTheDocument();
+    expect(jest.mocked(getBusiness)).toHaveBeenCalledTimes(2);
+  });
+
+  it("si la cancelación salió bien pero releer el turno falla, no muestra error y cierra el formulario", async () => {
+    jest.mocked(cancelBooking).mockResolvedValue({
+      code: "TUR-K7M2QX",
+      status: "CANCELADO_CLIENTE",
+      classification: "NORMAL",
+      deposit_status: "SIN_PAGO",
+    });
+    const user = userEvent.setup();
+    conMarco(<MyBooking slug="lavadero-norte" />);
+    await user.type(await screen.findByLabelText("Código del turno"), "TUR-K7M2QX");
+    await user.type(screen.getByLabelText("WhatsApp con el que reservaste"), "351 000 0001");
+    await user.click(screen.getByRole("button", { name: "Ver mi turno" }));
+    await user.click(await screen.findByRole("button", { name: "Quiero cancelar" }));
+    jest.mocked(lookupBooking).mockRejectedValue(apiError(500));
+    await user.click(screen.getByRole("button", { name: "Cancelar el turno" }));
+    expect(await screen.findByText("Turno cancelado.")).toBeInTheDocument();
+    expect(screen.getByText("Cancelado")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancelar el turno" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Quiero cancelar" })).not.toBeInTheDocument();
+  });
+
+  it("al ocuparse el horario o al volver no se pierden los datos tipeados", async () => {
+    jest.mocked(createBooking).mockRejectedValueOnce(apiError(409, "SLOT_TAKEN"));
+    const user = userEvent.setup();
+    conMarco(<BookingFlow slug="lavadero-norte" />);
+    await elegirHastaDatos(user);
+    await user.type(screen.getByLabelText("Nombre"), "Cliente Web");
+    await user.type(screen.getByLabelText("WhatsApp"), "351 000 0001");
+    await user.type(screen.getByLabelText("Patente (opcional)"), "AA000AA");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Reservar" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Ese horario se acaba de ocupar");
+    await user.click(await screen.findByRole("button", { name: "10:00" }));
+    expect(screen.getByLabelText("Nombre")).toHaveValue("Cliente Web");
+    expect(screen.getByLabelText("WhatsApp")).toHaveValue("351 000 0001");
+    expect(screen.getByLabelText("Patente (opcional)")).toHaveValue("AA000AA");
+    expect(screen.getByRole("checkbox")).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Volver" }));
+    await user.click(await screen.findByRole("button", { name: "10:00" }));
+    expect(screen.getByLabelText("Nombre")).toHaveValue("Cliente Web");
+  });
+
+  it("la patente admite hasta 10 caracteres y un 422 da un mensaje útil", async () => {
+    jest.mocked(createBooking).mockRejectedValueOnce(apiError(422, "VALIDATION_ERROR"));
+    const user = userEvent.setup();
+    conMarco(<BookingFlow slug="lavadero-norte" />);
+    await elegirHastaDatos(user);
+    await user.type(screen.getByLabelText("Nombre"), "Cliente Web");
+    await user.type(screen.getByLabelText("WhatsApp"), "351 000 0001");
+    await user.type(screen.getByLabelText("Patente (opcional)"), "ABCDEFGHIJK");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Reservar" }));
+    expect(await screen.findByText("Hasta 10 caracteres.")).toBeInTheDocument();
+    expect(jest.mocked(createBooking)).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText("Patente (opcional)"));
+    await user.type(screen.getByLabelText("Patente (opcional)"), "AA000AA");
+    await user.click(screen.getByRole("button", { name: "Reservar" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Revisá los datos");
+    expect(turneroErrorMessage(apiError(422))).toMatch(/Revisá los datos/);
+    expect(turneroErrorMessage(apiError(503, "SERVICE_UNAVAILABLE"))).toMatch(/código del turno/);
   });
 });
 

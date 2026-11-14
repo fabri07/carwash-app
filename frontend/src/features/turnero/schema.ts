@@ -15,7 +15,7 @@ const phone = z
 export const bookingDetailsSchema = z.object({
   name: z.string().trim().min(1, "Ingresá tu nombre.").max(80, "Hasta 80 caracteres."),
   phone,
-  plate: z.string().trim().max(12, "Hasta 12 caracteres."),
+  plate: z.string().trim().max(10, "Hasta 10 caracteres."),
   acceptPolicy: z.boolean().refine((v) => v, "Tenés que aceptar la política de cancelación."),
 });
 

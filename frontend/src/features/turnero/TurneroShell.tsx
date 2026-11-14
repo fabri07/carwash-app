@@ -4,9 +4,13 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { CalendarSearch, MapPin, Store } from "lucide-react";
 
+import axios from "axios";
+
+import { Button } from "@/components/ui/button";
 import { applyBranding, brandingVariables } from "@/lib/branding";
 import type { TurneroBusiness } from "@/types/api";
 
+import { turneroErrorMessage } from "./format";
 import { useTurneroBusiness } from "./queries";
 
 /**
@@ -24,6 +28,20 @@ export function useBusinessBranding(business: TurneroBusiness | undefined): void
     applyBranding(root, brandingVariables(palette, font));
     return () => applyBranding(root, {});
   }, [palette, font]);
+}
+
+/** Falla que no es un "no existe" (429, 5xx, sin red): se puede reintentar. */
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center gap-3 py-16 text-center">
+      <Store className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
+      <h1 className="text-lg font-semibold">No pudimos cargar el negocio</h1>
+      <p className="text-sm text-muted-foreground">{message}</p>
+      <Button type="button" onClick={onRetry}>
+        Reintentar
+      </Button>
+    </div>
+  );
 }
 
 function NotFound() {
@@ -50,7 +68,17 @@ export function TurneroShell({ slug, children }: { slug: string; children: React
       </div>
     );
   } else if (business.isError) {
-    body = <NotFound />;
+    // Solo un 404 es "no existe" (Z8); un 429, un 5xx o la falta de red se reintentan.
+    const status = axios.isAxiosError(business.error) ? business.error.response?.status : undefined;
+    body =
+      status === 404 ? (
+        <NotFound />
+      ) : (
+        <LoadError
+          message={turneroErrorMessage(business.error)}
+          onRetry={() => void business.refetch()}
+        />
+      );
   }
 
   const data = business.data;

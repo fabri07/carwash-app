@@ -107,6 +107,8 @@ const BOOKING_ERRORS: Record<string, string> = {
   SERVICE_NOT_BOOKABLE: "Uno de los servicios ya no se puede reservar online. Volvé a elegir.",
   INVALID_PHONE: "Revisá el WhatsApp: tiene que ser un celular argentino con código de área.",
   RATE_LIMITED: "Hiciste demasiados intentos seguidos. Esperá un minuto y probá de nuevo.",
+  VALIDATION_ERROR: "Revisá los datos: nombre, WhatsApp y patente (hasta 10 caracteres).",
+  SERVICE_UNAVAILABLE: "No pudimos generar el código del turno. Probá de nuevo en un momento.",
   NOT_FOUND: "No encontramos un turno con ese código y ese WhatsApp.",
   CONFLICT: "Este turno ya no se puede cancelar desde la web. Escribile al negocio.",
 };
@@ -119,6 +121,7 @@ export function turneroErrorMessage(e: unknown): string {
   const code = apiErrorCode(e);
   if (code && BOOKING_ERRORS[code]) return BOOKING_ERRORS[code]!;
   if (e.response.status === 429) return BOOKING_ERRORS.RATE_LIMITED!;
+  if (e.response.status === 422) return BOOKING_ERRORS.VALIDATION_ERROR!;
   if (e.response.status === 404) return BOOKING_ERRORS.NOT_FOUND!;
   return generic;
 }

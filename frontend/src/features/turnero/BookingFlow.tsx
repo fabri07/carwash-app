@@ -29,6 +29,8 @@ import {
 import { useTurneroAvailability, useTurneroBusiness, useTurneroCatalog } from "./queries";
 import type { BookingDetailsValues } from "./schema";
 
+const EMPTY_DETAILS: BookingDetailsValues = { name: "", phone: "", plate: "", acceptPolicy: false };
+
 /**
  * Reservar desde el celular (FASE-5-CONTRATO §4.2): tamaño → servicios → día → horario → datos →
  * confirmación. El cliente elige solo el tamaño (D5-3); los servicios a cotizar se muestran con
@@ -109,6 +111,8 @@ function Flow({
   const [startAt, setStartAt] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [booking, setBooking] = useState<TurneroBooking | null>(null);
+  // Los datos del cliente viven acá: el formulario se desmonta al volver o al ocuparse el horario.
+  const [details, setDetails] = useState<BookingDetailsValues>(EMPTY_DETAILS);
   // Una clave por intento: un doble toque reenvía la misma; cambiar la elección arma otra.
   const key = useRef<string>(newKey());
 
@@ -376,6 +380,8 @@ function Flow({
           <BookingDetailsForm
             policy={business.cancellation_policy}
             submitLabel="Reservar"
+            initialValues={details}
+            onValuesChange={setDetails}
             onSubmit={submit}
           />
         </section>
