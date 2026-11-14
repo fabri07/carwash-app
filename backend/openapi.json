@@ -514,6 +514,17 @@
         "title": "BusinessHoursUpdate",
         "type": "object"
       },
+      "CancellationClassification": {
+        "description": "Valores exactos del código (R-T-037, C-06), no los del inventario.",
+        "enum": [
+          "NORMAL",
+          "TARDIA",
+          "POSTERIOR_AL_TURNO",
+          "OPERATIVA"
+        ],
+        "title": "CancellationClassification",
+        "type": "string"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -535,6 +546,20 @@
         ],
         "title": "ChangePasswordRequest",
         "type": "object"
+      },
+      "DepositStatus": {
+        "description": "§2.4. Los cuatro primeros abren un caso (legacy); los tres últimos lo cierran (nuevos).",
+        "enum": [
+          "SIN_PAGO",
+          "DEVOLUCION_PENDIENTE",
+          "EN_REVISION",
+          "REPROGRAMACION_O_DEVOLUCION_PENDIENTE",
+          "DEVUELTA",
+          "RETENIDA",
+          "REPROGRAMADA"
+        ],
+        "title": "DepositStatus",
+        "type": "string"
       },
       "ErrorCode": {
         "enum": [
@@ -559,6 +584,11 @@
           "STORAGE_UNAVAILABLE",
           "ONBOARDING_INCOMPLETE",
           "CONFLICT",
+          "SLOT_TAKEN",
+          "TOO_MANY_ACTIVE_BOOKINGS",
+          "SERVICE_NOT_BOOKABLE",
+          "INVALID_PHONE",
+          "SERVICE_UNAVAILABLE",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
           "INTERNAL_ERROR"
@@ -2004,6 +2034,548 @@
         ],
         "title": "PricingMode",
         "type": "string"
+      },
+      "PublicAvailabilityResponse": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/PublicSlot"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "timezone",
+          "duration_min",
+          "slots"
+        ],
+        "title": "PublicAvailabilityResponse",
+        "type": "object"
+      },
+      "PublicBookingCancel": {
+        "properties": {
+          "code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Phone",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "code",
+          "phone"
+        ],
+        "title": "PublicBookingCancel",
+        "type": "object"
+      },
+      "PublicBookingCreate": {
+        "properties": {
+          "accept_policy": {
+            "title": "Accept Policy",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Phone",
+            "type": "string"
+          },
+          "plate": {
+            "anyOf": [
+              {
+                "maxLength": 10,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plate"
+          },
+          "service_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Service Ids",
+            "type": "array"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          },
+          "vehicle_size_id": {
+            "format": "uuid",
+            "title": "Vehicle Size Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vehicle_size_id",
+          "service_ids",
+          "start_at",
+          "name",
+          "phone",
+          "accept_policy"
+        ],
+        "title": "PublicBookingCreate",
+        "type": "object"
+      },
+      "PublicBookingItem": {
+        "properties": {
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_cents": {
+            "title": "Price Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "duration_min",
+          "price_cents"
+        ],
+        "title": "PublicBookingItem",
+        "type": "object"
+      },
+      "PublicBookingLookup": {
+        "properties": {
+          "code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "phone"
+        ],
+        "title": "PublicBookingLookup",
+        "type": "object"
+      },
+      "PublicBookingResponse": {
+        "properties": {
+          "can_cancel": {
+            "title": "Can Cancel",
+            "type": "boolean"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "deposit_cents": {
+            "title": "Deposit Cents",
+            "type": "integer"
+          },
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "hold_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hold Expires At"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/PublicBookingItem"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "total_cents": {
+            "title": "Total Cents",
+            "type": "integer"
+          },
+          "vehicle_size_label": {
+            "title": "Vehicle Size Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "start_at",
+          "end_at",
+          "timezone",
+          "vehicle_size_label",
+          "services",
+          "total_cents",
+          "deposit_cents",
+          "hold_expires_at",
+          "can_cancel"
+        ],
+        "title": "PublicBookingResponse",
+        "type": "object"
+      },
+      "PublicBusinessResponse": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "booking_horizon_days": {
+            "title": "Booking Horizon Days",
+            "type": "integer"
+          },
+          "cancellation_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancellation Policy"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "deposit_enabled": {
+            "title": "Deposit Enabled",
+            "type": "boolean"
+          },
+          "deposit_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Instructions"
+          },
+          "font": {
+            "$ref": "#/components/schemas/FontOut"
+          },
+          "hold_min": {
+            "title": "Hold Min",
+            "type": "integer"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "palette": {
+            "$ref": "#/components/schemas/PaletteOut"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "welcome_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Welcome Text"
+          },
+          "whatsapp_e164": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp E164"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "timezone",
+          "currency",
+          "palette",
+          "font",
+          "logo_url",
+          "welcome_text",
+          "address",
+          "whatsapp_e164",
+          "cancellation_policy",
+          "deposit_enabled",
+          "deposit_instructions",
+          "hold_min",
+          "booking_horizon_days"
+        ],
+        "title": "PublicBusinessResponse",
+        "type": "object"
+      },
+      "PublicCancellationResponse": {
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/CancellationClassification"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "deposit_status": {
+            "$ref": "#/components/schemas/DepositStatus"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BookingStatus"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "classification",
+          "deposit_status"
+        ],
+        "title": "PublicCancellationResponse",
+        "type": "object"
+      },
+      "PublicCatalogResponse": {
+        "properties": {
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/PublicServiceOut"
+            },
+            "title": "Services",
+            "type": "array"
+          },
+          "vehicle_sizes": {
+            "items": {
+              "$ref": "#/components/schemas/PublicVehicleSize"
+            },
+            "title": "Vehicle Sizes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vehicle_sizes",
+          "services"
+        ],
+        "title": "PublicCatalogResponse",
+        "type": "object"
+      },
+      "PublicServiceOut": {
+        "properties": {
+          "bookable": {
+            "title": "Bookable",
+            "type": "boolean"
+          },
+          "category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Name"
+          },
+          "deposit_bps": {
+            "title": "Deposit Bps",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/PublicServicePrice"
+            },
+            "title": "Prices",
+            "type": "array"
+          },
+          "pricing_mode": {
+            "$ref": "#/components/schemas/PricingMode"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category_name",
+          "pricing_mode",
+          "bookable",
+          "deposit_bps",
+          "prices"
+        ],
+        "title": "PublicServiceOut",
+        "type": "object"
+      },
+      "PublicServicePrice": {
+        "properties": {
+          "deposit_cents": {
+            "title": "Deposit Cents",
+            "type": "integer"
+          },
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "price_cents": {
+            "title": "Price Cents",
+            "type": "integer"
+          },
+          "vehicle_size_id": {
+            "format": "uuid",
+            "title": "Vehicle Size Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vehicle_size_id",
+          "price_cents",
+          "duration_min",
+          "deposit_cents"
+        ],
+        "title": "PublicServicePrice",
+        "type": "object"
+      },
+      "PublicSlot": {
+        "properties": {
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_at",
+          "end_at"
+        ],
+        "title": "PublicSlot",
+        "type": "object"
+      },
+      "PublicVehicleSize": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "PublicVehicleSize",
+        "type": "object"
       },
       "ReadyCheck": {
         "properties": {
@@ -6879,6 +7451,514 @@
         "summary": "Update Permission Profile",
         "tags": [
           "Equipo"
+        ]
+      }
+    },
+    "/v1/public/{slug}": {
+      "get": {
+        "operationId": "get_business_v1_public__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBusinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Get Business",
+        "tags": [
+          "Turnero público"
+        ]
+      }
+    },
+    "/v1/public/{slug}/availability": {
+      "get": {
+        "operationId": "get_availability_v1_public__slug__availability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vehicle_size_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Vehicle Size Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "title": "Service Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAvailabilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Get Availability",
+        "tags": [
+          "Turnero público"
+        ]
+      }
+    },
+    "/v1/public/{slug}/bookings": {
+      "post": {
+        "operationId": "create_booking_v1_public__slug__bookings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicBookingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBookingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Create Booking",
+        "tags": [
+          "Turnero público"
+        ]
+      }
+    },
+    "/v1/public/{slug}/bookings/cancel": {
+      "post": {
+        "operationId": "cancel_booking_v1_public__slug__bookings_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicBookingCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCancellationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Cancel Booking",
+        "tags": [
+          "Turnero público"
+        ]
+      }
+    },
+    "/v1/public/{slug}/bookings/lookup": {
+      "post": {
+        "operationId": "lookup_booking_v1_public__slug__bookings_lookup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicBookingLookup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicBookingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Lookup Booking",
+        "tags": [
+          "Turnero público"
+        ]
+      }
+    },
+    "/v1/public/{slug}/catalog": {
+      "get": {
+        "operationId": "get_catalog_v1_public__slug__catalog_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Get Catalog",
+        "tags": [
+          "Turnero público"
         ]
       }
     },
