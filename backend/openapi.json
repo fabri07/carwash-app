@@ -6476,7 +6476,7 @@
     },
     "/v1/bookings/{id}/approve": {
       "post": {
-        "description": "Aprueba un pedido de la lista de espera en la misma fila (D5-9): pasa a pendiente de seña\n(hold nuevo) o a confirmado, según la seña vigente. 409 `SLOT_TAKEN` si el horario ya no está.",
+        "description": "Aprueba un pedido de la lista de espera en la misma fila (D5-9): pasa a pendiente de seña\n(hold nuevo) o a confirmado, según la seña vigente. 409 `SLOT_TAKEN` si el horario ya no\nestá.",
         "operationId": "approve_v1_bookings__id__approve_post",
         "parameters": [
           {

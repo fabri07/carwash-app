@@ -333,7 +333,8 @@ export interface paths {
         /**
          * Approve
          * @description Aprueba un pedido de la lista de espera en la misma fila (D5-9): pasa a pendiente de seña
-         *     (hold nuevo) o a confirmado, según la seña vigente. 409 `SLOT_TAKEN` si el horario ya no está.
+         *     (hold nuevo) o a confirmado, según la seña vigente. 409 `SLOT_TAKEN` si el horario ya no
+         *     está.
          */
         post: operations["approve_v1_bookings__id__approve_post"];
         delete?: never;
