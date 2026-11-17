@@ -268,3 +268,18 @@ cobros), así la pantalla no necesita otro pedido.
 **12.10 Permisos.** Como §1. Detalle: recibir y la recepción opcional son `JOBS_OPERAR`; ver el job y
 su línea de tiempo, `AGENDA_VER`. La tabla ruta → permiso está congelada en
 `tests/meta/test_permisos_operacion.py`.
+
+**12.11 Hallazgos de T3 (tester distinto del implementador).** 195 tests adversariales nuevos en
+`backend/app/tests/adversarial_f6/` (incluye concurrencia real en Postgres). Sin 500, sin fugas entre
+negocios, sin sobrecobro ni eventos duplicados. Cuatro hallazgos:
+
+- **H1 `occurred_at` del futuro (arreglado).** Un reloj de celular adelantado más de 5 minutos **se
+  acota a la hora del servidor** en todas las acciones (no 422: rechazarlo perdería el toque en la cola
+  offline). Así un ingreso sin turno no desaparece de la agenda de hoy.
+- **H3 seña mayor al total (arreglado).** `POST /bookings/manual` rechaza (422) una seña que supera el
+  precio del turno.
+- **H2 `occurred_at` anterior al evento previo (diferido).** La Fase 3 (X10) acepta a propósito horas
+  "imposibles" entre dispositivos con relojes distintos; el orden que manda es el de registro. Tests
+  marcados `xfail(strict=True)`. Reabrir si el dueño ve líneas de tiempo incoherentes en uso real.
+- **H3b seña menor a la pedida (diferido).** `confirm_deposit` (F5) solo exige `> 0`; si el dueño
+  cobra una seña parcial, es su decisión. `xfail(strict=True)`.

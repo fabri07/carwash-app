@@ -57,13 +57,28 @@ Reference = Annotated[ShortText, Field(max_length=REFERENCE_MAX)]
 ServiceIds = Annotated[list[uuid.UUID], Field(min_length=1, max_length=MAX_SERVICES)]
 
 
+#: Cuánto puede adelantarse el reloj de un celular antes de que se lo acote al del servidor.
+FUTURE_SKEW = dt.timedelta(minutes=5)
+
 # ── Cuerpos ──────────────────────────────────────────────────────────────────
 
 
 class OccurredBody(_Body):
-    """Toda acción del job: la hora del toque, del dispositivo."""
+    """Toda acción del job: la hora del toque, del dispositivo.
+
+    Un reloj del celular adelantado (más de `FUTURE_SKEW` por delante del servidor) no se rechaza:
+    un 422 perdería el toque en la cola offline. Se **acota a la hora del servidor**, así no
+    envenena la línea de tiempo ni mueve un ingreso a la agenda de otro día (§12.11).
+    """
 
     occurred_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def _clamp_future(self) -> Self:
+        now = dt.datetime.now(dt.UTC)
+        if self.occurred_at > now + FUTURE_SKEW:
+            self.occurred_at = now
+        return self
 
 
 class CancelDelayBody(OccurredBody):

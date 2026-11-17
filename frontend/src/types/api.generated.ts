@@ -2417,6 +2417,10 @@ export interface components {
         /**
          * OccurredBody
          * @description Toda acción del job: la hora del toque, del dispositivo.
+         *
+         *     Un reloj del celular adelantado (más de `FUTURE_SKEW` por delante del servidor) no se rechaza:
+         *     un 422 perdería el toque en la cola offline. Se **acota a la hora del servidor**, así no
+         *     envenena la línea de tiempo ni mueve un ingreso a la agenda de otro día (§12.11).
          */
         OccurredBody: {
             /**

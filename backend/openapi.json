@@ -2519,7 +2519,7 @@
         "type": "object"
       },
       "OccurredBody": {
-        "description": "Toda acción del job: la hora del toque, del dispositivo.",
+        "description": "Toda acción del job: la hora del toque, del dispositivo.\n\nUn reloj del celular adelantado (más de `FUTURE_SKEW` por delante del servidor) no se rechaza:\nun 422 perdería el toque en la cola offline. Se **acota a la hora del servidor**, así no\nenvenena la línea de tiempo ni mueve un ingreso a la agenda de otro día (§12.11).",
         "properties": {
           "occurred_at": {
             "format": "date-time",

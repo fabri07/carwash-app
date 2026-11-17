@@ -384,6 +384,8 @@ class OperationService(ServiceBase):
             if booking.status != BookingStatus.PENDIENTE_SENA:
                 raise GuardFailedError("the booking does not ask for a deposit")
             amount = deposit.amount_cents or booking.deposit_required_cents
+            if booking.price_cents is not None and amount > booking.price_cents:
+                raise GuardFailedError("the deposit cannot exceed the booking total")
             confirmation = await bookings.confirm_deposit(
                 booking.id,
                 PaymentInput(
