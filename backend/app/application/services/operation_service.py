@@ -41,6 +41,7 @@ from app.persistence.models.job import Job, JobInspection, JobItem
 from app.persistence.models.money import Payment
 from app.persistence.models.tenant import Tenant
 from app.persistence.repositories.agenda import BookingRepository
+from app.persistence.repositories.catalog import PaymentMethodRepository
 from app.persistence.repositories.inbox import InboxBookingRepository
 from app.persistence.repositories.jobs import (
     JobEventRepository,
@@ -350,6 +351,9 @@ class OperationService(ServiceBase):
             raise GuardFailedError(
                 "a manual booking must start in the future: use a retrospective job for the past"
             )
+        if deposit is not None:
+            # Antes de crear nada: un medio ajeno o inexistente no puede dejar un turno a medias.
+            await self._require(PaymentMethodRepository(self._session), deposit.payment_method_id)
         customer_id = await self._customer(customer_name, customer_phone, channel, required=True)
         assert customer_id is not None
         vehicle_id = await self._vehicle(plate, customer_id, vehicle_size_id, anonymous=False)

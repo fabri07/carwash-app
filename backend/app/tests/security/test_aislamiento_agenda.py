@@ -84,6 +84,7 @@ MATRIZ: dict[tuple[str, str], Permission] = {
     ("POST", "/v1/agenda/openings"): Permission.TURNOS_GESTIONAR,
     ("DELETE", "/v1/agenda/openings/{id}"): Permission.TURNOS_GESTIONAR,
     ("GET", "/v1/agenda/availability"): Permission.AGENDA_VER,
+    ("GET", "/v1/agenda/day"): Permission.AGENDA_VER,
     ("PATCH", "/v1/services/{id}"): Permission.CATALOGO_EDITAR,
     ("DELETE", "/v1/resources/{id}"): Permission.CATALOGO_EDITAR,
 }

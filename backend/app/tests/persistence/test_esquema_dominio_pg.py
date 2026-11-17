@@ -868,6 +868,7 @@ PYTHON_POR_TIPO: dict[str, type[StrEnum]] = {
     enums.BOOKING_SOURCE_ENUM: enums.BookingSource,
     enums.BOOKING_STATUS_ENUM: enums.BookingStatus,
     enums.JOB_STATUS_ENUM: enums.JobStatus,
+    enums.JOB_ENTRY_MODE_ENUM: enums.JobEntryMode,
     enums.JOB_EVENT_TYPE_ENUM: enums.JobEventType,
     enums.DIRT_LEVEL_ENUM: enums.DirtLevel,
     enums.QUOTE_STATUS_ENUM: enums.QuoteStatus,
