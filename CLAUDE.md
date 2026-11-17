@@ -25,8 +25,10 @@ probado) y frontend (Next.js, login/registro/panel vacío, cola offline, PWA).
 permisos, configuración y seña (global y por servicio), servicios con plantillas y búsqueda, catálogo de
 vehículos, personalización y wizard de alta; checkpoint en staging hecho el 2026-11-11.
 
-**Fase 5 en curso** (contrato: `docs/adr/FASE-5-CONTRATO.md`): 5.0 contrato → 5.1 motor de
-disponibilidad y configuración de agenda → 5.2 turnero público ‖ 5.3 bandeja del dueño.
+**Fase 5 completa** (contrato: `docs/adr/FASE-5-CONTRATO.md`): contrato, motor de disponibilidad y
+configuración de agenda (5.1), turnero público (5.2) y bandeja del dueño (5.3); checkpoint en staging
+hecho el 2026-11-16. **Fase 6 en curso** (contrato: `docs/adr/FASE-6-CONTRATO.md`): agenda diaria y
+operación rápida.
 
 El **relevamiento de la planilla del 2026-11-10** sumó al MVP fidelidad y avisos por WhatsApp (F7C nueva),
 propinas (F7), reglas horarias por servicio, bloqueos y lista de espera (F5) y carga retrospectiva (F6).
