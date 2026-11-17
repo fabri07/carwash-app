@@ -21,7 +21,8 @@ export const QUEUED_NOTICE =
  * doble toque no manda dos claves). Traduce el resultado a un aviso en castellano; un 409 de estado
  * (`INVALID_TRANSITION`, `CONFLICT`) vuelve a leer el job y la agenda sin perder nada.
  *
- * El `occurred_at` NO se pone acá: lo pone quien llama, primero en su manejador de toque.
+ * El `occurred_at` NO se pone acá ni en la pantalla: lo fija la cola al tocar (`meta.occurredAt`) y el
+ * handler lo agrega al enviar.
  */
 export function useActionRunner() {
   const { run } = useOperacionSubmit();
@@ -35,13 +36,14 @@ export function useActionRunner() {
       kind: OperacionKind,
       action: OperacionAction,
       payload: { jobId?: string; paymentId?: string; body: unknown },
+      dedupeKey: string,
     ): Promise<Outcome | null> => {
       if (inFlight.current) return null;
       inFlight.current = true;
       setBusy(true);
       setNotice(null);
       try {
-        const out = await run(kind, payload);
+        const out = await run(kind, payload, dedupeKey);
         if (out.status === "queued") setNotice({ tone: "info", text: QUEUED_NOTICE });
         if (out.status === "error") {
           setNotice({ tone: "error", text: operacionErrorMessage(out.error, action) });

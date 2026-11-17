@@ -628,10 +628,17 @@ describe("Sin conexión: cola offline con la hora del toque", () => {
     await userEvent.click(await screen.findByRole("button", { name: "INICIAR" }));
     // Quedó en la cola y la pantalla ya muestra el paso siguiente (se puede seguir sin señal).
     expect(await screen.findByRole("button", { name: "FINALIZAR" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/Sin conexión/);
+    expect(
+      screen
+        .getAllByRole("status")
+        .map((n) => n.textContent)
+        .join(" "),
+    ).toMatch(/Sin conexión/);
     const [item] = useOfflineQueueStore.getState().items;
     expect(item!.kind).toBe("operacion.start");
-    const tapAt = (item!.payload as { body: { occurred_at: string } }).body.occurred_at;
+    const tapAt = item!.occurredAt as string; // la fija la cola al tocar
+    expect(item!.payload).not.toHaveProperty("body.occurred_at"); // el payload no lleva hora propia
+    expect(item!.dedupeKey).toBe("iniciar:j1");
     const intentoOnline = sv.startJob.mock.calls[0]!;
     expect(intentoOnline[1].occurred_at).toBe(tapAt);
     expect(intentoOnline[2]).toBe(item!.id); // el id del ítem ES la Idempotency-Key
@@ -664,6 +671,68 @@ describe("Sin conexión: cola offline con la hora del toque", () => {
     await userEvent.click(boton);
     expect(sv.startJob).toHaveBeenCalledTimes(1);
     release(job({ status: "EN_PROCESO" }));
+  });
+});
+
+describe("Cola endurecida: conflictos y fallidos visibles", () => {
+  const queued = (over: object) => ({
+    id: "q1",
+    userId: "u1",
+    tenantId: "t1",
+    kind: "operacion.start",
+    payload: { jobId: "j1", body: {} },
+    createdAt: "2030-11-25T13:00:00.000Z",
+    occurredAt: "2030-11-25T13:00:00.000Z",
+    attempts: 0,
+    failedAt: "2030-11-25T13:05:00.000Z",
+    ...over,
+  });
+
+  it("un conflicto descartado se muestra en español y se saca con 'Entendido'", async () => {
+    useOfflineQueueStore.setState({ conflicts: [queued({})] as never });
+    renderUi(<JobPageClient id="j1" />);
+    const alerta = await screen.findByText(/No se aplicó el inicio/);
+    expect(alerta).toHaveTextContent(/otro dispositivo se adelantó/);
+    await userEvent.click(screen.getByRole("button", { name: "Entendido" }));
+    expect(useOfflineQueueStore.getState().conflicts).toHaveLength(0);
+  });
+
+  it("un fallido se puede reintentar o descartar, también desde la agenda", async () => {
+    useOfflineQueueStore.setState({ failed: [queued({ kind: "operacion.pay" })] as never });
+    renderUi(<AgendaPageClient />);
+    expect(await screen.findByText(/No se pudo enviar el cobro/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(useOfflineQueueStore.getState().failed).toHaveLength(0);
+    await waitFor(() => expect(sv.recordPayment).toHaveBeenCalledTimes(1)); // reintentó con la misma cola
+    useOfflineQueueStore.setState({ items: [], failed: [queued({})] as never });
+    await userEvent.click(await screen.findByRole("button", { name: "Descartar" }));
+    expect(useOfflineQueueStore.getState().failed).toHaveLength(0);
+  });
+
+  it("los dedupeKey son acción:destino y un toque repetido en vuelo no deja el botón colgado", async () => {
+    let release: (j: Job) => void = () => undefined;
+    sv.getJob.mockResolvedValue(job({ status: "EN_PROCESO" }));
+    sv.finishJob.mockReturnValue(new Promise<Job>((r) => (release = r)));
+    renderUi(<JobPageClient id="j1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "FINALIZAR" }));
+    release(job({ status: "FINALIZADO" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "FINALIZAR" })).toBeEnabled());
+  });
+
+  it("LLEGÓ de un turno usa llego:<bookingId> y sin turno una clave propia por toque", async () => {
+    sv.receiveJob.mockResolvedValue(job());
+    sv.getDay.mockResolvedValue(
+      day([entry({ kind: "BOOKING", job_id: null, job_status: null, booking_id: "b1" })]),
+    );
+    searchParams = new URLSearchParams("date=2030-11-25");
+    renderUi(<BookingArrivalClient bookingId="b1" />);
+    sv.receiveJob.mockRejectedValueOnce(networkError());
+    await userEvent.click(await screen.findByRole("button", { name: "LLEGÓ" }));
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(1));
+    expect(useOfflineQueueStore.getState().items[0]!.dedupeKey).toBe("llego:b1");
+    expect(useOfflineQueueStore.getState().items[0]!.payload).toEqual({
+      body: { booking_id: "b1" },
+    });
   });
 });
 

@@ -10,7 +10,6 @@ import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { settle, useCargaData } from "./carga";
 import { PersonFields, ResourceSelect, VehicleFields } from "./fields";
 import { orNull, walkInSchema, type WalkInInput } from "./schemas";
-import { tapTime } from "./time";
 import { BIG_ACTION } from "./touch";
 import type { Job, ReceiveBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
@@ -35,8 +34,7 @@ export function WalkInForm() {
     },
   });
   const { onSubmit, formError } = useFormSubmit(form, async (v) => {
-    const body: ReceiveBody = {
-      occurred_at: tapTime(),
+    const body: Omit<ReceiveBody, "occurred_at"> = {
       customer_name: orNull(v.customer_name),
       customer_phone: orNull(v.customer_phone),
       plate: orNull(v.plate),
@@ -45,7 +43,7 @@ export function WalkInForm() {
       resource_id: v.resource_id || null,
       channel: "CALLE",
     };
-    const out = await run(KINDS.receive, { body });
+    const out = await run(KINDS.receive, { body }, `llego-sin-turno:${crypto.randomUUID()}`);
     settle(out, "receive", "Llegada registrada");
     const job = out.status === "ok" ? (out.data as Job | undefined) : undefined;
     router.push(job ? `/operacion/${job.id}` : "/agenda");

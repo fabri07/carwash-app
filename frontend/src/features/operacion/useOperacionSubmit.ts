@@ -3,7 +3,11 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
-import { useOfflineSubmit, type OfflineHandlers } from "@/hooks/useOfflineSubmit";
+import {
+  useOfflineSubmit,
+  type OfflineHandlers,
+  type OfflinePostMeta,
+} from "@/hooks/useOfflineSubmit";
 import { turnosKeys } from "@/features/turnos/queries";
 import { operacionKeys } from "./queries";
 import {
@@ -43,6 +47,10 @@ export const KINDS = {
 
 export type OperacionKind = (typeof KINDS)[keyof typeof KINDS];
 
+/**
+ * Lo mínimo para reenviar (la cola guarda esto en claro en localStorage: nada extra). `occurred_at`
+ * NO va acá: lo agrega el handler con la hora del toque que fija la cola (`meta.occurredAt`).
+ */
 type Payload = { jobId?: string; paymentId?: string; body: never };
 
 /** Resultado de un envío: guardado, encolado sin conexión, o rechazado (con el error original). */
@@ -64,9 +72,13 @@ function buildHandlers(
   onError: (e: unknown) => void,
 ): OfflineHandlers {
   const wrap =
-    (call: (p: Payload, key: string) => Promise<unknown>) => async (raw: unknown, key: string) => {
+    (call: (p: Payload, key: string) => Promise<unknown>, withTime: boolean) =>
+    async (raw: unknown, key: string, meta?: OfflinePostMeta) => {
       try {
-        const data = await call(raw as Payload, key);
+        const p = raw as Payload;
+        const at = meta?.occurredAt ?? new Date().toISOString();
+        const body = (withTime ? { ...(p.body as object), occurred_at: at } : p.body) as never;
+        const data = await call({ ...p, body }, key);
         onResult(data);
         if (looksLikeJob(data)) qc.setQueryData(operacionKeys.job(data.id), data);
         return data;
@@ -91,15 +103,20 @@ function buildHandlers(
   return Object.fromEntries(
     Object.entries(defs).map(([kind, call]) => [
       kind,
-      { post: wrap(call), invalidate: INVALIDATE },
+      {
+        post: wrap(call, kind !== KINDS.retrospective && kind !== KINDS.manualBooking),
+        invalidate: INVALIDATE,
+      },
     ]),
   );
 }
 
 /**
- * `run(kind, payload)` manda una acción por la cola offline y resuelve con el resultado. Montarlo
+ * `run(kind, payload, dedupeKey)` manda una acción por la cola offline y resuelve con el resultado. Montarlo
  * con `autoSync` en la pantalla hace el flush al volver la señal. Un envío a la vez por pantalla:
- * los botones se deshabilitan mientras tanto (`busy` lo lleva quien llama).
+ * los botones se deshabilitan mientras tanto. `dedupeKey` es `acción:destino` (`iniciar:<jobId>`): un
+ * toque repetido no se manda dos veces y las acciones de un mismo job salen en orden. Un toque
+ * repetido en vuelo resuelve como `queued` (no deja el botón colgado).
  */
 export function useOperacionSubmit() {
   const qc = useQueryClient();
@@ -124,6 +141,7 @@ export function useOperacionSubmit() {
     (
       kind: OperacionKind,
       payload: { jobId?: string; paymentId?: string; body: unknown },
+      dedupeKey: string,
     ): Promise<Outcome> =>
       new Promise((resolve) => {
         lastError.current = null;
@@ -132,6 +150,9 @@ export function useOperacionSubmit() {
           onSuccess: () => resolve({ status: "ok", data: lastData.current }),
           onQueued: () => resolve({ status: "queued" }),
           onError: () => resolve({ status: "error", error: lastError.current }),
+          // 409 INVALID_TRANSITION en línea: se muestra como error (el estado cambió).
+          onConflict: () => resolve({ status: "error", error: lastError.current }),
+          dedupeKey,
         });
       }),
     [submit],

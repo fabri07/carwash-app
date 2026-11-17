@@ -64,7 +64,11 @@ export function RetrospectiveForm() {
           }
         : null,
     };
-    settle(await run(KINDS.retrospective, { body }), "retrospective", "Trabajo cargado");
+    settle(
+      await run(KINDS.retrospective, { body }, `carga-retro:${crypto.randomUUID()}`),
+      "retrospective",
+      "Trabajo cargado",
+    );
     router.push(`/agenda?date=${v.date}`);
   });
 

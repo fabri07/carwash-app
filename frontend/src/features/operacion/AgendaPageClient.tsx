@@ -11,6 +11,7 @@ import { addDays, isIsoDate, todayInZone } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { DayBoard } from "./DayBoard";
 import { Guard } from "./Guard";
+import { QueueBanner } from "./QueueBanner";
 import { useBusinessTimeZone, useDay } from "./queries";
 import { TOUCH_TARGET } from "./touch";
 
@@ -69,6 +70,8 @@ function Agenda({ initialDate }: { initialDate?: string }) {
           )}
         </div>
       </div>
+
+      <QueueBanner />
 
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Elegir día">
         <Button

@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { settle } from "./carga";
 import { Guard } from "./Guard";
 import { inspectionSchema, orNull, type InspectionInput } from "./schemas";
-import { tapTime } from "./time";
 import { TOUCH_TARGET } from "./touch";
 import type { DirtLevel, InspectionBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
@@ -49,13 +48,16 @@ function InspectionForm({ id }: { id: string }) {
     defaultValues: { dirt_level: "", valuables: "", pre_existing_damage: "" },
   });
   const { onSubmit, formError } = useFormSubmit(form, async (v) => {
-    const body: InspectionBody = {
-      occurred_at: tapTime(),
+    const body: Omit<InspectionBody, "occurred_at"> = {
       dirt_level: (v.dirt_level || null) as DirtLevel | null,
       valuables: orNull(v.valuables),
       pre_existing_damage: orNull(v.pre_existing_damage),
     };
-    settle(await run(KINDS.inspection, { jobId: id, body }), "inspection", "Recepción guardada");
+    settle(
+      await run(KINDS.inspection, { jobId: id, body }, `recepcion:${id}`),
+      "inspection",
+      "Recepción guardada",
+    );
     router.push(`/operacion/${id}`);
   });
   return (

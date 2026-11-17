@@ -61,7 +61,11 @@ export function ManualBookingForm() {
           }
         : null,
     };
-    settle(await run(KINDS.manualBooking, { body }), "manualBooking", "Turno cargado");
+    settle(
+      await run(KINDS.manualBooking, { body }, `turno-a-mano:${crypto.randomUUID()}`),
+      "manualBooking",
+      "Turno cargado",
+    );
     router.push("/agenda");
   });
 

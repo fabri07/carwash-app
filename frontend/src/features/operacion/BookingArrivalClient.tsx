@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { Guard } from "./Guard";
 import { useBusinessTimeZone, useDay } from "./queries";
 import { entryStatus } from "./status";
-import { tapTime } from "./time";
 import { BIG_ACTION, TOUCH_TARGET } from "./touch";
 import type { Job } from "./types";
 import { useActionRunner } from "./useActionRunner";
@@ -64,10 +63,12 @@ function Arrival({ bookingId }: { bookingId: string }) {
   const status = entryStatus(entry);
 
   async function arrived() {
-    const at = tapTime();
-    const out = await exec(KINDS.receive, "receive", {
-      body: { booking_id: bookingId, occurred_at: at },
-    });
+    const out = await exec(
+      KINDS.receive,
+      "receive",
+      { body: { booking_id: bookingId } },
+      `llego:${bookingId}`,
+    );
     if (out?.status === "ok") {
       const job = out.data as Job | undefined;
       router.replace(job ? `/operacion/${job.id}` : "/agenda");

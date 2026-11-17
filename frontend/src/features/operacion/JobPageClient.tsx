@@ -15,6 +15,7 @@ import { Guard } from "./Guard";
 import { JobTimeline } from "./JobTimeline";
 import { applyOptimistic, type OptimisticAction } from "./optimistic";
 import { PayPanel } from "./PayPanel";
+import { QueueBanner } from "./QueueBanner";
 import { useBusinessTimeZone, useJob, usePaymentMethods } from "./queries";
 import { JOB_STATUS } from "./status";
 import { formatStamp, tapTime } from "./time";
@@ -89,38 +90,34 @@ function JobScreen({ id }: { id: string }) {
   async function act(
     kind: (typeof KINDS)[keyof typeof KINDS],
     action: Parameters<typeof operacionErrorMessage>[1],
-    at: string,
+    dedupe: string,
     body: Record<string, unknown>,
     optimistic: OptimisticAction,
-    extra?: { paymentId?: string },
   ) {
-    const out = await exec(kind, action, {
-      jobId: id,
-      ...extra,
-      body: { occurred_at: at, ...body },
-    });
+    // `occurred_at` lo pone la cola al tocar; acá solo va lo necesario para reenviar.
+    const out = await exec(kind, action, { jobId: id, body }, `${dedupe}:${id}`);
     if (out?.status === "queued") setLocal(applyOptimistic(job, optimistic));
     return out;
   }
 
   const start = () => {
     const at = tapTime();
-    void act(KINDS.start, "start", at, {}, { kind: "start", at });
+    void act(KINDS.start, "start", "iniciar", {}, { kind: "start", at });
   };
   const finish = () => {
     const at = tapTime();
-    void act(KINDS.finish, "finish", at, {}, { kind: "finish", at });
+    void act(KINDS.finish, "finish", "finalizar", {}, { kind: "finish", at });
   };
   const pickUp = () => {
     const at = tapTime();
-    void act(KINDS.pickUp, "pickUp", at, {}, { kind: "pickUp", at });
+    void act(KINDS.pickUp, "pickUp", "retirar", {}, { kind: "pickUp", at });
   };
   const pay = async (methodId: string, amountCents: number | undefined) => {
     const at = tapTime();
     const out = await act(
       KINDS.pay,
       "pay",
-      at,
+      "cobrar",
       { payment_method_id: methodId, ...(amountCents ? { amount_cents: amountCents } : {}) },
       { kind: "pay", at, amountCents: amountCents ?? job.balance_due_cents },
     );
@@ -161,6 +158,8 @@ function JobScreen({ id }: { id: string }) {
           )}
         </p>
       </div>
+
+      <QueueBanner />
 
       {notice && (
         <p
@@ -294,7 +293,7 @@ function JobScreen({ id }: { id: string }) {
           const out = await act(
             KINDS.cancelDelay,
             "cancelDelay",
-            at,
+            "cancel-delay",
             {},
             { kind: "cancelDelay", at },
           );
@@ -311,11 +310,12 @@ function JobScreen({ id }: { id: string }) {
         confirmLabel="Anular cobro"
         variant="destructive"
         onSubmit={async (reason) => {
-          const out = await exec(KINDS.void, "void", {
-            jobId: id,
-            paymentId: voiding ?? undefined,
-            body: { occurred_at: tapTime(), reason },
-          });
+          const out = await exec(
+            KINDS.void,
+            "void",
+            { jobId: id, paymentId: voiding ?? undefined, body: { reason } },
+            `anular:${id}`,
+          );
           if (out?.status === "error") throw new Error(operacionErrorMessage(out.error, "void"));
           setNotice(null);
         }}
