@@ -50,12 +50,23 @@ function styleMinPx(el: HTMLElement, axis: "h" | "w"): number | null {
   return best;
 }
 
+/**
+ * Oculto por sí mismo o por un ancestro (`hidden`, `aria-hidden`, clase `hidden`,
+ * `display: none` inline). Límite conocido: no se resuelven variantes
+ * responsive como `sm:hidden` ni estilos que vengan de una hoja de CSS.
+ */
 function isHidden(el: HTMLElement): boolean {
-  return (
-    el.hidden ||
-    el.getAttribute("aria-hidden") === "true" ||
-    (el.getAttribute("class") ?? "").split(/\s+/).includes("hidden")
-  );
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    if (
+      node.hidden ||
+      node.getAttribute("aria-hidden") === "true" ||
+      node.style.display === "none" ||
+      (node.getAttribute("class") ?? "").split(/\s+/).includes("hidden")
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -69,7 +80,8 @@ export function findSmallTouchTargets(root: ParentNode): HTMLElement[] {
     if (el.hasAttribute("data-touch-exempt") || isHidden(el)) return;
     // Un checkbox/radio dentro de un <label> grande lo toca el label; un botón
     // chico dentro de un label sigue siendo chico.
-    const isToggle = el instanceof HTMLInputElement && el.type !== "text";
+    const isToggle =
+      el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio");
     const hit = (isToggle ? el.closest("label") : null) ?? el;
     for (const axis of ["h", "w"] as const) {
       const cls = hit.getAttribute("class") ?? "";

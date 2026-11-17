@@ -59,13 +59,6 @@ function strategyFor(request, scopeOrigin) {
 /** Tope de páginas guardadas: las más viejas se descartan. */
 var MAX_PAGES = 50;
 
-/** Una navegación se guarda por ruta, sin query: `?page=N` no multiplica entradas. */
-function pageKey(request) {
-  var url = new URL(request.url);
-  if (request.mode !== "navigate") return request;
-  return new Request(url.origin + url.pathname);
-}
-
 /** Una respuesta con datos de sesión o de usuario no se guarda jamás. */
 function isCacheable(response) {
   if (!response || !response.ok || response.redirected) return false;
@@ -101,7 +94,7 @@ async function cacheFirst(request) {
 
 async function networkFirst(request) {
   var cache = await caches.open(PAGES_CACHE);
-  var key = pageKey(request);
+  var key = request;
   var response;
   try {
     response = await fetch(request);
@@ -112,7 +105,10 @@ async function networkFirst(request) {
   }
   // Solo respuestas sanas y no personales; nunca un redirect (p. ej. el 307 a
   // /login del middleware), que serviría una sesión vieja desde la caché.
-  if (isCacheable(response)) await safePut(cache, key, response, MAX_PAGES);
+  // Con query string (`/agenda?fecha=...`) no se guarda: sin red no se serviría
+  // la agenda de OTRO día. Solo páginas sin query, con tope de MAX_PAGES.
+  var hasQuery = new URL(request.url).search !== "";
+  if (!hasQuery && isCacheable(response)) await safePut(cache, key, response, MAX_PAGES);
   return response;
 }
 

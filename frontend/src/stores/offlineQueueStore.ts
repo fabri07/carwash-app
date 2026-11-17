@@ -21,7 +21,7 @@ export interface QueuedItem {
   kind: QueuedKind;
   payload: unknown;
   createdAt: string; // ISO
-  /** Intentos rechazados con un 4xx permanente. Las fallas transitorias NO cuentan. */
+  /** Intentos fallidos por un error que no es HTTP (bug del handler). Las fallas de red/5xx no cuentan acá. */
   attempts: number;
   lastError?: string;
   /**

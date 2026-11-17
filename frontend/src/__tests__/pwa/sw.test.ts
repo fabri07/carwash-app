@@ -133,6 +133,18 @@ describe("service worker", () => {
     }
   });
 
+  it("una navegación con query no se guarda: sin red no se sirve la agenda de OTRO día", async () => {
+    const a = `${ORIGIN}/agenda?fecha=2026-11-16`;
+    const b = `${ORIGIN}/agenda?fecha=2026-11-17`;
+    fetchMock.mockResolvedValueOnce(new Response("agenda A", { status: 200 }));
+    await sw.handleFetch(navigate(a), ORIGIN);
+    expect(await storage.match(a)).toBeUndefined();
+    // Sin red, ni A ni B salen de la caché.
+    fetchMock.mockRejectedValue(new Error("offline"));
+    await expect(sw.handleFetch(navigate(b), ORIGIN)).rejects.toThrow("offline");
+    await expect(sw.handleFetch(navigate(a), ORIGIN)).rejects.toThrow("offline");
+  });
+
   it("ni un POST ni el propio sw.js pasan por la caché", () => {
     expect(sw.strategyFor(new Request(`${ORIGIN}/dashboard`, { method: "POST" }), ORIGIN)).toBe(
       "network-only",

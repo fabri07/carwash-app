@@ -56,19 +56,20 @@ export interface SubmitCallbacks {
 }
 
 /**
- * Tope de rechazos PERMANENTES (4xx) antes de sacar un ítem de la cola (evita
- * el ítem veneno que bloquea para siempre). Las fallas transitorias no cuentan:
- * con Railway caído y señal intermitente, 50 flush seguidos con 5xx no pueden
- * costar un lavado que el usuario cree guardado. Y al agotarse, el ítem no se
- * borra: pasa a `failed`, visible.
+ * Tope de intentos de un ítem cuyo handler tira un error que NO es HTTP (un
+ * bug): al agotarse pasa a `failed`, visible, en vez de quedar pendiente para
+ * siempre. Los 4xx permanentes no se reintentan: pasan a `failed` de una.
  */
 export const MAX_FLUSH_ATTEMPTS = 5;
 
 /**
- * Cuántos rechazos permanentes toleraba un ítem antes de pasar a `failed`.
- * Desde el 6.3 un 4xx permanente es definitivo (no se reintenta el mismo
- * payload): pasa a `failed` de una. Se exporta solo por compatibilidad.
+ * Tope de fallas transitorias CONSECUTIVAS de un mismo ítem (5xx, 408, 425,
+ * 429) antes de pasar a `failed` (visible, recuperable con `retryFailed`). Un
+ * 5xx determinista no puede bloquear la cola para siempre. La red caída no
+ * cuenta: sin señal no es culpa del ítem.
  */
+export const MAX_TRANSIENT_FAILURES = 20;
+
 /** Estados que dicen "ahora no", no "nunca": 408 timeout, 425 too early, 429 rate limit. */
 const TRANSIENT_4XX = new Set([408, 425, 429]);
 
@@ -137,12 +138,6 @@ export function classifyFlushError(e: unknown): FlushErrorClass {
 // Error de red real: axios sin `response` (timeout/abort/DNS/CORS/offline).
 export function isNetworkError(e: unknown): boolean {
   return axios.isAxiosError(e) && !e.response;
-}
-
-// Error de cliente (4xx): permanente — reintentar el mismo payload no lo va a arreglar.
-export function isClientError(e: unknown): boolean {
-  const status = axios.isAxiosError(e) ? e.response?.status : undefined;
-  return status !== undefined && status >= 400 && status < 500;
 }
 
 /**
@@ -264,7 +259,27 @@ function targetOf(dedupeKey: string): string | null {
  * usuario sobre la misma acción reusa la Idempotency-Key y la hora del toque,
  * porque el servidor pudo haber guardado la primera.
  */
-const reservedByDedupe = new Map<string, { id: string; occurredAt: string }>();
+const reservedByDedupe = new Map<string, { id: string; occurredAt: string; at: number }>();
+
+/** La reserva vence: un reintento tardío no hereda la clave ni la hora de un toque viejo. */
+const RESERVATION_TTL_MS = 10 * 60_000;
+
+/** Fallas transitorias HTTP consecutivas por ítem (en memoria; se reinicia al recargar). */
+const transientCount = new Map<string, number>();
+
+/** Las claves de dedupe/reserva son por dueño: otro usuario o negocio no las hereda. */
+function scopedKey(owner: { userId: string; tenantId: string }, dedupeKey: string): string {
+  return `${owner.userId}|${owner.tenantId}|${dedupeKey}`;
+}
+
+function getReservation(key: string): { id: string; occurredAt: string } | undefined {
+  const r = reservedByDedupe.get(key);
+  if (r && Date.now() - r.at > RESERVATION_TTL_MS) {
+    reservedByDedupe.delete(key);
+    return undefined;
+  }
+  return r;
+}
 
 function logStorageFailure(e: unknown) {
   // El storage falló al escribir (cuota, modo privado): la memoria ya quedó bien.
@@ -303,23 +318,39 @@ export function useOfflineSubmit(opts: {
   onItemConflictRef.current = opts.onItemConflict;
   const autoSyncRef = useRef(opts.autoSync);
   autoSyncRef.current = opts.autoSync;
-  const autoFlushRef = useRef<() => Promise<void>>(async () => undefined);
+  const autoFlushRef = useRef<(fromTimer?: boolean) => Promise<void>>(async () => undefined);
 
-  /** Devuelve `true` si el vaciado terminó por una falla transitoria. */
-  const runFlush = useCallback(async (): Promise<boolean> => {
-    if (flushing) return false;
-    if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+  /**
+   * `ran`: el vaciado realmente corrió (no lo frenó otro vaciado, un lock
+   * tomado ni estar offline). `transient`: terminó por una falla transitoria.
+   */
+  const runFlush = useCallback(async (): Promise<{ ran: boolean; transient: boolean }> => {
+    if (flushing) return { ran: false, transient: false };
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return { ran: false, transient: false };
+    }
     flushing = true;
     let hadTransient = false;
+    let ran = false;
     try {
       await withFlushLock(async () => {
+        ran = true;
         // Solo lo del usuario y tenant de la sesión actual (tablet compartida).
         // Se lee DENTRO del lock: la cola puede haber cambiado en otra pestaña.
         const owner = currentOwner();
         const items = pendingForCurrentUser();
         const queue = useOfflineQueueStore.getState;
         // FIFO: el orden de la cola es el orden de los toques (iniciar antes de finalizar).
+        // Jobs con un ítem trabado en este vaciado: sus acciones siguientes
+        // quedan detrás (nunca se adelantan), los demás jobs siguen.
+        const blocked = new Set<string>();
+        const blockJob = (key: string | undefined) => {
+          const t = key ? targetOf(key) : null;
+          if (t) blocked.add(t);
+        };
         for (const item of [...items]) {
+          const jobOfItem = item.dedupeKey ? targetOf(item.dedupeKey) : null;
+          if (jobOfItem && blocked.has(jobOfItem)) continue;
           // La sesión pudo cambiar durante un POST en vuelo: la carga de A no
           // se manda con las cookies de B.
           const now = currentOwner();
@@ -334,14 +365,16 @@ export function useOfflineSubmit(opts: {
             await handler.post(item.payload, item.id, {
               occurredAt: item.occurredAt ?? item.createdAt,
             });
-            if (item.dedupeKey) reservedByDedupe.delete(item.dedupeKey);
+            if (item.dedupeKey) reservedByDedupe.delete(scopedKey(item, item.dedupeKey));
+            transientCount.delete(item.id);
             safely(() => queue().remove(item.id));
             invalidate(queryClient, handler);
           } catch (e) {
             const kind = classifyFlushError(e);
             if (item.dedupeKey && kind !== "transient" && kind !== "unauthenticated") {
-              reservedByDedupe.delete(item.dedupeKey);
+              reservedByDedupe.delete(scopedKey(item, item.dedupeKey));
             }
+            if (kind !== "transient") transientCount.delete(item.id);
             if (kind === "duplicate") {
               safely(() => queue().remove(item.id));
               invalidate(queryClient, handler);
@@ -363,11 +396,26 @@ export function useOfflineSubmit(opts: {
               } else {
                 safely(() => queue().markFailed(item.id, errorMessage(e)));
               }
+              // Un bug del handler en este ítem: lo que sigue del MISMO job no se
+              // manda adelantado (FIFO por job). Los demás jobs siguen.
+              blockJob(item.dedupeKey);
             } else if (kind === "transient") {
               // Red caída, backend caído o sobrecargado: los ítems siguientes
               // fallarían igual. Se anota el motivo, no se gasta intento y se
               // corta; el reintento programado o el próximo `online` sigue.
               hadTransient = true;
+              const n = (transientCount.get(item.id) ?? 0) + 1;
+              transientCount.set(item.id, n);
+              if (n >= MAX_TRANSIENT_FAILURES && axios.isAxiosError(e) && e.response) {
+                // 5xx/408/425/429 determinista: no bloquea la cola para siempre.
+                transientCount.delete(item.id);
+                const status = e.response.status;
+                safely(() => queue().moveToFailed(item.id, errorMessage(e), status));
+                const failed = queue().failed.find((f) => f.id === item.id);
+                if (failed) onItemFailedRef.current?.(failed);
+                blockJob(item.dedupeKey);
+                continue;
+              }
               safely(() => queue().noteTransient(item.id, errorMessage(e)));
               break;
             } else if (kind === "unauthenticated") {
@@ -392,28 +440,38 @@ export function useOfflineSubmit(opts: {
     } finally {
       flushing = false;
     }
-    return hadTransient;
+    return { ran, transient: hadTransient };
   }, [queryClient]);
 
-  /** Vaciado automático (online, montaje, timer): respeta el backoff y lo programa. */
-  const autoFlush = useCallback(async () => {
-    if (Date.now() < nextAllowedAt) return; // ráfaga de `online`: se coalesce
-    const transient = await runFlush();
-    if (!transient) {
-      consecutiveFailures = 0;
-      nextAllowedAt = 0;
-      return;
-    }
-    consecutiveFailures += 1;
-    if (consecutiveFailures > RETRY_MAX_SCHEDULED || !autoSyncRef.current) return;
-    const delay = backoffDelay(consecutiveFailures);
-    nextAllowedAt = Date.now() + delay;
-    if (retryTimer) clearTimeout(retryTimer);
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      void autoFlushRef.current().catch(logStorageFailure);
-    }, delay);
-  }, [runFlush]);
+  /**
+   * Vaciado automático (online, montaje, timer): respeta el backoff y lo
+   * programa. El timer salta la compuerta (ya esperó lo que correspondía).
+   */
+  const autoFlush = useCallback(
+    async (fromTimer = false) => {
+      if (!fromTimer && Date.now() < nextAllowedAt) return; // ráfaga de `online`: se coalesce
+      const { ran, transient } = await runFlush();
+      // Otro vaciado en curso, lock tomado u offline: el backoff no se toca.
+      if (!ran) return;
+      if (!transient) {
+        consecutiveFailures = 0;
+        nextAllowedAt = 0;
+        return;
+      }
+      consecutiveFailures += 1;
+      if (consecutiveFailures > RETRY_MAX_SCHEDULED || !autoSyncRef.current) return;
+      const delay = backoffDelay(consecutiveFailures);
+      nextAllowedAt = Date.now() + delay;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void autoFlushRef.current(true).catch(logStorageFailure);
+      }, delay);
+      // No retiene al proceso (tests/SSR); en el navegador `setTimeout` da un número.
+      if (typeof retryTimer === "object") retryTimer.unref?.();
+    },
+    [runFlush],
+  );
   autoFlushRef.current = autoFlush;
 
   /** Vaciado manual: no espera el backoff. Si falla transitoriamente, lo programa. */
@@ -433,6 +491,7 @@ export function useOfflineSubmit(opts: {
         return;
       }
       const dedupeKey = cb?.dedupeKey;
+      const scoped = dedupeKey ? scopedKey(owner, dedupeKey) : undefined;
       let behindPending = false;
       if (dedupeKey) {
         const pendingItems = pendingForCurrentUser();
@@ -441,7 +500,13 @@ export function useOfflineSubmit(opts: {
           cb?.onQueued?.();
           return;
         }
-        if (inflightKeys.has(dedupeKey)) return;
+        if (scoped && inflightKeys.has(scoped)) {
+          // El primer toque sigue en vuelo: este es el mismo toque repetido. Se
+          // avisa como "encolado" (ya está tomado a cargo) para que la UI no
+          // quede con un estado de carga colgado.
+          cb?.onQueued?.();
+          return;
+        }
         // Otra acción del MISMO job sigue pendiente: esta va detrás (FIFO por
         // job), no se manda directo y adelantada.
         const target = targetOf(dedupeKey);
@@ -449,7 +514,7 @@ export function useOfflineSubmit(opts: {
           target !== null &&
           pendingItems.some((i) => i.dedupeKey && targetOf(i.dedupeKey) === target);
       }
-      const reserved = dedupeKey ? reservedByDedupe.get(dedupeKey) : undefined;
+      const reserved = scoped ? getReservation(scoped) : undefined;
       const id = reserved?.id ?? crypto.randomUUID();
       // La hora del toque se fija ACÁ, antes de cualquier intento.
       const occurredAt = reserved?.occurredAt ?? new Date().toISOString();
@@ -469,7 +534,7 @@ export function useOfflineSubmit(opts: {
             dedupeKey,
             attempts: 0,
           });
-          if (dedupeKey) reservedByDedupe.delete(dedupeKey);
+          if (scoped) reservedByDedupe.delete(scoped);
           return true;
         } catch {
           // zustand actualiza la memoria ANTES de escribir el storage: si el
@@ -482,7 +547,7 @@ export function useOfflineSubmit(opts: {
             // El remove también escribe el storage; la memoria ya quedó limpia.
           }
           // El reintento del usuario reusa esta clave (el servidor pudo guardarla).
-          if (dedupeKey) reservedByDedupe.set(dedupeKey, { id, occurredAt });
+          if (scoped) reservedByDedupe.set(scoped, { id, occurredAt, at: Date.now() });
           return false;
         }
       };
@@ -497,15 +562,15 @@ export function useOfflineSubmit(opts: {
         return;
       }
 
-      if (dedupeKey) inflightKeys.add(dedupeKey);
+      if (scoped) inflightKeys.add(scoped);
       try {
         await handler.post(payload, id, { occurredAt });
-        if (dedupeKey) reservedByDedupe.delete(dedupeKey);
+        if (scoped) reservedByDedupe.delete(scoped);
         invalidate(queryClient, handler);
         cb?.onSuccess?.();
       } catch (e) {
         if (isDuplicate(e)) {
-          if (dedupeKey) reservedByDedupe.delete(dedupeKey);
+          if (scoped) reservedByDedupe.delete(scoped);
           invalidate(queryClient, handler);
           cb?.onSuccess?.();
         } else if (
@@ -524,7 +589,7 @@ export function useOfflineSubmit(opts: {
           cb?.onError?.();
         }
       } finally {
-        if (dedupeKey) inflightKeys.delete(dedupeKey);
+        if (scoped) inflightKeys.delete(scoped);
       }
     },
     [queryClient],
@@ -537,13 +602,9 @@ export function useOfflineSubmit(opts: {
       void autoFlushRef.current().catch(logStorageFailure);
     }
     window.addEventListener("online", onOnline);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-    };
+    // El `retryTimer` es de módulo y NO se cancela al desmontar: navegar dentro
+    // del backoff no puede dejar la cola pendiente sin reintento.
+    return () => window.removeEventListener("online", onOnline);
   }, [opts.autoSync]);
 
   return { submit, flush };

@@ -10,7 +10,6 @@ import {
 import {
   MAX_FLUSH_ATTEMPTS,
   errorMessage,
-  isClientError,
   isDuplicate,
   isNetworkError,
   classifyFlushError,
@@ -86,9 +85,6 @@ describe("clasificación de errores", () => {
     expect(isNetworkError(networkError())).toBe(true);
     expect(isNetworkError(httpError(500))).toBe(false);
     expect(isNetworkError(new Error("x"))).toBe(false);
-    expect(isClientError(httpError(422))).toBe(true);
-    expect(isClientError(httpError(503))).toBe(false);
-    expect(isClientError(networkError())).toBe(false);
     expect(isDuplicate(duplicate())).toBe(true);
     // Un 409 que no es el replay idempotente NO es éxito.
     expect(isDuplicate(httpError(409, { detail: { code: "CONFLICT", message: "x" } }))).toBe(false);

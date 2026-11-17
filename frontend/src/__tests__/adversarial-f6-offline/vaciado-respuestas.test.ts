@@ -351,16 +351,16 @@ describe("5. clasificación de respuestas en el vaciado", () => {
   });
 
   it.each([[500], [502], [503], [504], [408], [425], [429], [401]])(
-    "%i => queda en cola, no gasta intentos, 50 flush seguidos no lo descartan",
+    "%i => queda en cola, no gasta intentos, 18 flush seguidos (bajo el tope de 20 fallas transitorias) no lo descartan",
     async (status) => {
       const { app, post, second, s } = await flushWith(httpError(status, "<html>gateway</html>"));
       expect(s.items).toHaveLength(1);
-      for (let i = 0; i < 50; i += 1) await second();
+      for (let i = 0; i < 18; i += 1) await second();
       const st = app.useStore.getState();
       expect(st.items).toHaveLength(1);
       expect(st.items[0]!.attempts).toBe(0);
       expect(st.failed).toEqual([]);
-      expect(post).toHaveBeenCalledTimes(51);
+      expect(post).toHaveBeenCalledTimes(19);
     },
   );
 
