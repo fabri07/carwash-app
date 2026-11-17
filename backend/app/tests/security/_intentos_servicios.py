@@ -28,6 +28,8 @@ from app.application import services as paquete_servicios
 from app.application.services._base import ServiceBase
 from app.application.services.agenda_service import LocalRange
 from app.application.services.booking_inbox_service import BookingInboxService
+from app.application.services.job_service import RetroPayment
+from app.application.services.operation_service import ManualDeposit
 from app.domain.enums import BookingSource, Channel, DepositStatus, PricingMode
 from app.tests.application._armado import AHORA, PRECIO_FIJO, SENA, Lavadero, T
 from app.tests.application._bandeja import en_revision
@@ -55,6 +57,7 @@ def _catalogo(lv: Lavadero) -> Ids:
         "owner": lv.owner_id,
         "auto": lv.auto,
         "lavado": lv.lavado,
+        "lavado_con_sena": lv.lavado_con_sena,
         "tapizado": lv.tapizado,
         "puesto": lv.puesto,
         "efectivo": lv.efectivo,
@@ -213,6 +216,70 @@ def _turno_b(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
     return lv.turnos.create(**{**datos, **pisar})
 
 
+def _retro_job(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
+    """`JobService.record_retrospective` con lo propio de B (F6)."""
+    datos: dict[str, Any] = {
+        "idempotency_key": k(),
+        "started_at": T - timedelta(hours=3),
+        "finished_at": T - timedelta(hours=2),
+        "now": T,
+        "vehicle_id": ib["vehiculo"],
+        "vehicle_size_id": ib["auto"],
+        "service_ids": [ib["lavado"]],
+    }
+    return lv.jobs.record_retrospective(**{**datos, **pisar})
+
+
+def _retro_op(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
+    """`OperationService.record_retrospective_job` con lo propio de B (F6)."""
+    datos: dict[str, Any] = {
+        "idempotency_key": k(),
+        "started_at": T - timedelta(hours=3),
+        "finished_at": T - timedelta(hours=2),
+        "now": T,
+        "vehicle_size_id": ib["auto"],
+        "service_ids": [ib["lavado"]],
+    }
+    return lv.operacion.record_retrospective_job(**{**datos, **pisar})
+
+
+def _recibir(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
+    """`OperationService.receive_job` de un ingreso sin turno con lo propio de B (F6)."""
+    datos: dict[str, Any] = {
+        "idempotency_key": k(),
+        "arrived_at": T,
+        "vehicle_id": ib["vehiculo"],
+        "vehicle_size_id": ib["auto"],
+        "service_ids": [ib["lavado"]],
+        "channel": Channel.CALLE,
+    }
+    return lv.operacion.receive_job(**{**datos, **pisar})
+
+
+def _turno_a_mano(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
+    """`OperationService.create_manual_booking` con lo propio de B (F6)."""
+    datos: dict[str, Any] = {
+        "idempotency_key": k(),
+        "now": AHORA,
+        "start_at": T + timedelta(days=5),
+        "resource_id": ib["puesto"],
+        "vehicle_size_id": ib["auto"],
+        "service_ids": [ib["lavado"]],
+    }
+    return lv.operacion.create_manual_booking(**{**datos, **pisar})
+
+
+async def _turno_a_mano_con_sena(lv: Lavadero, ib: Ids, medio: uuid.UUID) -> Any:
+    """Con la seña activa, el turno nace `PENDIENTE_SEÑA` y el medio de pago se busca."""
+    await lv.activar_sena()
+    return await _turno_a_mano(
+        lv,
+        ib,
+        service_ids=[ib["lavado_con_sena"]],
+        deposit=ManualDeposit(payment_method_id=medio),
+    )
+
+
 def _cotizacion_b(lv: Lavadero, ib: Ids, **pisar: Any) -> Awaitable[Any]:
     datos: dict[str, Any] = {
         "customer_id": ib["cliente"],
@@ -360,6 +427,146 @@ INTENTOS: dict[str, Intento] = {
         "users",
         lambda lv, ib, x: _walk_in(lv, ib, responsible_user_id=x),
         "JobService.receive",
+    ),
+    # ── JobService: carga retrospectiva (F6) ──
+    "job.record_retrospective.vehicle": Intento(
+        "vehiculo",
+        "vehicles",
+        lambda lv, ib, x: _retro_job(lv, ib, vehicle_id=x),
+        "JobService.record_retrospective",
+    ),
+    "job.record_retrospective.vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: _retro_job(lv, ib, vehicle_size_id=x),
+        "JobService.record_retrospective",
+    ),
+    "job.record_retrospective.service": Intento(
+        "lavado",
+        "services",
+        lambda lv, ib, x: _retro_job(lv, ib, service_ids=[x]),
+        "JobService.record_retrospective",
+    ),
+    "job.record_retrospective.customer": Intento(
+        "cliente",
+        "customers",
+        lambda lv, ib, x: _retro_job(lv, ib, customer_id=x),
+        "JobService.record_retrospective",
+    ),
+    "job.record_retrospective.resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: _retro_job(lv, ib, resource_id=x),
+        "JobService.record_retrospective",
+    ),
+    "job.record_retrospective.responsible": Intento(
+        "owner",
+        "users",
+        lambda lv, ib, x: _retro_job(lv, ib, responsible_user_id=x),
+        "JobService.record_retrospective",
+    ),
+    "job.record_retrospective.medio": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: _retro_job(lv, ib, payment=RetroPayment(payment_method_id=x)),
+        "JobService.record_retrospective:payment.payment_method_id",
+    ),
+    # ── OperationService (F6) ──
+    "op.job_detail": Intento(
+        "job_presente",
+        "jobs",
+        lambda lv, ib, x: lv.operacion.job_detail(x),
+        "OperationService.job_detail",
+    ),
+    "op.receive_job.booking": Intento(
+        "booking_conf",
+        "bookings",
+        lambda lv, ib, x: lv.operacion.receive_job(idempotency_key=k(), arrived_at=T, booking_id=x),
+        "OperationService.receive_job",
+    ),
+    "op.receive_job.vehicle": Intento(
+        "vehiculo",
+        "vehicles",
+        lambda lv, ib, x: _recibir(lv, ib, vehicle_id=x),
+        "OperationService.receive_job",
+    ),
+    "op.receive_job.vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: _recibir(lv, ib, vehicle_size_id=x),
+        "OperationService.receive_job",
+    ),
+    "op.receive_job.service": Intento(
+        "lavado",
+        "services",
+        lambda lv, ib, x: _recibir(lv, ib, service_ids=[x]),
+        "OperationService.receive_job",
+    ),
+    "op.receive_job.customer": Intento(
+        "cliente",
+        "customers",
+        lambda lv, ib, x: _recibir(lv, ib, customer_id=x),
+        "OperationService.receive_job",
+    ),
+    "op.receive_job.resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: _recibir(lv, ib, resource_id=x),
+        "OperationService.receive_job",
+    ),
+    "op.receive_job.quote": Intento(
+        "quote_aceptado",
+        "quotes",
+        lambda lv, ib, x: _recibir(lv, ib, service_ids=[ib["tapizado"]], quote_id=x),
+        "OperationService.receive_job",
+    ),
+    "op.record_retrospective_job.vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: _retro_op(lv, ib, vehicle_size_id=x),
+        "OperationService.record_retrospective_job",
+    ),
+    "op.record_retrospective_job.service": Intento(
+        "lavado",
+        "services",
+        lambda lv, ib, x: _retro_op(lv, ib, service_ids=[x]),
+        "OperationService.record_retrospective_job",
+    ),
+    "op.record_retrospective_job.resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: _retro_op(lv, ib, resource_id=x),
+        "OperationService.record_retrospective_job",
+    ),
+    "op.record_retrospective_job.medio": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: _retro_op(lv, ib, payment=RetroPayment(payment_method_id=x)),
+        "OperationService.record_retrospective_job:payment.payment_method_id",
+    ),
+    "op.create_manual_booking.resource": Intento(
+        "puesto",
+        "resources",
+        lambda lv, ib, x: _turno_a_mano(lv, ib, resource_id=x),
+        "OperationService.create_manual_booking",
+    ),
+    "op.create_manual_booking.vehicle_size": Intento(
+        "auto",
+        "vehicle_sizes",
+        lambda lv, ib, x: _turno_a_mano(lv, ib, vehicle_size_id=x),
+        "OperationService.create_manual_booking",
+    ),
+    "op.create_manual_booking.service": Intento(
+        "lavado",
+        "services",
+        lambda lv, ib, x: _turno_a_mano(lv, ib, service_ids=[x]),
+        "OperationService.create_manual_booking",
+    ),
+    "op.create_manual_booking.medio": Intento(
+        "efectivo",
+        "payment_methods",
+        lambda lv, ib, x: _turno_a_mano_con_sena(lv, ib, x),
+        "OperationService.create_manual_booking:deposit.payment_method_id",
     ),
     # ── BookingService ──
     "booking.get": Intento(

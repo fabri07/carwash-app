@@ -68,9 +68,18 @@ REPOS_BASE: list[type[BaseRepository[Any]]] = [
 ]
 #: Repositorios que NO heredan de `BaseRepository` y que este archivo cubre a mano.
 #: `JobEventRepository`: `job_events` es append-only, sin anulación (X8).
-REPOS_SIN_BASE_CUBIERTOS = {"JobEventRepository"}
+#: `DayRepository`: solo lecturas de la agenda del día (F6), sin modelo propio.
+REPOS_SIN_BASE_CUBIERTOS = {"JobEventRepository", "DayRepository"}
 #: Métodos del repositorio sin base que pasan por los tests genéricos de lectura.
 GENERICOS_SIN_BASE = {("JobEventRepository", "get_by_id"), ("JobEventRepository", "list_by_tenant")}
+
+
+async def _solo_de(filas: Any, id_de_a: uuid.UUID) -> list[Any]:
+    return [x for x in await filas if x.id == id_de_a]
+
+
+_DESDE = datetime(2000, 1, 1, tzinfo=UTC)
+_HASTA = datetime(2100, 1, 1, tzinfo=UTC)
 
 METODOS_BASE = {n for n, _ in inspect.getmembers(BaseRepository, inspect.isfunction)}
 
@@ -164,6 +173,10 @@ def _ids(resultado: Any) -> set[uuid.UUID]:
         return {x.id for x in resultado.items}
     if isinstance(resultado, list):
         return {x.id for x in resultado}
+    if isinstance(resultado, set):
+        return set(resultado)
+    if isinstance(resultado, dict):
+        return {x.id for filas in resultado.values() for x in filas}
     return {resultado.id}
 
 
@@ -412,6 +425,19 @@ CASOS_PROPIOS: dict[tuple[str, str], Caso] = {
     ),
     ("JobItemRepository", "list_for_job"): lambda r, a, t: r.list_for_job(a.ids["jobs"], t),
     ("JobInspectionRepository", "find_by_job"): lambda r, a, t: r.find_by_job(a.ids["jobs"], t),
+    # Listados del tenant: B tiene filas propias, se mira que no aparezca nada de A.
+    ("DayRepository", "resources"): lambda r, a, t: _solo_de(r.resources(t), a.ids["resources"]),
+    ("DayRepository", "jobs_of_day"): lambda r, a, t: _solo_de(
+        r.jobs_of_day(t, _DESDE, _HASTA, limit=500), a.ids["jobs"]
+    ),
+    ("DayRepository", "bookings_of_day"): lambda r, a, t: _solo_de(
+        r.bookings_of_day(t, _DESDE, _HASTA, list(BookingStatus), limit=500), a.ids["bookings"]
+    ),
+    ("DayRepository", "booking_ids_with_job"): lambda r, a, t: r.booking_ids_with_job(
+        t, [a.ids["bookings"]]
+    ),
+    ("DayRepository", "job_items"): lambda r, a, t: r.job_items(t, [a.ids["jobs"]]),
+    ("DayRepository", "job_payments"): lambda r, a, t: r.job_payments(t, [a.ids["jobs"]]),
     ("JobEventRepository", "get_by_key"): lambda r, a, t: r.get_by_key(a.claves["event_key"], t),
     ("JobEventRepository", "list_for_job"): lambda r, a, t: r.list_for_job(a.ids["jobs"], t),
     ("PaymentRepository", "get_by_key"): lambda r, a, t: r.get_by_key(a.claves["payment_key"], t),

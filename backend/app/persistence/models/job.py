@@ -27,11 +27,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.domain.enums import (
     CHANNEL_ENUM,
     DIRT_LEVEL_ENUM,
+    JOB_ENTRY_MODE_ENUM,
     JOB_EVENT_TYPE_ENUM,
     JOB_STATUS_ENUM,
     PRICING_MODE_ENUM,
     Channel,
     DirtLevel,
+    JobEntryMode,
     JobEventType,
     JobStatus,
     PricingMode,
@@ -139,6 +141,13 @@ class Job(TenantScopedModel):
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     picked_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: F6 (FASE-6-CONTRATO §2): `RETROSPECTIVA` = cargado después del hecho.
+    entry_mode: Mapped[JobEntryMode] = mapped_column(
+        pg_enum(JobEntryMode, JOB_ENTRY_MODE_ENUM),
+        nullable=False,
+        default=JobEntryMode.EN_VIVO,
+        server_default=JobEntryMode.EN_VIVO.value,
+    )
     legacy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Señales de revisión de la migración (D-008).
     legacy_review_flags: Mapped[list[str] | None] = mapped_column(PGTEXTARRAY, nullable=True)

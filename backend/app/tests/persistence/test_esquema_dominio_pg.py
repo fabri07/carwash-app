@@ -41,6 +41,10 @@ pytestmark = [pytest.mark.postgres, pytest.mark.asyncio(loop_scope="session")]
 MIGRACION = (
     Path(__file__).resolve().parents[2] / "persistence/migrations/versions/20260918_0003_dominio.py"
 )
+MIGRACION_0011 = (
+    Path(__file__).resolve().parents[2]
+    / "persistence/migrations/versions/20261116_0011_operacion_f6.py"
+)
 MIGRACION_0010 = (
     Path(__file__).resolve().parents[2]
     / "persistence/migrations/versions/20261111_0010_agenda_f5.py"
@@ -868,6 +872,7 @@ PYTHON_POR_TIPO: dict[str, type[StrEnum]] = {
     enums.BOOKING_SOURCE_ENUM: enums.BookingSource,
     enums.BOOKING_STATUS_ENUM: enums.BookingStatus,
     enums.JOB_STATUS_ENUM: enums.JobStatus,
+    enums.JOB_ENTRY_MODE_ENUM: enums.JobEntryMode,
     enums.JOB_EVENT_TYPE_ENUM: enums.JobEventType,
     enums.DIRT_LEVEL_ENUM: enums.DirtLevel,
     enums.QUOTE_STATUS_ENUM: enums.QuoteStatus,
@@ -883,8 +888,8 @@ PYTHON_POR_TIPO: dict[str, type[StrEnum]] = {
 
 
 def _congelados() -> dict[str, tuple[str, ...]]:
-    """Los enums que congeló la 0003, más lo que la 0010 (F5) agregó: un tipo nuevo y dos
-    valores al final de `booking_status`."""
+    """Los enums que congeló la 0003, más lo que la 0010 (F5) agregó (un tipo nuevo y dos
+    valores al final de `booking_status`) y la 0011 (F6): `job_entry_mode`."""
     spec = importlib.util.spec_from_file_location("migracion_0010", MIGRACION_0010)
     assert spec is not None and spec.loader is not None
     f5 = importlib.util.module_from_spec(spec)
@@ -895,6 +900,11 @@ def _congelados() -> dict[str, tuple[str, ...]]:
         *f5.BOOKING_STATUS_ADDED,
     )
     congelados[f5.BOOKING_MODE_ENUM] = f5.BOOKING_MODES
+    spec = importlib.util.spec_from_file_location("migracion_0011", MIGRACION_0011)
+    assert spec is not None and spec.loader is not None
+    f6 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(f6)
+    congelados[f6.ENTRY_MODE_ENUM] = f6.ENTRY_MODES
     return congelados
 
 

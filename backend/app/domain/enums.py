@@ -29,6 +29,8 @@ CASH_DIRECTION_ENUM = "cash_direction"
 CASH_MOVEMENT_KIND_ENUM = "cash_movement_kind"
 #: F5 (FASE-5-CONTRATO §3.1). Lo crea la migración 0010, no la 0003.
 SERVICE_BOOKING_MODE_ENUM = "service_booking_mode"
+#: F6 (FASE-6-CONTRATO §2). Lo crea la migración 0011.
+JOB_ENTRY_MODE_ENUM = "job_entry_mode"
 
 
 class PricingMode(StrEnum):
@@ -36,6 +38,14 @@ class PricingMode(StrEnum):
 
     PRECIO_FIJO = "PRECIO_FIJO"
     A_COTIZAR = "A_COTIZAR"
+
+
+class JobEntryMode(StrEnum):
+    """FASE-6-CONTRATO §2: cómo entró el job. `RETROSPECTIVA` = cargado después del hecho, con las
+    horas reales que tipeó el operador (sus eventos llevan `manual_entry`)."""
+
+    EN_VIVO = "EN_VIVO"
+    RETROSPECTIVA = "RETROSPECTIVA"
 
 
 class ServiceBookingMode(StrEnum):

@@ -27,7 +27,14 @@ from app.application.services.customer_service import (
     VehicleService,
 )
 from app.application.services.deposit_resolution_service import DepositResolutionService
-from app.application.services.job_service import JobService
+from app.application.services.job_service import JobService, RetroPayment
+from app.application.services.operation_service import (
+    DayView,
+    JobDetail,
+    ManualBooking,
+    ManualDeposit,
+    OperationService,
+)
 from app.application.services.quote_service import QuoteService
 
 __all__ = [
@@ -40,13 +47,19 @@ __all__ = [
     "CatalogService",
     "CustomerResolution",
     "CustomerService",
+    "DayView",
     "DepositConfirmation",
     "DepositResolutionService",
     "InboxDeposit",
+    "JobDetail",
     "JobService",
+    "ManualBooking",
+    "ManualDeposit",
+    "OperationService",
     "PaymentInput",
     "QuoteService",
     "Rescheduled",
+    "RetroPayment",
     "VehicleResolution",
     "VehicleService",
     "check_price",

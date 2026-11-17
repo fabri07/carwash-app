@@ -120,6 +120,8 @@ def _rutas_de_bandeja() -> set[tuple[str, str]]:
         if isinstance(ruta, APIRoute) and ruta.path.startswith(PREFIJOS)
         for metodo in ruta.methods
         if metodo not in {"HEAD", "OPTIONS"}
+        # El turno a mano es de la operación (F6): su permiso vive en test_permisos_operacion.
+        and (metodo, ruta.path) != ("POST", "/v1/bookings/manual")
     }
 
 
