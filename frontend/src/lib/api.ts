@@ -3,6 +3,7 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 
 import { apiErrorCode } from "@/lib/errors";
 import { CHANGE_PASSWORD_PATH } from "@/lib/routes";
+import { clearSwCaches } from "@/lib/sw-register";
 import { useAuthStore } from "@/stores/authStore";
 import type { AuthResponse } from "@/types/api";
 
@@ -72,6 +73,8 @@ export const browserNavigation = {
 /** La sesión murió de verdad: limpiar estado local y volver al login. */
 export function onSessionExpired(): void {
   useAuthStore.getState().clear();
+  // El HTML cacheado de páginas autenticadas no debe quedar a mano del próximo usuario.
+  void clearSwCaches().catch(() => undefined);
   if (typeof window !== "undefined") {
     const next = encodeURIComponent(window.location.pathname + window.location.search);
     browserNavigation.assign(`/login?next=${next}&expired=1`);

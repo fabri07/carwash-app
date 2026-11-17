@@ -21,9 +21,23 @@ export interface QueuedItem {
   kind: QueuedKind;
   payload: unknown;
   createdAt: string; // ISO
-  /** Intentos rechazados con un 4xx permanente. Las fallas transitorias NO cuentan. */
+  /** Intentos fallidos por un error que no es HTTP (bug del handler). Las fallas de red/5xx no cuentan acá. */
   attempts: number;
   lastError?: string;
+  /**
+   * Hora del TOQUE (ISO), fijada una sola vez al primer intento y conservada
+   * idéntica en reintentos y tras recargar la página. Es el `occurred_at` de
+   * la acción: nunca la hora de la sincronización. Opcional por compatibilidad
+   * con ítems viejos (se usa `createdAt` como respaldo).
+   */
+  occurredAt?: string;
+  /**
+   * Identifica "la misma acción sobre el mismo objetivo" (p. ej. `iniciar:<jobId>`).
+   * Si ya hay un ítem pendiente del mismo dueño con la misma clave, un segundo
+   * toque NO encola otro: es el mismo toque repetido. Toques distintos (otra
+   * acción u otro job) tienen otra clave y se conservan todos.
+   */
+  dedupeKey?: string;
 }
 
 /** Ítem sacado de la cola por rechazos permanentes. Se conserva visible, no se borra. */
@@ -32,9 +46,23 @@ export interface FailedItem extends QueuedItem {
   status?: number;
 }
 
+/**
+ * Ítem que el servidor rechazó con 409 `INVALID_TRANSITION`: la acción ya no es
+ * válida desde el estado actual del job (otro dispositivo se adelantó). Se saca
+ * de la cola y NO se reintenta, pero queda visible y recuperable: la pantalla
+ * decide qué mostrarle al usuario (el toque no se pierde en silencio).
+ */
+export type ConflictItem = FailedItem;
+
 interface OfflineQueueState {
   items: QueuedItem[];
   failed: FailedItem[];
+  /** Acciones descartadas por `INVALID_TRANSITION`, a la espera de que el usuario las vea. */
+  conflicts: ConflictItem[];
+  /** Pasa a `conflicts` (sin reintento). */
+  moveToConflict: (id: string, error: string, status?: number) => void;
+  /** El usuario vio el conflicto: lo saca de la lista. Único camino que lo borra. */
+  dismissConflict: (id: string) => void;
   enqueue: (item: QueuedItem) => void;
   remove: (id: string) => void;
   /** Rechazo permanente (4xx): suma un intento. */
@@ -62,13 +90,64 @@ export function itemsOwnedBy<T extends QueuedItem>(
   return items.filter((i) => i.userId === owner.userId && i.tenantId === owner.tenantId);
 }
 
+const STORAGE_NAME = "carwash_offline_queue";
+
+/** Ítems guardados en el storage (los de todas las pestañas); `[]` si no se puede leer. */
+function storedItems(): QueuedItem[] {
+  try {
+    const storage = useOfflineQueueStore.persist.getOptions().storage;
+    const value = storage?.getItem(STORAGE_NAME);
+    const stored = value instanceof Promise ? undefined : value;
+    const items = (stored?.state as { items?: QueuedItem[] } | undefined)?.items;
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
 export const useOfflineQueueStore = create<OfflineQueueState>()(
   persist(
     (set) => ({
       items: [],
-      enqueue: (item) => set((s) => ({ items: [...s.items, item] })),
+      enqueue: (item) =>
+        set((s) => {
+          // Otra pestaña pudo encolar desde que cargó esta: se relee el storage
+          // y se une por id, para que la última en escribir no pise a la otra.
+          const known = new Set(s.items.map((i) => i.id));
+          const base = [...s.items, ...storedItems().filter((i) => !known.has(i.id))];
+          // Mismo toque repetido (modo avión, doble tap): una sola entrada.
+          if (
+            item.dedupeKey &&
+            base.some(
+              (i) =>
+                i.dedupeKey === item.dedupeKey &&
+                i.userId === item.userId &&
+                i.tenantId === item.tenantId,
+            )
+          ) {
+            return {};
+          }
+          return { items: [...base, item] };
+        }),
       remove: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
       failed: [],
+      conflicts: [],
+      moveToConflict: (id, error, status) =>
+        set((s) => {
+          const item = s.items.find((i) => i.id === id);
+          if (!item) return {};
+          const conflict: ConflictItem = {
+            ...item,
+            lastError: error,
+            status,
+            failedAt: new Date().toISOString(),
+          };
+          return {
+            items: s.items.filter((i) => i.id !== id),
+            conflicts: [...s.conflicts, conflict],
+          };
+        }),
+      dismissConflict: (id) => set((s) => ({ conflicts: s.conflicts.filter((i) => i.id !== id) })),
       markFailed: (id, error) =>
         set((s) => ({
           items: s.items.map((i) =>
@@ -98,6 +177,18 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
           if (!f) return {};
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { failedAt, status, ...item } = f;
+          // Un toque más nuevo de la misma acción ya está en la cola: no se duplica.
+          if (
+            item.dedupeKey &&
+            s.items.some(
+              (i) =>
+                i.dedupeKey === item.dedupeKey &&
+                i.userId === item.userId &&
+                i.tenantId === item.tenantId,
+            )
+          ) {
+            return {};
+          }
           return {
             failed: s.failed.filter((i) => i.id !== id),
             items: [...s.items, { ...item, attempts: 0 }],
@@ -106,21 +197,35 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
       dismissFailed: (id) => set((s) => ({ failed: s.failed.filter((i) => i.id !== id) })),
     }),
     {
-      name: "carwash_offline_queue",
-      version: 3,
+      name: STORAGE_NAME,
+      version: 4,
       // v1 no tenía dueño. No se borran (serían cargas perdidas), pero sin
       // dueño no coinciden con ninguna sesión y nunca se mandan a ciegas.
-      // v3 agrega la lista de fallidos.
+      // v3 agrega la lista de fallidos. v4, la de conflictos.
       migrate: (persisted, version) => {
-        const state = persisted as { items?: Partial<QueuedItem>[]; failed?: FailedItem[] };
+        const state = persisted as {
+          items?: Partial<QueuedItem>[];
+          failed?: FailedItem[];
+          conflicts?: ConflictItem[];
+        };
         if (version < 2) {
           state.items = (state.items ?? []).map((i) => ({ userId: "", tenantId: "", ...i }));
         }
         if (version < 3) {
           state.failed = state.failed ?? [];
         }
+        if (version < 4) {
+          state.conflicts = state.conflicts ?? [];
+        }
         return state as OfflineQueueState;
       },
     },
   ),
 );
+
+// Otra pestaña escribió la cola: se toma su versión (ya incluye lo de las dos).
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE_NAME) void useOfflineQueueStore.persist.rehydrate();
+  });
+}

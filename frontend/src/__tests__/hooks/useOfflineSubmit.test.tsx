@@ -10,7 +10,6 @@ import {
 import {
   MAX_FLUSH_ATTEMPTS,
   errorMessage,
-  isClientError,
   isDuplicate,
   isNetworkError,
   classifyFlushError,
@@ -86,9 +85,6 @@ describe("clasificación de errores", () => {
     expect(isNetworkError(networkError())).toBe(true);
     expect(isNetworkError(httpError(500))).toBe(false);
     expect(isNetworkError(new Error("x"))).toBe(false);
-    expect(isClientError(httpError(422))).toBe(true);
-    expect(isClientError(httpError(503))).toBe(false);
-    expect(isClientError(networkError())).toBe(false);
     expect(isDuplicate(duplicate())).toBe(true);
     // Un 409 que no es el replay idempotente NO es éxito.
     expect(isDuplicate(httpError(409, { detail: { code: "CONFLICT", message: "x" } }))).toBe(false);
@@ -123,7 +119,7 @@ describe("clasificación de errores", () => {
 
 describe("useOfflineSubmit.submit", () => {
   beforeEach(() => {
-    useOfflineQueueStore.setState({ items: [] });
+    useOfflineQueueStore.setState({ items: [], failed: [], conflicts: [] });
     setOnline(true);
   });
 
@@ -132,7 +128,9 @@ describe("useOfflineSubmit.submit", () => {
     const { result, invalidate } = setup({ dummy: { post, invalidate: [["dummy"]] } });
     const cb = { onSuccess: jest.fn(), onQueued: jest.fn(), onError: jest.fn() };
     await act(() => result.current.submit("dummy", { a: 1 }, cb));
-    expect(post).toHaveBeenCalledWith({ a: 1 }, expect.stringMatching(/^[0-9a-f-]{36}$/));
+    expect(post).toHaveBeenCalledWith({ a: 1 }, expect.stringMatching(/^[0-9a-f-]{36}$/), {
+      occurredAt: expect.any(String),
+    });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dummy"] });
     expect(cb.onSuccess).toHaveBeenCalled();
     expect(useOfflineQueueStore.getState().items).toHaveLength(0);
@@ -253,7 +251,7 @@ describe("useOfflineSubmit.submit", () => {
 
 describe("useOfflineSubmit.flush", () => {
   beforeEach(() => {
-    useOfflineQueueStore.setState({ items: [] });
+    useOfflineQueueStore.setState({ items: [], failed: [], conflicts: [] });
     setOnline(true);
   });
 
@@ -357,32 +355,42 @@ describe("useOfflineSubmit.flush", () => {
   });
 
   it.each([400, 403, 404, 422])(
-    "un %i es permanente: gasta intento y no corta el loop",
+    "un %i es permanente: pasa a fallidos de una y no corta el loop",
     async (status) => {
       useOfflineQueueStore.setState({ items: [item("a"), item("b")] });
       const post = jest.fn(async () => Promise.reject(httpError(status)));
       const { result } = setup({ dummy: { post } });
       await act(() => result.current.flush());
       expect(post).toHaveBeenCalledTimes(2);
-      expect(useOfflineQueueStore.getState().items.map((i) => i.attempts)).toEqual([1, 1]);
+      const { items, failed } = useOfflineQueueStore.getState();
+      expect(items).toEqual([]);
+      expect(failed.map((f) => [f.id, f.status])).toEqual([
+        ["a", status],
+        ["b", status],
+      ]);
     },
   );
 
-  it("un 409 que NO es el replay idempotente es permanente", async () => {
+  it("un 409 CONFLICT (clave usada por otra operación) NO es éxito: queda en fallidos", async () => {
     useOfflineQueueStore.setState({ items: [item("a")] });
     const conflict = httpError(409, { detail: { code: "CONFLICT", message: "x" } });
     const { result } = setup({ dummy: { post: async () => Promise.reject(conflict) } });
     await act(() => result.current.flush());
-    expect(useOfflineQueueStore.getState().items[0]).toMatchObject({ attempts: 1 });
+    const { items, failed } = useOfflineQueueStore.getState();
+    expect(items).toEqual([]);
+    expect(failed).toEqual([expect.objectContaining({ id: "a", status: 409 })]);
   });
 
-  it("al agotar intentos por 4xx permanente, el ítem pasa a fallidos y se avisa (no se borra)", async () => {
+  it("un 4xx permanente pasa a fallidos y se avisa (no se borra); los demás siguen", async () => {
     useOfflineQueueStore.setState({
-      items: [item("casi", { attempts: MAX_FLUSH_ATTEMPTS - 1 }), item("nuevo")],
+      items: [item("casi"), item("nuevo")],
       failed: [],
     });
+    const post = jest.fn(async (_p: unknown, key: string) => {
+      if (key === "casi") throw httpError(422);
+      return {};
+    });
     const onItemFailed = jest.fn();
-    const post = jest.fn(async () => Promise.reject(httpError(422)));
     const qc = new QueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -396,12 +404,12 @@ describe("useOfflineSubmit.flush", () => {
     );
     await act(() => result.current.offline.flush());
     const { items, failed } = useOfflineQueueStore.getState();
-    expect(items).toEqual([expect.objectContaining({ id: "nuevo", attempts: 1 })]);
+    expect(items).toEqual([]);
     expect(failed).toEqual([
       expect.objectContaining({
         id: "casi",
         status: 422,
-        attempts: MAX_FLUSH_ATTEMPTS,
+        attempts: 1,
         lastError: "Error 422 del servidor",
         payload: { n: "casi" },
         failedAt: expect.any(String),
@@ -411,7 +419,7 @@ describe("useOfflineSubmit.flush", () => {
     expect(result.current.failed.map((f) => f.id)).toEqual(["casi"]);
   });
 
-  it("un error que no es HTTP (bug del handler) no gasta intento ni corta a los demás", async () => {
+  it("un error que no es HTTP (bug del handler) gasta un intento, no corta a los demás y al tope pasa a fallidos", async () => {
     useOfflineQueueStore.setState({ items: [item("a"), item("b")] });
     const post = jest
       .fn()
@@ -420,7 +428,7 @@ describe("useOfflineSubmit.flush", () => {
     const { result } = setup({ dummy: { post } });
     await act(() => result.current.flush());
     expect(useOfflineQueueStore.getState().items).toEqual([
-      expect.objectContaining({ id: "a", attempts: 0, lastError: "Error desconocido" }),
+      expect.objectContaining({ id: "a", attempts: 1, lastError: "Error desconocido" }),
     ]);
   });
 
