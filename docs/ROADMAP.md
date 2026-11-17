@@ -318,6 +318,8 @@ buscar "ceramico", "ppf" y "sacar rayas".
 
 ## Fase 5 — Turnero público y señas
 
+> **Completa** (2026-11-16): PRs #23–#26 mergeados y checkpoint hecho en staging.
+
 **Contrato:** `docs/adr/FASE-5-CONTRATO.md` (PRs 5.0–5.3).
 
 **Objetivo:** `app.com/solacleancars` funcionando. El cliente reserva sin instalar nada.
