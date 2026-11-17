@@ -283,3 +283,12 @@ negocios, sin sobrecobro ni eventos duplicados. Cuatro hallazgos:
   marcados `xfail(strict=True)`. Reabrir si el dueño ve líneas de tiempo incoherentes en uso real.
 - **H3b seña menor a la pedida (diferido).** `confirm_deposit` (F5) solo exige `> 0`; si el dueño
   cobra una seña parcial, es su decisión. `xfail(strict=True)`.
+
+**12.12 Revisión de código (`/code-review high`, 1 ronda + 1 de arreglos).**
+Arreglados: la carga retrospectiva acota a "ahora" una hora hasta 5 min adelantada (rechaza más allá);
+`GET /agenda/day` oculta un turno con seña cuyo hold ya venció aunque `expire_holds` no haya corrido;
+los autos anónimos de un ingreso sin patente ya no se vinculan al cliente como principales.
+Diferidos con motivo: el reenvío de `POST /bookings/manual` seguirá en 409 `DUPLICATE_IDEMPOTENT`
+(§12.4, la cola offline lo cuenta como éxito); la bandera `_manual` del servicio, las cuatro copias del
+cuerpo de cobro, el doble límite de fechas, las consultas en serie de `day()`/`job_detail` y la paginación
+de eventos en Python son refactors o rendimiento sin riesgo de datos; se retoman si una medición lo pide.

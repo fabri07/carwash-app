@@ -13,7 +13,7 @@ inexistente.
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -25,6 +25,7 @@ from app.application.services.customer_service import CustomerService, VehicleSe
 from app.application.services.errors import AlreadyExistsError, NotFoundError
 from app.application.services.job_service import JobService, RetroPayment
 from app.domain import booking_code
+from app.domain.booking_state import hold_expired
 from app.domain.deposit import balance_due, net_paid, total_agreed
 from app.domain.enums import (
     BookingSource,
@@ -177,7 +178,16 @@ class OperationService(ServiceBase):
         truncated = len(jobs) > DAY_CAP or len(bookings) > DAY_CAP
         jobs, bookings = jobs[:DAY_CAP], bookings[:DAY_CAP]
         received = await repo.booking_ids_with_job(self._tenant_id, [b.id for b in bookings])
-        bookings = [b for b in bookings if b.id not in received]
+        now = datetime.now(UTC)
+        # Un hold vencido no ocupa aunque `expire_holds` (perezoso) no lo haya marcado VENCIDO.
+        bookings = [
+            b
+            for b in bookings
+            if b.id not in received
+            and not (
+                b.status == BookingStatus.PENDIENTE_SENA and hold_expired(b.hold_expires_at, now)
+            )
+        ]
 
         inbox = InboxBookingRepository(self._session)
         customers = await inbox.customers(
@@ -430,7 +440,8 @@ class OperationService(ServiceBase):
             return None
         vehicles = VehicleService(self._session, self._tenant_id, self._actor_user_id)
         resolution = await vehicles.resolve_by_plate(plate, vehicle_size_id=vehicle_size_id)
-        if resolution.created and customer_id is not None:
+        # El auto anónimo no se vincula: cada ingreso sin patente sumaría un "principal" más.
+        if resolution.created and customer_id is not None and normalize_plate(plate) is not None:
             await vehicles.link_customer(customer_id, resolution.vehicle.id, is_primary=True)
         return resolution.vehicle.id
 

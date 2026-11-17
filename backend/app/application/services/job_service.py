@@ -34,7 +34,7 @@ a propósito, pero tampoco lo deshace.
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,6 +107,8 @@ from app.persistence.repositories.money import PaymentRepository, deposits_paid
 from app.persistence.repositories.quotes import QuoteRepository
 from app.persistence.repositories.user_repository import UserRepository
 
+#: Mismo margen que `OccurredBody.FUTURE_SKEW`: un reloj apenas adelantado se acota, no se rechaza.
+_FUTURE_SKEW = timedelta(minutes=5)
 _EVENT_KEY = unique_violation_classifier(
     "job_event_key",
     constraint=JOB_EVENTS_IDEMPOTENCY_UNIQUE,
@@ -1049,10 +1051,12 @@ class JobService(ServiceBase):
         replayed = await self._replayed_receive(f"{key}:received")
         if replayed is not None:
             return replayed
+        if finished_at > now + _FUTURE_SKEW or started_at > now + _FUTURE_SKEW:
+            raise GuardFailedError("a retrospective job must be in the past")
+        # Reloj del celular algo adelantado: se acota al servidor, no se pierde la carga.
+        started_at, finished_at = min(started_at, now), min(finished_at, now)
         if finished_at < started_at:
             raise GuardFailedError("finished_at cannot be before started_at")
-        if finished_at > now:
-            raise GuardFailedError("a retrospective job must be in the past")
         self._manual = True
         try:
             job = await self.receive(

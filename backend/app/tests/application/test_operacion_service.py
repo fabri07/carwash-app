@@ -138,7 +138,7 @@ async def test_la_carga_retrospectiva_exige_horas_coherentes_y_pasadas(lav):
     with pytest.raises(GuardFailedError, match="before"):
         await _retro(lav, finished_at=T - timedelta(seconds=1))
     with pytest.raises(GuardFailedError, match="past"):
-        await _retro(lav, finished_at=AHORA_RETRO + timedelta(seconds=1))
+        await _retro(lav, finished_at=AHORA_RETRO + timedelta(minutes=6))
     with pytest.raises(GuardFailedError, match="past"):
         await _retro(
             lav,
@@ -149,7 +149,10 @@ async def test_la_carga_retrospectiva_exige_horas_coherentes_y_pasadas(lav):
     assert ok.finished_at == T
     ahora_exacto = await _retro(lav, finished_at=AHORA_RETRO)  # "ahora" también
     assert ahora_exacto.finished_at == AHORA_RETRO
-    assert await _count_jobs(lav) == 2  # lo rechazado no dejó filas
+    # Un reloj de celular apenas adelantado (< 5 min) se acota a "ahora": no se pierde la carga.
+    adelantado = await _retro(lav, finished_at=AHORA_RETRO + timedelta(seconds=30))
+    assert adelantado.finished_at == AHORA_RETRO
+    assert await _count_jobs(lav) == 3  # lo rechazado no dejó filas
 
 
 async def _count_jobs(lav: Lavadero) -> int:

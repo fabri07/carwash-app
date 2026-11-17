@@ -57,9 +57,9 @@ async def test_retro_horas_en_el_borde(client, cookies_a, lav):
     ).status_code == 201  # igual
     ahora = datetime.now(UTC)
     for ini, fin in (
-        (ahora - timedelta(hours=1), ahora + timedelta(seconds=30)),  # fin futuro
-        (ahora + timedelta(minutes=5), ahora + timedelta(minutes=10)),  # todo futuro
-        (ahora + timedelta(minutes=5), ahora - timedelta(minutes=10)),  # invertido y futuro
+        (ahora - timedelta(hours=1), ahora + timedelta(minutes=10)),  # fin futuro
+        (ahora + timedelta(minutes=10), ahora + timedelta(minutes=20)),  # todo futuro
+        (ahora + timedelta(minutes=10), ahora - timedelta(minutes=10)),  # invertido y futuro
     ):
         c = {**retro(lav, ayer), "started_at": iso(ini), "finished_at": iso(fin)}
         r = await _cargar(client, cookies_a, c)
