@@ -172,7 +172,32 @@ describe("offlineQueueStore", () => {
     const raw = JSON.parse(window.localStorage.getItem("carwash_offline_queue")!) as {
       version: number;
     };
-    expect(raw.version).toBe(3);
+    expect(raw.version).toBe(4);
+  });
+
+  it("rehidrata una cola v3 (sin conflictos) sin perder nada y con conflicts vacío", async () => {
+    const v3 = {
+      state: {
+        items: [
+          {
+            id: "a",
+            userId: "u1",
+            tenantId: "t1",
+            kind: "k",
+            payload: 1,
+            createdAt: "x",
+            attempts: 0,
+          },
+        ],
+        failed: [],
+      },
+      version: 3,
+    };
+    window.localStorage.setItem("carwash_offline_queue", JSON.stringify(v3));
+    await useOfflineQueueStore.persist.rehydrate();
+    const { items, conflicts } = useOfflineQueueStore.getState();
+    expect(items.map((i) => i.id)).toEqual(["a"]);
+    expect(conflicts).toEqual([]);
   });
 
   it("itemsOwnedBy filtra por usuario Y tenant", () => {

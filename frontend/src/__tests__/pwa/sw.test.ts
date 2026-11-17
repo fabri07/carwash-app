@@ -117,6 +117,22 @@ describe("service worker", () => {
     expect(sw.strategyFor(navigate(local), ORIGIN)).toBe("network-only");
   });
 
+  /**
+   * Verificado en 6.3 (no se rehízo): el manifest es instalable (manifest.test),
+   * el SW no precachea, solo cachea `/_next/static/**` y navegaciones sin
+   * redirect, y la API (cualquier origen, `/api/*` y `/v1/*`) va siempre a la red.
+   * La cola offline de datos vive en `offlineQueueStore`, no en este SW.
+   */
+  it("`/v1/*` del mismo origen (incluso como navegación o con cookies) nunca se cachea", async () => {
+    for (const path of ["/v1/agenda/day?date=2026-11-17", "/v1/jobs/j1", "/v1/"]) {
+      const url = `${ORIGIN}${path}`;
+      expect(sw.strategyFor(new Request(url), ORIGIN)).toBe("network-only");
+      expect(sw.strategyFor(navigate(url), ORIGIN)).toBe("network-only");
+      await sw.handleFetch(new Request(url, { headers: { cookie: "session=x" } }), ORIGIN);
+      expect(await storage.match(url)).toBeUndefined();
+    }
+  });
+
   it("ni un POST ni el propio sw.js pasan por la caché", () => {
     expect(sw.strategyFor(new Request(`${ORIGIN}/dashboard`, { method: "POST" }), ORIGIN)).toBe(
       "network-only",
