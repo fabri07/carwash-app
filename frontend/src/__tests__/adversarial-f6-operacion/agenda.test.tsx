@@ -236,7 +236,9 @@ describe("Zona horaria del negocio: hoy y ayer", () => {
 
   it("HALLAZGO (bajo): con la pantalla abierta al cruzar la medianoche, 'hoy' se actualiza solo", async () => {
     // El reloj de la pantalla es un setInterval (cada 30 s): acá se falsea para poder avanzarlo.
-    jest.useFakeTimers({ doNotFake: KEEP_REAL.filter((k) => k !== "setInterval") });
+    jest.useFakeTimers({
+      doNotFake: KEEP_REAL.filter((k) => k !== "setInterval" && k !== "clearInterval"),
+    });
     jest.setSystemTime(new Date("2026-11-18T02:59:30Z")); // 23:59:30 en Córdoba
     renderUi(<AgendaPageClient />);
     await screen.findByRole("region", { name: "Puesto Puesto 1" });
