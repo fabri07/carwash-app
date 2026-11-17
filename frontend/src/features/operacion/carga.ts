@@ -9,7 +9,7 @@ import {
   usePaymentMethods,
   useResourceList,
 } from "./queries";
-import { QUEUED_NOTICE } from "./useActionRunner";
+import { ARRIVAL_QUEUED_NOTICE, QUEUED_NOTICE, SERVER_QUEUED_NOTICE } from "./useActionRunner";
 import type { Outcome } from "./useOperacionSubmit";
 
 /** Catálogo que necesitan las tres cargas a mano: tamaños, servicios, puestos y medios de pago. */
@@ -34,9 +34,13 @@ export function useCargaData() {
  * Devuelve `true` si salió bien o quedó encolado.
  */
 export function settle(out: Outcome, action: OperacionAction, okMessage: string): void {
+  if (out.status === "queued" && action === "receive") {
+    toast.info(ARRIVAL_QUEUED_NOTICE);
+    return;
+  }
   if (out.status === "error") {
     throw new FormSubmitError({ field: null, message: operacionErrorMessage(out.error, action) });
   }
-  if (out.status === "queued") toast.info(QUEUED_NOTICE);
+  if (out.status === "queued") toast.info(out.httpError ? SERVER_QUEUED_NOTICE : QUEUED_NOTICE);
   else toast.success(okMessage);
 }

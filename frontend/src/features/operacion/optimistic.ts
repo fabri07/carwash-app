@@ -5,6 +5,9 @@ import type { Job } from "./types";
  * sincronice, para poder seguir con el paso siguiente sin señal. Es solo de pantalla: la verdad
  * es la del servidor y reemplaza esto apenas se vuelve a leer el job.
  */
+/** Los cobros que todavía esperan en la cola llevan este prefijo de id: no se pueden anular. */
+export const PENDING_PREFIX = "pending-";
+
 export type OptimisticAction =
   | { kind: "start"; at: string }
   | { kind: "finish"; at: string }
@@ -28,6 +31,19 @@ export function applyOptimistic(job: Job, action: OptimisticAction): Job {
         ...job,
         paid_cents: job.paid_cents + action.amountCents,
         balance_due_cents: balance,
+        // El cobro pendiente cuenta para la clave del siguiente (`cobrar#<n>`): dos cobros
+        // legítimos sin señal no se pisan, pero un doble toque sobre la misma vista sí se deduplica.
+        payments: [
+          ...job.payments,
+          {
+            id: `${PENDING_PREFIX}${action.at}`,
+            kind: "SALDO" as const,
+            amount_cents: action.amountCents,
+            occurred_at: action.at,
+            payment_method_id: "",
+            voided: false,
+          },
+        ],
         status: balance === 0 && job.status === "FINALIZADO" ? "COBRADO" : job.status,
       };
     }

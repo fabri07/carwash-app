@@ -1,5 +1,6 @@
 "use client";
 
+import axios from "axios";
 import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
@@ -55,7 +56,9 @@ type Payload = { jobId?: string; paymentId?: string; body: never };
 
 /** Resultado de un envío: guardado, encolado sin conexión, o rechazado (con el error original). */
 export type Outcome =
-  { status: "ok"; data?: unknown } | { status: "queued" } | { status: "error"; error: unknown };
+  | { status: "ok"; data?: unknown }
+  | { status: "queued"; httpError?: boolean }
+  | { status: "error"; error: unknown };
 
 const INVALIDATE = [operacionKeys.all, turnosKeys.all];
 
@@ -148,7 +151,13 @@ export function useOperacionSubmit() {
         lastData.current = undefined;
         void submit(kind, payload, {
           onSuccess: () => resolve({ status: "ok", data: lastData.current }),
-          onQueued: () => resolve({ status: "queued" }),
+          onQueued: () =>
+            resolve({
+              status: "queued",
+              // Un 5xx guardó el toque en la cola, pero NO es falta de señal: se dice distinto.
+              httpError:
+                axios.isAxiosError(lastError.current) && Boolean(lastError.current.response),
+            }),
           onError: () => resolve({ status: "error", error: lastError.current }),
           // 409 INVALID_TRANSITION en línea: se muestra como error (el estado cambió).
           onConflict: () => resolve({ status: "error", error: lastError.current }),

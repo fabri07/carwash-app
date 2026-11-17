@@ -186,7 +186,8 @@ describe("Carga retrospectiva: cobro pendiente vs cobrado e importes (parseMoney
       await new Promise((r) => setTimeout(r, 100));
       // Hoy: parseARS da null, el campo trata null como "vacío = el total" y manda el cobro completo.
       expect(retroPosts()).toHaveLength(0);
-      expect(screen.getByText(/importe|número|válid/i)).toBeInTheDocument();
+      // (el rótulo "Importe cobrado" también coincide con el texto: se mira el aviso del campo)
+      expect(screen.getByRole("alert")).toHaveTextContent(/Importe no válido/);
     },
   );
 });

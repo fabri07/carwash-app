@@ -6,14 +6,21 @@ import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-import { MoneyField, SelectField, TextField } from "@/features/configuracion/fields";
+import { SelectField, TextField } from "@/features/configuracion/fields";
 import { zonedToUtcIso } from "@/features/turnos/time";
+import { useCan } from "@/hooks/usePermission";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { todayInZone } from "@/lib/period";
 import { settle, useCargaData } from "./carga";
 import { PersonFields, ResourceSelect, ToggleField, VehicleFields, priceHint } from "./fields";
 import { defaultPaymentMethod, useBusinessTimeZone } from "./queries";
-import { orNull, retrospectiveSchema, type RetrospectiveInput } from "./schemas";
+import {
+  moneyCents,
+  orNull,
+  resolveEndDay,
+  retrospectiveSchema,
+  type RetrospectiveInput,
+} from "./schemas";
 import { BIG_ACTION } from "./touch";
 import type { RetrospectiveBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
@@ -29,6 +36,8 @@ export function RetrospectiveForm() {
   const { run } = useOperacionSubmit();
   const timeZone = useBusinessTimeZone();
   const data = useCargaData();
+  // Cargar el cobro pide COBROS_REGISTRAR: sin él la carga es "pendiente" y no se ofrece "Cobrado".
+  const canCharge = useCan()("COBROS_REGISTRAR");
   const form = useForm<RetrospectiveInput>({
     resolver: zodResolver(retrospectiveSchema),
     defaultValues: {
@@ -41,9 +50,10 @@ export function RetrospectiveForm() {
       date: todayInZone(new Date(), timeZone),
       start_time: "",
       end_time: "",
-      paid: true,
+      end_date: "",
+      paid: canCharge,
       payment_method_id: "",
-      amount_cents: null,
+      amount_text: "",
     },
   });
   const { onSubmit, formError } = useFormSubmit(form, async (v) => {
@@ -55,14 +65,15 @@ export function RetrospectiveForm() {
       service_ids: v.service_ids,
       resource_id: v.resource_id || null,
       started_at: zonedToUtcIso(v.date, v.start_time, timeZone),
-      finished_at: zonedToUtcIso(v.date, v.end_time, timeZone),
+      finished_at: zonedToUtcIso(resolveEndDay(v), v.end_time, timeZone),
       channel: "CARGA_MANUAL",
-      payment: v.paid
-        ? {
-            payment_method_id: v.payment_method_id,
-            ...(v.amount_cents ? { amount_cents: v.amount_cents } : {}),
-          }
-        : null,
+      payment:
+        canCharge && v.paid
+          ? {
+              payment_method_id: v.payment_method_id,
+              ...(moneyCents(v.amount_text) ? { amount_cents: moneyCents(v.amount_text) } : {}),
+            }
+          : null,
     };
     settle(
       await run(KINDS.retrospective, { body }, `carga-retro:${crypto.randomUUID()}`),
@@ -82,6 +93,14 @@ export function RetrospectiveForm() {
   }
   const incomes = data.methods.filter((m) => m.for_income);
   const paid = form.watch("paid");
+  const [date, start, end, endDate] = form.watch(["date", "start_time", "end_time", "end_date"]);
+  const endDay = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? resolveEndDay({ date, start_time: start, end_time: end, end_date: endDate })
+    : date;
+  const nextDay =
+    endDate === "" && endDay !== date && /^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)
+      ? `${endDay.slice(8, 10)}/${endDay.slice(5, 7)}`
+      : null;
   const hint = priceHint(data.services, form.watch("service_ids"), form.watch("vehicle_size_id"));
 
   return (
@@ -100,13 +119,32 @@ export function RetrospectiveForm() {
           <TextField control={form.control} name="start_time" label="Inicio" type="time" />
           <TextField control={form.control} name="end_time" label="Fin" type="time" />
         </div>
-        <ToggleField
+        <TextField
           control={form.control}
-          name="paid"
-          onLabel="Cobrado (tocá para dejarlo pendiente)"
-          offLabel="Cobro pendiente (tocá para cargar el cobro)"
+          name="end_date"
+          label="Día de fin (solo si terminó otro día)"
+          type="date"
+          hint="Vacío: terminó el mismo día."
         />
-        {paid && (
+        {nextDay && (
+          <p role="status" className="rounded-md border border-sky-300 p-3 text-sm">
+            El fin es menor al inicio: se carga como que terminó al día siguiente ({nextDay}). Si no
+            es así, corregí las horas.
+          </p>
+        )}
+        {canCharge ? (
+          <ToggleField
+            control={form.control}
+            name="paid"
+            onLabel="Cobrado (tocá para dejarlo pendiente)"
+            offLabel="Cobro pendiente (tocá para cargar el cobro)"
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Cobro pendiente: no tenés permiso para registrar cobros.
+          </p>
+        )}
+        {canCharge && paid && (
           <div className="grid gap-3 sm:grid-cols-2">
             <SelectField
               control={form.control}
@@ -117,9 +155,10 @@ export function RetrospectiveForm() {
                 ...incomes.map((m) => ({ value: m.id, label: m.label })),
               ]}
             />
-            <MoneyField
+            <TextField
               control={form.control}
-              name="amount_cents"
+              name="amount_text"
+              inputMode="decimal"
               label="Importe cobrado"
               hint="Vacío: el total del trabajo."
             />

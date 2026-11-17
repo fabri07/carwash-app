@@ -89,12 +89,12 @@ describe("Rutas sin AGENDA_VER", () => {
     ["/operacion/turno-a-mano", ManualBookingPage],
     ["/operacion/trabajo-hecho", RetrospectivePage],
   ])(
-    "HALLAZGO (a decidir): %s con todos los permisos MENOS AGENDA_VER no debería abrir (la operación pide AGENDA_VER, §1)",
+    "H11 (decidido): %s con todos los permisos MENOS AGENDA_VER abre igual: el contrato pide AGENDA_VER solo para VER; JOBS_OPERAR / TURNOS_GESTIONAR para operar y cargar (§1)",
     async (_route, Page) => {
       loginAs(without("AGENDA_VER"));
       renderUi(<Page />);
       await new Promise((r) => setTimeout(r, 100));
-      expect(screen.queryByText(DENIED)).toBeInTheDocument();
+      expect(screen.queryByText(DENIED)).not.toBeInTheDocument();
     },
   );
 

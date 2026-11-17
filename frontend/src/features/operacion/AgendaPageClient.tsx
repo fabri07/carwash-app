@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import axios from "axios";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -13,6 +14,7 @@ import { DayBoard } from "./DayBoard";
 import { Guard } from "./Guard";
 import { QueueBanner } from "./QueueBanner";
 import { useBusinessTimeZone, useDay } from "./queries";
+import { useNow } from "./useNow";
 import { TOUCH_TARGET } from "./touch";
 
 /** "lunes 23/11" de un `YYYY-MM-DD` (el día calendario no tiene zona: se arma en UTC). */
@@ -38,7 +40,9 @@ export function AgendaPageClient({ initialDate }: { initialDate?: string }) {
 function Agenda({ initialDate }: { initialDate?: string }) {
   const can = useCan();
   const timeZone = useBusinessTimeZone();
-  const today = todayInZone(new Date(), timeZone);
+  // "Hoy" se recalcula con el reloj: al cruzar la medianoche la agenda cambia de día sola.
+  const now = useNow(30_000);
+  const today = todayInZone(new Date(now), timeZone);
   const [picked, setPicked] = useState<string | null>(
     initialDate && isIsoDate(initialDate) ? initialDate : null,
   );
@@ -114,7 +118,9 @@ function Agenda({ initialDate }: { initialDate?: string }) {
       {day.isLoading && <p className="text-sm text-muted-foreground">Cargando la agenda…</p>}
       {day.isError && (
         <p role="alert" className="text-sm text-destructive">
-          No se pudo cargar la agenda del día. Revisá la conexión y probá de nuevo.
+          {axios.isAxiosError(day.error) && day.error.response?.status === 403
+            ? "No tenés permiso para ver la agenda. Pedile el acceso al dueño del negocio."
+            : "No se pudo cargar la agenda del día. Revisá la conexión y probá de nuevo."}
         </p>
       )}
       {day.data?.truncated && (

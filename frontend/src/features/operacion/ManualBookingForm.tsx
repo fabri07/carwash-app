@@ -6,14 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-import { MoneyField, SelectField, TextField } from "@/features/configuracion/fields";
+import { SelectField, TextField } from "@/features/configuracion/fields";
 import { zonedToUtcIso } from "@/features/turnos/time";
+import { useCan } from "@/hooks/usePermission";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { todayInZone } from "@/lib/period";
 import { settle, useCargaData } from "./carga";
 import { PersonFields, ResourceSelect, ToggleField, VehicleFields, priceHint } from "./fields";
 import { defaultPaymentMethod, useBusinessTimeZone } from "./queries";
-import { manualBookingSchema, orNull, type ManualBookingInput } from "./schemas";
+import { manualBookingSchema, moneyCents, orNull, type ManualBookingInput } from "./schemas";
 import { BIG_ACTION } from "./touch";
 import type { ManualBookingBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
@@ -28,6 +29,8 @@ export function ManualBookingForm() {
   const { run } = useOperacionSubmit();
   const timeZone = useBusinessTimeZone();
   const data = useCargaData();
+  // La seña cobrada pide COBROS_REGISTRAR: sin él no se ofrece (el servidor respondería 403).
+  const canCharge = useCan()("COBROS_REGISTRAR");
   const form = useForm<ManualBookingInput>({
     resolver: zodResolver(manualBookingSchema),
     defaultValues: {
@@ -41,7 +44,7 @@ export function ManualBookingForm() {
       time: "",
       deposit_enabled: false,
       deposit_method_id: "",
-      deposit_cents: null,
+      deposit_text: "",
     },
   });
   const { onSubmit, formError } = useFormSubmit(form, async (v) => {
@@ -54,12 +57,13 @@ export function ManualBookingForm() {
       resource_id: v.resource_id,
       start_at: zonedToUtcIso(v.date, v.time, timeZone),
       channel: "CARGA_MANUAL",
-      deposit: v.deposit_enabled
-        ? {
-            payment_method_id: v.deposit_method_id,
-            ...(v.deposit_cents ? { amount_cents: v.deposit_cents } : {}),
-          }
-        : null,
+      deposit:
+        canCharge && v.deposit_enabled
+          ? {
+              payment_method_id: v.deposit_method_id,
+              ...(moneyCents(v.deposit_text) ? { amount_cents: moneyCents(v.deposit_text) } : {}),
+            }
+          : null,
     };
     settle(
       await run(KINDS.manualBooking, { body }, `turno-a-mano:${crypto.randomUUID()}`),
@@ -92,13 +96,15 @@ export function ManualBookingForm() {
           <TextField control={form.control} name="date" label="Día" type="date" />
           <TextField control={form.control} name="time" label="Hora de inicio" type="time" />
         </div>
-        <ToggleField
-          control={form.control}
-          name="deposit_enabled"
-          onLabel="Con seña ya cobrada (tocá para quitar)"
-          offLabel="Sin seña (tocá para cargar una)"
-        />
-        {withDeposit && (
+        {canCharge && (
+          <ToggleField
+            control={form.control}
+            name="deposit_enabled"
+            onLabel="Con seña ya cobrada (tocá para quitar)"
+            offLabel="Sin seña (tocá para cargar una)"
+          />
+        )}
+        {canCharge && withDeposit && (
           <div className="grid gap-3 sm:grid-cols-2">
             <SelectField
               control={form.control}
@@ -109,9 +115,10 @@ export function ManualBookingForm() {
                 ...incomes.map((m) => ({ value: m.id, label: m.label })),
               ]}
             />
-            <MoneyField
+            <TextField
               control={form.control}
-              name="deposit_cents"
+              name="deposit_text"
+              inputMode="decimal"
               label="Importe de la seña"
               hint="Vacío: la seña que pide el negocio."
             />

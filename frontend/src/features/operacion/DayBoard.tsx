@@ -24,7 +24,7 @@ function EntryCard({ entry, date, timeZone }: { entry: DayEntry; date: string; t
       href={entryHref(entry, date)}
       className={cn(
         TOUCH_TARGET,
-        "block min-h-16 rounded-lg border bg-card p-3 shadow-sm active:bg-accent",
+        "block min-h-16 overflow-hidden rounded-lg border bg-card p-3 shadow-sm active:bg-accent",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -33,8 +33,8 @@ function EntryCard({ entry, date, timeZone }: { entry: DayEntry; date: string; t
         </span>
         <Badge className={status.tone}>{status.label}</Badge>
       </div>
-      <p className="mt-1 text-sm">{entry.services.join(" + ") || "Sin servicio"}</p>
-      <p className="text-sm text-muted-foreground">
+      <p className="mt-1 break-words text-sm">{entry.services.join(" + ") || "Sin servicio"}</p>
+      <p className="break-words text-sm text-muted-foreground">
         {entry.customer?.name ?? "Sin nombre"}
         {entry.vehicle_plate ? ` · ${entry.vehicle_plate}` : ""}
       </p>

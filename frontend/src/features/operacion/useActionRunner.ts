@@ -13,6 +13,16 @@ export interface Notice {
   text: string;
 }
 
+/**
+ * LLEGÓ sin señal: el id del job lo asigna el servidor, así que no se puede seguir con INICIAR hasta
+ * que sincronice (no se inventan ids de cliente: diferido, ver el reporte de 6.2). Se dice claro.
+ */
+export const ARRIVAL_QUEUED_NOTICE =
+  "Sin conexión: quedó guardado en el teléfono y se envía solo al volver la señal. Cuando vuelva la señal vas a poder iniciarlo desde la agenda";
+
+export const SERVER_QUEUED_NOTICE =
+  "El servidor no pudo procesarlo ahora (no es tu conexión). Quedó guardado en el teléfono y se reintenta solo.";
+
 export const QUEUED_NOTICE =
   "Sin conexión: quedó guardado en el teléfono y se envía solo al volver la señal, con la hora de este toque.";
 
@@ -44,7 +54,9 @@ export function useActionRunner() {
       setNotice(null);
       try {
         const out = await run(kind, payload, dedupeKey);
-        if (out.status === "queued") setNotice({ tone: "info", text: QUEUED_NOTICE });
+        if (out.status === "queued") {
+          setNotice({ tone: "info", text: out.httpError ? SERVER_QUEUED_NOTICE : QUEUED_NOTICE });
+        }
         if (out.status === "error") {
           setNotice({ tone: "error", text: operacionErrorMessage(out.error, action) });
           const code = apiErrorCode(out.error);

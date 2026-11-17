@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import axios from "axios";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,8 +14,9 @@ import { cn } from "@/lib/utils";
 import { operacionErrorMessage } from "./errors";
 import { Guard } from "./Guard";
 import { JobTimeline } from "./JobTimeline";
-import { applyOptimistic, type OptimisticAction } from "./optimistic";
+import { applyOptimistic, PENDING_PREFIX, type OptimisticAction } from "./optimistic";
 import { PayPanel } from "./PayPanel";
+import { useNow } from "./useNow";
 import { QueueBanner } from "./QueueBanner";
 import { useBusinessTimeZone, useJob, usePaymentMethods } from "./queries";
 import { JOB_STATUS } from "./status";
@@ -25,16 +27,7 @@ import { QUEUED_NOTICE, useActionRunner } from "./useActionRunner";
 import { KINDS } from "./useOperacionSubmit";
 
 /** Cada cuánto se revisa si ya se cumplió la tolerancia (aparece "Cancelar por demora"). */
-const TICK_MS = 15_000;
-
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
+const TICK_MS = 5_000;
 
 /**
  * `/operacion/{id}`: la pantalla operativa de un job (FASE-6-CONTRATO §4). Botones grandes, un
@@ -65,18 +58,34 @@ function JobScreen({ id }: { id: string }) {
   // Lo que dice el servidor reemplaza al estado optimista apenas se vuelve a leer el job.
   useEffect(() => setLocal(null), [jobQuery.dataUpdatedAt]);
 
-  if (jobQuery.isLoading) return <p className="text-sm text-muted-foreground">Cargando…</p>;
-  if (jobQuery.isError || !jobQuery.data) {
+  // Sin datos todavía: cargando, sin red (consulta pausada o error de red) o un 404/403 real.
+  if (!jobQuery.data) {
+    const status = axios.isAxiosError(jobQuery.error) ? jobQuery.error.response?.status : undefined;
+    const notFound = status === 404 || status === 403;
+    if (!notFound && jobQuery.isFetching && jobQuery.fetchStatus !== "paused") {
+      return <p className="text-sm text-muted-foreground">Cargando…</p>;
+    }
     return (
-      <p role="alert" className="text-sm text-destructive">
-        No se encontró el trabajo. Puede que no exista o que no tengas acceso.{" "}
-        <Link href="/agenda" className={cn(TOUCH_TARGET, "inline-flex items-center underline")}>
-          Volver a la agenda
-        </Link>
-      </p>
+      <div className="space-y-3">
+        <QueueBanner />
+        <p role="alert" className="text-sm text-destructive">
+          {notFound
+            ? "No se encontró el trabajo. Puede que no exista o que no tengas acceso."
+            : "Sin conexión: no se pudo cargar el trabajo. Lo que tocaste queda guardado en el teléfono."}{" "}
+          <Link href="/agenda" className={cn(TOUCH_TARGET, "inline-flex items-center underline")}>
+            Volver a la agenda
+          </Link>
+        </p>
+        {!notFound && (
+          <Button variant="outline" onClick={() => void jobQuery.refetch()}>
+            Reintentar
+          </Button>
+        )}
+      </div>
     );
   }
   const job = local ?? jobQuery.data;
+  const stale = jobQuery.isError || jobQuery.fetchStatus === "paused";
   const status = JOB_STATUS[job.status];
   const canOperate = can("JOBS_OPERAR");
   const canCharge = can("COBROS_REGISTRAR");
@@ -117,7 +126,7 @@ function JobScreen({ id }: { id: string }) {
     const out = await act(
       KINDS.pay,
       "pay",
-      "cobrar",
+      `cobrar#${job.payments.length}`,
       { payment_method_id: methodId, ...(amountCents ? { amount_cents: amountCents } : {}) },
       { kind: "pay", at, amountCents: amountCents ?? job.balance_due_cents },
     );
@@ -160,6 +169,12 @@ function JobScreen({ id }: { id: string }) {
       </div>
 
       <QueueBanner />
+
+      {stale && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Sin conexión: se muestran los últimos datos que tenías.
+        </p>
+      )}
 
       {notice && (
         <p
@@ -213,7 +228,19 @@ function JobScreen({ id }: { id: string }) {
             >
               COBRAR {formatARS(job.balance_due_cents)}
             </Button>
-          ) : (
+          ) : null}
+          {!paying && methods.isError && (
+            <div
+              role="alert"
+              className="space-y-2 rounded-md border border-destructive p-3 text-sm"
+            >
+              <p>No se pudieron cargar los medios de pago, así que todavía no se puede cobrar.</p>
+              <Button variant="outline" onClick={() => void methods.refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          )}
+          {paying && (
             <PayPanel
               balanceCents={job.balance_due_cents}
               methods={methods.data?.items ?? []}
@@ -254,7 +281,8 @@ function JobScreen({ id }: { id: string }) {
                 <span className="text-xs text-muted-foreground">Anulado</span>
               ) : (
                 canVoid &&
-                p.kind === "SALDO" && (
+                p.kind === "SALDO" &&
+                !p.id.startsWith(PENDING_PREFIX) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -314,7 +342,7 @@ function JobScreen({ id }: { id: string }) {
             KINDS.void,
             "void",
             { jobId: id, paymentId: voiding ?? undefined, body: { reason } },
-            `anular:${id}`,
+            `anular#${voiding}:${id}`,
           );
           if (out?.status === "error") throw new Error(operacionErrorMessage(out.error, "void"));
           setNotice(null);

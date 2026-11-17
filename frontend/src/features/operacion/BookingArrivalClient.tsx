@@ -16,7 +16,7 @@ import { useBusinessTimeZone, useDay } from "./queries";
 import { entryStatus } from "./status";
 import { BIG_ACTION, TOUCH_TARGET } from "./touch";
 import type { Job } from "./types";
-import { useActionRunner } from "./useActionRunner";
+import { ARRIVAL_QUEUED_NOTICE, useActionRunner } from "./useActionRunner";
 import { KINDS } from "./useOperacionSubmit";
 
 /**
@@ -39,7 +39,7 @@ function Arrival({ bookingId }: { bookingId: string }) {
   const param = useSearchParams().get("date");
   const date = param && isIsoDate(param) ? param : todayInZone(new Date(), timeZone);
   const day = useDay(date);
-  const { exec, busy, notice } = useActionRunner();
+  const { exec, busy, notice, setNotice } = useActionRunner();
   const entry = day.data?.entries.find((e) => e.booking_id === bookingId);
   const jobId = entry?.job_id ?? null;
 
@@ -69,6 +69,7 @@ function Arrival({ bookingId }: { bookingId: string }) {
       { body: { booking_id: bookingId } },
       `llego:${bookingId}`,
     );
+    if (out?.status === "queued") setNotice({ tone: "info", text: ARRIVAL_QUEUED_NOTICE });
     if (out?.status === "ok") {
       const job = out.data as Job | undefined;
       router.replace(job ? `/operacion/${job.id}` : "/agenda");

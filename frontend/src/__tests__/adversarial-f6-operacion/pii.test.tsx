@@ -173,20 +173,24 @@ describe("Lo que queda en localStorage al encolar", () => {
     expect(stored()).not.toContain("Persona Privada");
   });
 
-  it("HALLAZGO (info): cerrar sesión deja en localStorage el nombre/teléfono/patente de lo que no llegó a enviarse", async () => {
-    renderUi(<WalkInForm />);
-    await userEvent.selectOptions(await screen.findByLabelText("Tamaño del vehículo"), "s1");
-    await userEvent.click(screen.getByRole("button", { name: "Lavado completo" }));
-    await userEvent.type(screen.getByLabelText("Cliente"), NEW_PII[0]!);
-    await userEvent.type(screen.getByLabelText("Patente"), NEW_PII[2]!);
-    goOffline(server);
-    await userEvent.click(screen.getByRole("button", { name: "LLEGÓ" }));
-    await waitFor(() => expect(queueItems()).toHaveLength(1));
-    useAuthStore.getState().clear();
-    // Por diseño la cola sobrevive al logout (perder cargas es peor), pero en una tablet compartida
-    // la PII del cliente queda legible para quien abra las herramientas del navegador.
-    expect(stored()).not.toMatch(/Persona Privada|ZZ999ZZ/);
-  });
+  // H12 (info), sin cambio: la cola sobrevive al logout por diseño de 6.3 (perder cargas es peor).
+  it.failing(
+    "HALLAZGO (info): cerrar sesión deja en localStorage el nombre/teléfono/patente de lo que no llegó a enviarse",
+    async () => {
+      renderUi(<WalkInForm />);
+      await userEvent.selectOptions(await screen.findByLabelText("Tamaño del vehículo"), "s1");
+      await userEvent.click(screen.getByRole("button", { name: "Lavado completo" }));
+      await userEvent.type(screen.getByLabelText("Cliente"), NEW_PII[0]!);
+      await userEvent.type(screen.getByLabelText("Patente"), NEW_PII[2]!);
+      goOffline(server);
+      await userEvent.click(screen.getByRole("button", { name: "LLEGÓ" }));
+      await waitFor(() => expect(queueItems()).toHaveLength(1));
+      useAuthStore.getState().clear();
+      // Por diseño la cola sobrevive al logout (perder cargas es peor), pero en una tablet compartida
+      // la PII del cliente queda legible para quien abra las herramientas del navegador.
+      expect(stored()).not.toMatch(/Persona Privada|ZZ999ZZ/);
+    },
+  );
 });
 
 describe("Nada de PII en URLs, consola, banner ni mensajes", () => {

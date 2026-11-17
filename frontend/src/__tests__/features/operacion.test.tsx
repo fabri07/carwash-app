@@ -736,6 +736,81 @@ describe("Cola endurecida: conflictos y fallidos visibles", () => {
   });
 });
 
+describe("H2: dos cobros sin señal no se pisan", () => {
+  it("el doble toque comparte clave (cobrar#0) y el segundo cobro legítimo lleva otra (cobrar#1)", async () => {
+    sv.getJob.mockResolvedValue(job({ status: "FINALIZADO" }));
+    sv.recordPayment.mockRejectedValue(networkError());
+    renderUi(<JobPageClient id="j1" />);
+    const cobrar = async (importe: string) => {
+      await userEvent.click(await screen.findByRole("button", { name: /^COBRAR/ }));
+      const campo = screen.getByLabelText("Importe");
+      await userEvent.clear(campo);
+      await userEvent.type(campo, importe);
+      await userEvent.click(screen.getByRole("button", { name: /CONFIRMAR COBRO/ }));
+    };
+    await cobrar("5.000");
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(1));
+    await cobrar("3.000");
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(2));
+    expect(useOfflineQueueStore.getState().items.map((i) => i.dedupeKey)).toEqual([
+      "cobrar#0:j1",
+      "cobrar#1:j1",
+    ]);
+  });
+});
+
+describe("H7/H8/H1 en las cargas", () => {
+  it("sin COBROS_REGISTRAR la retrospectiva arranca pendiente y no ofrece el cobro", async () => {
+    as(["AGENDA_VER", "JOBS_OPERAR"]);
+    renderUi(<RetrospectiveForm />);
+    await screen.findByLabelText("Inicio");
+    expect(screen.queryByRole("button", { name: /Cobrado|Cobro pendiente \(tocá/ })).toBeNull();
+    expect(screen.getByText(/no tenés permiso para registrar cobros/i)).toBeInTheDocument();
+  });
+
+  it("un 403 al cargar se explica específico", async () => {
+    sv.recordRetrospective.mockRejectedValue(apiError(403, "FORBIDDEN"));
+    renderUi(<RetrospectiveForm />);
+    await screen.findByText("Tamaño del vehículo");
+    await userEvent.selectOptions(screen.getByLabelText("Tamaño del vehículo"), "s1");
+    await userEvent.click(screen.getByRole("button", { name: "Lavado completo" }));
+    fireEvent.change(screen.getByLabelText("Inicio"), { target: { value: "09:00" } });
+    fireEvent.change(screen.getByLabelText("Fin"), { target: { value: "10:00" } });
+    await userEvent.click(screen.getByRole("button", { name: "Cargar trabajo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /No tenés permiso para cargar cobros/,
+    );
+  });
+
+  it("un fin menor al inicio con duración razonable se carga al día siguiente y lo avisa", async () => {
+    sv.recordRetrospective.mockResolvedValue(job());
+    renderUi(<RetrospectiveForm />);
+    await screen.findByText("Tamaño del vehículo");
+    await userEvent.selectOptions(screen.getByLabelText("Tamaño del vehículo"), "s1");
+    await userEvent.click(screen.getByRole("button", { name: "Lavado completo" }));
+    fireEvent.change(screen.getByLabelText("Día"), { target: { value: "2026-11-10" } });
+    fireEvent.change(screen.getByLabelText("Inicio"), { target: { value: "23:00" } });
+    fireEvent.change(screen.getByLabelText("Fin"), { target: { value: "01:00" } });
+    expect(await screen.findByText(/terminó al día siguiente \(11\/11\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Cargar trabajo" }));
+    await waitFor(() => expect(sv.recordRetrospective).toHaveBeenCalledTimes(1));
+    expect(sv.recordRetrospective.mock.calls[0]![0].finished_at).toBe("2026-11-11T04:00:00.000Z");
+  });
+
+  it("un importe ilegible es un error del campo y no se manda como el total", async () => {
+    renderUi(<RetrospectiveForm />);
+    await screen.findByText("Tamaño del vehículo");
+    await userEvent.selectOptions(screen.getByLabelText("Tamaño del vehículo"), "s1");
+    await userEvent.click(screen.getByRole("button", { name: "Lavado completo" }));
+    fireEvent.change(screen.getByLabelText("Inicio"), { target: { value: "09:00" } });
+    fireEvent.change(screen.getByLabelText("Fin"), { target: { value: "10:00" } });
+    await userEvent.type(screen.getByLabelText("Importe cobrado"), "20.5");
+    await userEvent.click(screen.getByRole("button", { name: "Cargar trabajo" }));
+    expect(await screen.findByText(/Importe no válido/)).toBeInTheDocument();
+    expect(sv.recordRetrospective).not.toHaveBeenCalled();
+  });
+});
+
 describe("Ingreso sin turno (LLEGÓ sin reserva)", () => {
   async function fill() {
     await screen.findByText("Tamaño del vehículo");

@@ -1,3 +1,5 @@
+import axios from "axios";
+
 import { apiErrorCode, genericMessage } from "@/lib/errors";
 
 /** Acción operativa a la que pertenece un error: define qué significa un 422 en cada una. */
@@ -27,7 +29,7 @@ const VALIDATION: Record<OperacionAction, string> = {
   void: "Escribí el motivo de la anulación.",
   inspection: "Revisá los datos de la recepción.",
   retrospective:
-    "Revisá la carga: el fin no puede ser anterior al inicio, ninguno puede ser a futuro, y no se cargan servicios a cotizar.",
+    "Revisá la carga: el fin no puede ser anterior al inicio, ninguno puede ser a futuro, el importe cobrado no puede superar el total y no se cargan servicios a cotizar.",
   manualBooking:
     "Revisá el turno: tiene que ser a futuro, el servicio no puede ser a cotizar y la seña no puede superar el precio.",
 };
@@ -38,6 +40,13 @@ const VALIDATION: Record<OperacionAction, string> = {
  * acá: la cola offline lo cuenta como éxito.
  */
 export function operacionErrorMessage(e: unknown, action: OperacionAction): string {
+  if (
+    axios.isAxiosError(e) &&
+    e.response?.status === 403 &&
+    (action === "retrospective" || action === "manualBooking")
+  ) {
+    return "No tenés permiso para cargar cobros ni señas: cargalo como pendiente, o pedile el permiso al dueño.";
+  }
   switch (apiErrorCode(e)) {
     case "INVALID_TRANSITION":
       return "Ese paso ya no corresponde: el trabajo cambió de estado (otro dispositivo o ya estaba hecho). Se actualizó la pantalla; no se perdió nada.";
