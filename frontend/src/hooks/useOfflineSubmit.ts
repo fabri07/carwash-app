@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/authStore";
 import {
   itemsOwnedBy,
   useOfflineQueueStore,
+  type ConflictItem,
   type FailedItem,
   type QueuedKind,
 } from "@/stores/offlineQueueStore";
@@ -21,8 +22,17 @@ import type { ApiError, ApiErrorCode } from "@/types/api";
  * `post` DEBE mandar `idempotencyKey` como header `Idempotency-Key`: es lo que
  * vuelve seguro reintentar el mismo item.
  */
+export interface OfflinePostMeta {
+  /**
+   * Hora del TOQUE (ISO), fijada al tocar y idéntica en cada reintento (también
+   * tras recargar). Un handler que arme `occurred_at` debe usar ESTE valor y no
+   * `new Date()`: si no, la hora de la acción sería la de la sincronización.
+   */
+  occurredAt: string;
+}
+
 export interface OfflineHandler {
-  post: (payload: unknown, idempotencyKey: string) => Promise<unknown>;
+  post: (payload: unknown, idempotencyKey: string, meta?: OfflinePostMeta) => Promise<unknown>;
   invalidate?: QueryKey[];
 }
 
@@ -32,6 +42,17 @@ export interface SubmitCallbacks {
   onSuccess?: () => void; // entró al servidor (o ya estaba: idempotente)
   onQueued?: () => void; // sin conexión → encolado, se sincroniza al volver online
   onError?: () => void; // rechazo del servidor (4xx) o sin sesión: la carga NO quedó guardada
+  /**
+   * 409 `INVALID_TRANSITION` al mandar en línea: la acción no vale desde el
+   * estado actual. Si no se pasa, se avisa por `onError`.
+   */
+  onConflict?: () => void;
+  /**
+   * Identidad de la acción (p. ej. `iniciar:<jobId>`). Un segundo toque con la
+   * misma clave mientras el primero sigue pendiente o en vuelo es el mismo toque
+   * repetido: no se manda ni se encola otro. Sin clave, cada toque es único.
+   */
+  dedupeKey?: string;
 }
 
 /**
@@ -43,6 +64,11 @@ export interface SubmitCallbacks {
  */
 export const MAX_FLUSH_ATTEMPTS = 5;
 
+/**
+ * Cuántos rechazos permanentes toleraba un ítem antes de pasar a `failed`.
+ * Desde el 6.3 un 4xx permanente es definitivo (no se reintenta el mismo
+ * payload): pasa a `failed` de una. Se exporta solo por compatibilidad.
+ */
 /** Estados que dicen "ahora no", no "nunca": 408 timeout, 425 too early, 429 rate limit. */
 const TRANSIENT_4XX = new Set([408, 425, 429]);
 
@@ -53,7 +79,32 @@ const TRANSIENT_4XX = new Set([408, 425, 429]);
  */
 let flushing = false;
 
-export type FlushErrorClass = "duplicate" | "transient" | "unauthenticated" | "permanent";
+/** Claves de acción con un POST en vuelo (anti doble toque con red lenta). */
+const inflightKeys = new Set<string>();
+
+const FLUSH_LOCK = "carwash_offline_flush";
+
+/**
+ * Un solo vaciado a la vez ENTRE pestañas: `navigator.locks` (donde exista) con
+ * `ifAvailable`; dentro del lock se relee el storage para no mandar ítems que la
+ * otra pestaña ya sincronizó. Sin Web Locks queda el candado de módulo.
+ */
+async function withFlushLock(run: () => Promise<void>): Promise<void> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  if (!locks) return run();
+  await locks.request(FLUSH_LOCK, { ifAvailable: true }, async (lock) => {
+    if (!lock) return; // otra pestaña está vaciando
+    try {
+      await useOfflineQueueStore.persist.rehydrate();
+    } catch {
+      // Storage ilegible: se sigue con lo que hay en memoria.
+    }
+    await run();
+  });
+}
+
+export type FlushErrorClass =
+  "duplicate" | "conflict" | "transient" | "unauthenticated" | "permanent";
 
 /**
  * Qué hacer con un error de flush:
@@ -65,13 +116,16 @@ export type FlushErrorClass = "duplicate" | "transient" | "unauthenticated" | "p
  *   403 `PASSWORD_CHANGE_REQUIRED`: la carga es válida, solo falta que el
  *   empleado cambie la clave (p. ej. el dueño se la reseteó mientras estaba sin
  *   señal); gastar intentos la mandaría a `failed` sin motivo.
- * - `permanent`: el resto de los 4xx (400, 403, 404, 409 no idempotente, 422…)
- *   → gasta un intento; al tope pasa a `failed`.
+ * - `conflict`: 409 INVALID_TRANSITION → la acción ya no vale desde el estado
+ *   actual: sale de la cola sin reintento y queda en `conflicts`, visible.
+ * - `permanent`: el resto de los 4xx (400, 403, 404, 409 CONFLICT, 422…) →
+ *   definitivo: pasa a `failed` (visible) sin reintentar el mismo payload.
  * Un error que no es HTTP (bug del handler) se trata como transitorio: ante
  * la duda, no se pierde la carga.
  */
 export function classifyFlushError(e: unknown): FlushErrorClass {
   if (isDuplicate(e)) return "duplicate";
+  if (isInvalidTransition(e)) return "conflict";
   if (!axios.isAxiosError(e) || !e.response) return "transient";
   const { status } = e.response;
   if (status === 401 || isPasswordChangeRequired(e)) return "unauthenticated";
@@ -103,6 +157,13 @@ function isPasswordChangeRequired(e: unknown): boolean {
   if (!axios.isAxiosError(e) || e.response?.status !== 403) return false;
   const data = e.response.data as Partial<ApiError> | undefined;
   return data?.detail?.code === "PASSWORD_CHANGE_REQUIRED";
+}
+
+export function isInvalidTransition(e: unknown): boolean {
+  if (!axios.isAxiosError(e) || e.response?.status !== 409) return false;
+  const data = e.response.data as Partial<ApiError> | undefined;
+  const code: ApiErrorCode = "INVALID_TRANSITION";
+  return data?.detail?.code === code;
 }
 
 export function isDuplicate(e: unknown): boolean {
@@ -144,6 +205,13 @@ export function useFailedOfflineItems(): FailedItem[] {
   return itemsOwnedBy(failed, user ? { userId: user.id, tenantId: user.tenant_id } : null);
 }
 
+/** Acciones descartadas por `INVALID_TRANSITION`, del usuario actual. */
+export function useConflictOfflineItems(): ConflictItem[] {
+  const user = useAuthStore((s) => s.user);
+  const conflicts = useOfflineQueueStore((s) => s.conflicts);
+  return itemsOwnedBy(conflicts, user ? { userId: user.id, tenantId: user.tenant_id } : null);
+}
+
 /** Cantidad de cargas pendientes del usuario actual (para un badge). */
 export function useOfflineQueueCount(): number {
   const user = useAuthStore((s) => s.user);
@@ -181,57 +249,72 @@ export function useOfflineSubmit(opts: {
   autoSync?: boolean;
   /** Un ítem salió de la cola por rechazos permanentes (queda en `failed`). */
   onItemFailed?: (item: FailedItem) => void;
+  /** Un ítem salió de la cola por 409 `INVALID_TRANSITION` (queda en `conflicts`). */
+  onItemConflict?: (item: ConflictItem) => void;
 }) {
   const queryClient = useQueryClient();
   const handlersRef = useRef(opts.handlers);
   handlersRef.current = opts.handlers;
   const onItemFailedRef = useRef(opts.onItemFailed);
   onItemFailedRef.current = opts.onItemFailed;
+  const onItemConflictRef = useRef(opts.onItemConflict);
+  onItemConflictRef.current = opts.onItemConflict;
 
   const flush = useCallback(async () => {
     if (flushing) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
-    // Solo lo del usuario y tenant de la sesión actual (tablet compartida).
-    const items = pendingForCurrentUser();
-    if (items.length === 0) return;
     flushing = true;
-    const queue = useOfflineQueueStore.getState;
     try {
-      for (const item of [...items]) {
-        const handler = handlersRef.current[item.kind];
-        // Sin handler en este montaje (otra pantalla lo encoló): se deja para
-        // quien sí sepa mandarlo. No se descarta ni se gasta intento.
-        if (!handler) continue;
-        try {
-          await handler.post(item.payload, item.id);
-          queue().remove(item.id);
-          invalidate(queryClient, handler);
-        } catch (e) {
-          const kind = classifyFlushError(e);
-          if (kind === "duplicate") {
+      await withFlushLock(async () => {
+        // Solo lo del usuario y tenant de la sesión actual (tablet compartida).
+        // Se lee DENTRO del lock: la cola puede haber cambiado en otra pestaña.
+        const items = pendingForCurrentUser();
+        const queue = useOfflineQueueStore.getState;
+        // FIFO: el orden de la cola es el orden de los toques (iniciar antes de finalizar).
+        for (const item of [...items]) {
+          const handler = handlersRef.current[item.kind];
+          // Sin handler en este montaje (otra pantalla lo encoló): se deja para
+          // quien sí sepa mandarlo. No se descarta ni se gasta intento.
+          if (!handler) continue;
+          try {
+            await handler.post(item.payload, item.id, {
+              occurredAt: item.occurredAt ?? item.createdAt,
+            });
             queue().remove(item.id);
             invalidate(queryClient, handler);
-          } else if (kind === "transient") {
-            // Red caída, backend caído o sobrecargado: los ítems siguientes
-            // fallarían igual. Se anota el motivo, no se gasta intento y se
-            // corta; el próximo flush (online, montaje) reintenta.
-            queue().noteTransient(item.id, errorMessage(e));
-            if (axios.isAxiosError(e)) break;
-          } else if (kind === "unauthenticated") {
-            // El interceptor ya intentó el refresh y falló: sin sesión no
-            // tiene sentido seguir. El ítem queda atado a su dueño.
-            queue().noteTransient(item.id, "Sesión vencida: se enviará al volver a entrar");
-            break;
-          } else if (item.attempts + 1 >= MAX_FLUSH_ATTEMPTS) {
-            const status = axios.isAxiosError(e) ? e.response?.status : undefined;
-            queue().moveToFailed(item.id, errorMessage(e), status);
-            const failed = queue().failed.find((f) => f.id === item.id);
-            if (failed) onItemFailedRef.current?.(failed);
-          } else {
-            queue().markFailed(item.id, errorMessage(e));
+          } catch (e) {
+            const kind = classifyFlushError(e);
+            if (kind === "duplicate") {
+              queue().remove(item.id);
+              invalidate(queryClient, handler);
+            } else if (kind === "conflict") {
+              // La acción ya no vale desde el estado actual: no se reintenta,
+              // pero tampoco se pierde el aviso (queda en `conflicts`).
+              queue().moveToConflict(item.id, errorMessage(e), 409);
+              invalidate(queryClient, handler);
+              const conflict = queue().conflicts.find((f) => f.id === item.id);
+              if (conflict) onItemConflictRef.current?.(conflict);
+            } else if (kind === "transient") {
+              // Red caída, backend caído o sobrecargado: los ítems siguientes
+              // fallarían igual. Se anota el motivo, no se gasta intento y se
+              // corta; el próximo flush (online, montaje) reintenta.
+              queue().noteTransient(item.id, errorMessage(e));
+              if (axios.isAxiosError(e)) break;
+            } else if (kind === "unauthenticated") {
+              // El interceptor ya intentó el refresh y falló: sin sesión no
+              // tiene sentido seguir. El ítem queda atado a su dueño.
+              queue().noteTransient(item.id, "Sesión vencida: se enviará al volver a entrar");
+              break;
+            } else {
+              // 4xx permanente: reintentar el mismo payload no lo arregla.
+              const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+              queue().moveToFailed(item.id, errorMessage(e), status);
+              const failed = queue().failed.find((f) => f.id === item.id);
+              if (failed) onItemFailedRef.current?.(failed);
+            }
           }
         }
-      }
+      });
     } finally {
       flushing = false;
     }
@@ -247,9 +330,21 @@ export function useOfflineSubmit(opts: {
         cb?.onError?.();
         return;
       }
+      const dedupeKey = cb?.dedupeKey;
+      if (dedupeKey) {
+        const pending = pendingForCurrentUser().some((i) => i.dedupeKey === dedupeKey);
+        // Mismo toque repetido: ya está pendiente o en vuelo. No se manda otro.
+        if (pending || inflightKeys.has(dedupeKey)) {
+          if (pending) cb?.onQueued?.();
+          return;
+        }
+      }
       const id = crypto.randomUUID();
+      // La hora del toque se fija ACÁ, antes de cualquier intento.
+      const occurredAt = new Date().toISOString();
+      if (dedupeKey) inflightKeys.add(dedupeKey);
       try {
-        await handler.post(payload, id);
+        await handler.post(payload, id, { occurredAt });
         invalidate(queryClient, handler);
         cb?.onSuccess?.();
       } catch (e) {
@@ -272,7 +367,9 @@ export function useOfflineSubmit(opts: {
               ...owner,
               kind,
               payload,
-              createdAt: new Date().toISOString(),
+              createdAt: occurredAt,
+              occurredAt,
+              dedupeKey,
               attempts: 0,
             });
             cb?.onQueued?.();
@@ -288,9 +385,14 @@ export function useOfflineSubmit(opts: {
             }
             cb?.onError?.();
           }
+        } else if (isInvalidTransition(e) && cb?.onConflict) {
+          invalidate(queryClient, handler);
+          cb.onConflict();
         } else {
           cb?.onError?.();
         }
+      } finally {
+        if (dedupeKey) inflightKeys.delete(dedupeKey);
       }
     },
     [queryClient],

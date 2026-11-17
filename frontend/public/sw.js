@@ -26,7 +26,15 @@ function strategyFor(request, scopeOrigin) {
   var url = new URL(request.url);
   if (url.origin !== scopeOrigin) return "network-only";
   if (url.pathname.indexOf("/_next/static/") === 0) return "cache-first";
-  if (url.pathname.indexOf("/api/") === 0 || url.pathname === "/sw.js") return "network-only";
+  // La API y cualquier ruta autenticada nunca se guardan, aunque un proxy la
+  // sirva desde el mismo origen y aunque sea una "navegación" (6.3).
+  if (
+    url.pathname.indexOf("/api/") === 0 ||
+    url.pathname.indexOf("/v1/") === 0 ||
+    url.pathname === "/sw.js"
+  ) {
+    return "network-only";
+  }
   if (request.mode === "navigate" || url.pathname.indexOf("/_next/image") === 0) {
     return "network-first";
   }
