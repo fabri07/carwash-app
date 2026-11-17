@@ -15,6 +15,10 @@ from collections.abc import Callable
 #: Sin 0/O/1/I/L.
 CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 CODE_PREFIX = "TUR-"
+#: Turnos que carga el negocio a mano (FASE-6-CONTRATO §3.3). No sirven para el turnero público:
+#: `normalize_booking_code` no los reconoce, así que el cliente no los puede consultar ni cancelar
+#: desde la web con un WhatsApp (no los reservó él).
+INTERNAL_CODE_PREFIX = "INT-"
 CODE_LENGTH = 6
 #: Reintentos ante un choque con el único vivo (con 887 M combinaciones, el segundo ya sobra).
 MAX_CODE_ATTEMPTS = 5
@@ -25,6 +29,11 @@ _ALLOWED = frozenset(CODE_ALPHABET)
 def new_booking_code(choice: Callable[[str], str] = secrets.choice) -> str:
     """Un código nuevo. `choice` se inyecta en los tests para forzar un choque."""
     return CODE_PREFIX + "".join(choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
+
+
+def new_internal_booking_code(choice: Callable[[str], str] = secrets.choice) -> str:
+    """`INT-` + 6 caracteres del mismo alfabeto: el código de un turno cargado a mano."""
+    return INTERNAL_CODE_PREFIX + "".join(choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
 
 
 def normalize_booking_code(raw: str | None) -> str | None:

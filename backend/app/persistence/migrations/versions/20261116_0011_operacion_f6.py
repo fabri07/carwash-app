@@ -76,7 +76,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Vuelve al esquema de 0010. Corta, diciendo por qué, si perdería la marca de la carga manual."""
+    """Vuelve al esquema de 0010. Corta, diciendo por qué, si perdería la marca de la carga."""
     op.execute(LOCK_TIMEOUT)
     # `NO FORCE` para que el chequeo vea todas las filas (con FORCE y sin tenant en contexto: 0).
     op.execute("ALTER TABLE jobs NO FORCE ROW LEVEL SECURITY")

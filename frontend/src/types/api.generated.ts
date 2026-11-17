@@ -93,6 +93,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agenda/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Day */
+        get: operations["get_day_v1_agenda_day_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agenda/openings": {
         parameters: {
             query?: never;
@@ -298,6 +315,29 @@ export interface paths {
         get: operations["get_counts_v1_bookings_counts_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Manual Booking
+         * @description Un turno cargado por el dueño (fuente `AGENDA_INTERNA`, código `INT-…`). El `EXCLUDE`
+         *     decide el choque (409 `SLOT_TAKEN`). Con `deposit` registra la seña ya cobrada y el turno
+         *     nace `CONFIRMADO`; si el negocio pide seña y no se manda, queda `PENDIENTE_SEÑA` con su hold.
+         *     Un reenvío de la clave es 409 `DUPLICATE_IDEMPOTENT`.
+         */
+        post: operations["create_manual_booking_v1_bookings_manual_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -611,6 +651,238 @@ export interface paths {
          * @description Desmarcar = anular (nunca se borra).
          */
         delete: operations["void_incident_mark_v1_incident_marks__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Job
+         * @description Llegó (con `booking_id`) o ingreso sin turno. El turno pasa a `RECIBIDO`; el job nace
+         *     `PRESENTE`. Recibir es idempotente por turno y por clave.
+         */
+        post: operations["receive_job_v1_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/retrospective": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retrospective
+         * @description Un trabajo ya hecho, de una sola vez (D6-3): crea el job y sus eventos con la hora real
+         *     (`manual_entry`), `entry_mode = RETROSPECTIVA`, y cae en la agenda de **su** fecha. Con
+         *     `payment` lo cobra (medio y monto; sin monto, el total); sin él queda `FINALIZADO` y "debe".
+         *     Cargar el cobro exige además `COBROS_REGISTRAR`.
+         */
+        post: operations["retrospective_v1_jobs_retrospective_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job
+         * @description El job con sus servicios, pagos y saldo derivado (`> 0` es "debe").
+         */
+        get: operations["get_job_v1_jobs__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/cancel-delay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Delay
+         * @description `PRESENTE → CANCELADO_DEMORA`: **botón manual** (D6-2), nunca automático. Solo si la demora
+         *     supera `tolerance_min`; el servidor mira su propio reloj: un `occurred_at` del futuro no lo
+         *     adelanta (se toma el menor entre el del toque y el del servidor). Retiene la seña (F5).
+         */
+        post: operations["cancel_delay_v1_jobs__id__cancel_delay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Events
+         * @description La línea de tiempo (`job_events`) en el orden en que el servidor los aceptó. Cada evento
+         *     trae la hora del toque (`occurred_at`) y la de llegada (`created_at`); una carga retrospectiva
+         *     lleva `metadata.manual_entry`.
+         */
+        get: operations["list_events_v1_jobs__id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Job
+         * @description `EN_PROCESO → FINALIZADO`. Con el saldo en 0 (una seña que cubre todo) pasa solo a
+         *     `COBRADO`.
+         */
+        post: operations["finish_job_v1_jobs__id__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/inspection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Inspection
+         * @description La recepción completa (suciedad, daños, objetos, consentimiento de fotos): camino
+         *     secundario y opcional (D-007). 0..1 por job: la segunda actualiza la primera.
+         */
+        post: operations["record_inspection_v1_jobs__id__inspection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Payment
+         * @description Un cobro más (suma, no pisa). Sin `amount_cents` cobra el saldo completo: cobrar son 2
+         *     toques (abrir, confirmar). Con el saldo en 0 el job `FINALIZADO` pasa solo a `COBRADO`. Un
+         *     importe mayor al saldo es 422.
+         */
+        post: operations["record_payment_v1_jobs__id__payments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/payments/{payment_id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Void Payment
+         * @description Anula un cobro del job, con motivo. El job no se reabre: si queda saldo, es deuda.
+         */
+        post: operations["void_payment_v1_jobs__id__payments__payment_id__void_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/pick-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick Up Job
+         * @description `COBRADO | FINALIZADO → RETIRADO`. Con deuda, solo si el cliente ya pagó un servicio.
+         */
+        post: operations["pick_up_job_v1_jobs__id__pick_up_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Job
+         * @description `PRESENTE → EN_PROCESO`. No exige la recepción completa (D-007).
+         */
+        post: operations["start_job_v1_jobs__id__start_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1592,6 +1864,16 @@ export interface components {
             /** Weekday */
             weekday?: number | null;
         };
+        /** CancelDelayBody */
+        CancelDelayBody: {
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason?: string | null;
+        };
         /**
          * CancellationClassification
          * @description Valores exactos del código (R-T-037, C-06), no los del inventario.
@@ -1696,6 +1978,88 @@ export interface components {
             /** Phone E164 */
             phone_e164: string | null;
         };
+        /**
+         * DayEntryResponse
+         * @description Un renglón de la agenda: `kind` dice si es un turno todavía sin job o un job.
+         */
+        DayEntryResponse: {
+            /** Balance Due Cents */
+            balance_due_cents: number | null;
+            /** Booking Id */
+            booking_id: string | null;
+            booking_status: components["schemas"]["BookingStatus"] | null;
+            /** Cancel Delay From */
+            cancel_delay_from: string | null;
+            /** Code */
+            code: string | null;
+            customer: components["schemas"]["CustomerBrief"] | null;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            entry_mode: components["schemas"]["JobEntryMode"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            job_status: components["schemas"]["JobStatus"] | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "BOOKING" | "JOB";
+            /** Paid Cents */
+            paid_cents: number;
+            /** Resource Id */
+            resource_id: string | null;
+            /** Services */
+            services: string[];
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /** Total Cents */
+            total_cents: number | null;
+            /** Vehicle Plate */
+            vehicle_plate: string | null;
+        };
+        /** DayResource */
+        DayResource: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * DayResponse
+         * @description La agenda de un día del negocio: una columna por puesto (D6-1). Los renglones sin puesto
+         *     (`resource_id` nulo: un ingreso sin puesto asignado) van en la columna "sin puesto".
+         */
+        DayResponse: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Entries */
+            entries: components["schemas"]["DayEntryResponse"][];
+            /** Resources */
+            resources: components["schemas"]["DayResource"][];
+            /** Timezone */
+            timezone: string;
+            /** Tolerance Min */
+            tolerance_min: number;
+            /** Truncated */
+            truncated: boolean;
+        };
         /** DepositCaseResponse */
         DepositCaseResponse: {
             booking: components["schemas"]["BookingSummary"];
@@ -1708,10 +2072,17 @@ export interface components {
          */
         DepositStatus: "SIN_PAGO" | "DEVOLUCION_PENDIENTE" | "EN_REVISION" | "REPROGRAMACION_O_DEVOLUCION_PENDIENTE" | "DEVUELTA" | "RETENIDA" | "REPROGRAMADA";
         /**
+         * DirtLevel
+         * @description Los 6 niveles de `RECEPCION!B15` / `ADMIN_DIRT_LEVELS`. Los 12 valores libres de
+         *     `REGISTRO_DIARIO.O` se mapean en la migración de F8.
+         * @enum {string}
+         */
+        DirtLevel: "NORMAL" | "INTENSA" | "BARRO" | "ARENA" | "PELOS_DE_MASCOTA" | "TRABAJO_ESPECIAL";
+        /**
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "TOO_MANY_ACTIVE_BOOKINGS" | "SERVICE_NOT_BOOKABLE" | "INVALID_PHONE" | "SERVICE_UNAVAILABLE" | "SLOT_TAKEN" | "BLOCKED" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
+        ErrorCode: "DUPLICATE_IDEMPOTENT" | "NOT_FOUND" | "UNAUTHENTICATED" | "FORBIDDEN" | "ORIGIN_NOT_ALLOWED" | "INVALID_CREDENTIALS" | "EMAIL_TAKEN" | "USERNAME_TAKEN" | "NAME_TAKEN" | "PROFILE_IN_USE" | "CODE_TAKEN" | "IN_USE" | "SLUG_TAKEN" | "SLUG_RESERVED" | "PASSWORD_CHANGE_REQUIRED" | "INVALID_IMAGE" | "IMAGE_TOO_SMALL" | "FILE_TOO_LARGE" | "STORAGE_UNAVAILABLE" | "ONBOARDING_INCOMPLETE" | "CONFLICT" | "TOO_MANY_ACTIVE_BOOKINGS" | "SERVICE_NOT_BOOKABLE" | "INVALID_PHONE" | "SERVICE_UNAVAILABLE" | "SLOT_TAKEN" | "BLOCKED" | "INVALID_TRANSITION" | "VALIDATION_ERROR" | "RATE_LIMITED" | "INTERNAL_ERROR";
         /** ErrorDetail */
         ErrorDetail: {
             code: components["schemas"]["ErrorCode"];
@@ -1791,6 +2162,172 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * InspectionBody
+         * @description La recepción completa (D-007): opcional; cada envío trae el formulario entero.
+         */
+        InspectionBody: {
+            /** Checklist */
+            checklist?: {
+                [key: string]: boolean;
+            } | null;
+            dirt_level?: components["schemas"]["DirtLevel"] | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Photo Consent */
+            photo_consent?: boolean | null;
+            /** Pre Existing Damage */
+            pre_existing_damage?: string | null;
+            /** Valuables */
+            valuables?: string | null;
+        };
+        /** InspectionResponse */
+        InspectionResponse: {
+            /** Checklist */
+            checklist: {
+                [key: string]: boolean;
+            } | null;
+            dirt_level: components["schemas"]["DirtLevel"] | null;
+            /** Inspected At */
+            inspected_at: string | null;
+            /** Photo Consent */
+            photo_consent: boolean | null;
+            /** Pre Existing Damage */
+            pre_existing_damage: string | null;
+            /** Valuables */
+            valuables: string | null;
+        };
+        /**
+         * JobEntryMode
+         * @description FASE-6-CONTRATO §2: cómo entró el job. `RETROSPECTIVA` = cargado después del hecho, con las
+         *     horas reales que tipeó el operador (sus eventos llevan `manual_entry`).
+         * @enum {string}
+         */
+        JobEntryMode: "EN_VIVO" | "RETROSPECTIVA";
+        /** JobEventResponse */
+        JobEventResponse: {
+            /**
+             * Actor User Id
+             * Format: uuid
+             */
+            actor_user_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            event_type: components["schemas"]["JobEventType"];
+            from_status: components["schemas"]["JobStatus"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            to_status: components["schemas"]["JobStatus"] | null;
+        };
+        /**
+         * JobEventType
+         * @enum {string}
+         */
+        JobEventType: "JOB_RECEIVED" | "JOB_STARTED" | "JOB_FINISHED" | "JOB_SETTLED" | "JOB_PICKED_UP" | "JOB_CANCELLED_DELAY" | "DEPOSIT_RETAINED" | "DEPOSIT_RETENTION_REVERSED" | "PAYMENT_RECORDED" | "PAYMENT_VOIDED" | "INSPECTION_RECORDED" | "PRICE_ADJUSTED";
+        /** JobResponse */
+        JobResponse: {
+            /** Arrival Delay Min */
+            arrival_delay_min: number | null;
+            /**
+             * Arrived At
+             * Format: date-time
+             */
+            arrived_at: string;
+            /** Balance Due Cents */
+            balance_due_cents: number;
+            /** Base Price Cents */
+            base_price_cents: number;
+            /** Booking Code */
+            booking_code: string | null;
+            /** Booking Id */
+            booking_id: string | null;
+            /** Cancel Delay From */
+            cancel_delay_from: string | null;
+            channel: components["schemas"]["Channel"];
+            customer: components["schemas"]["CustomerBrief"] | null;
+            /** Discount Cents */
+            discount_cents: number;
+            entry_mode: components["schemas"]["JobEntryMode"];
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            inspection: components["schemas"]["InspectionResponse"] | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid Cents */
+            paid_cents: number;
+            /** Payments */
+            payments: components["schemas"]["PaymentBrief"][];
+            /** Picked Up At */
+            picked_up_at: string | null;
+            /** Resource Id */
+            resource_id: string | null;
+            /** Scheduled At */
+            scheduled_at: string | null;
+            /** Services */
+            services: components["schemas"]["JobServiceLine"][];
+            /** Settled At */
+            settled_at: string | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["JobStatus"];
+            /** Surcharge Cents */
+            surcharge_cents: number;
+            /** Tolerance Min */
+            tolerance_min: number;
+            /** Total Cents */
+            total_cents: number;
+            /** Vehicle Plate */
+            vehicle_plate: string | null;
+            /**
+             * Vehicle Size Id
+             * Format: uuid
+             */
+            vehicle_size_id: string;
+        };
+        /** JobServiceLine */
+        JobServiceLine: {
+            /** Duration Min */
+            duration_min: number;
+            /** Name */
+            name: string;
+            /** Price Cents */
+            price_cents: number;
+            pricing_mode: components["schemas"]["PricingMode"];
+            /**
+             * Service Id
+             * Format: uuid
+             */
+            service_id: string;
+        };
+        /**
+         * JobStatus
+         * @description §2.2. `jobs.status` es caché del último `job_events.to_status`.
+         * @enum {string}
+         */
+        JobStatus: "PRESENTE" | "EN_PROCESO" | "FINALIZADO" | "COBRADO" | "RETIRADO" | "CANCELADO_DEMORA";
         /** LoginRequest */
         LoginRequest: {
             /** Identifier */
@@ -1805,6 +2342,58 @@ export interface components {
             /** Logo Url */
             logo_url: string | null;
             suggestion: components["schemas"]["PaletteSuggestion"];
+        };
+        /**
+         * ManualBookingBody
+         * @description Un turno "solo a mano": cliente (nombre y/o teléfono; sin nada, "Sin nombre"), auto
+         *     (patente opcional), servicios, horario, puesto, y la seña si ya la cobró.
+         */
+        ManualBookingBody: {
+            channel?: components["schemas"]["Channel"] | null;
+            /** Customer Name */
+            customer_name?: string | null;
+            /** Customer Phone */
+            customer_phone?: string | null;
+            deposit?: components["schemas"]["ManualDepositBody"] | null;
+            /** Notes */
+            notes?: string | null;
+            /** Plate */
+            plate?: string | null;
+            /**
+             * Resource Id
+             * Format: uuid
+             */
+            resource_id: string;
+            /** Service Ids */
+            service_ids: string[];
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * Vehicle Size Id
+             * Format: uuid
+             */
+            vehicle_size_id: string;
+        };
+        /** ManualBookingResponse */
+        ManualBookingResponse: {
+            booking: components["schemas"]["BookingSummary"];
+            /** Deposit Paid Cents */
+            deposit_paid_cents: number;
+        };
+        /** ManualDepositBody */
+        ManualDepositBody: {
+            /** Amount Cents */
+            amount_cents?: number | null;
+            /**
+             * Payment Method Id
+             * Format: uuid
+             */
+            payment_method_id: string;
+            /** Reference */
+            reference?: string | null;
         };
         /**
          * MeResponse
@@ -1824,6 +2413,17 @@ export interface components {
             permissions: components["schemas"]["Permission"][];
             tenant: components["schemas"]["TenantResponse"];
             user: components["schemas"]["UserResponse"];
+        };
+        /**
+         * OccurredBody
+         * @description Toda acción del job: la hora del toque, del dispositivo.
+         */
+        OccurredBody: {
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
         };
         /** OnboardingIncompleteDetail */
         OnboardingIncompleteDetail: {
@@ -2042,6 +2642,19 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PaginatedResponse[JobEventResponse] */
+        PaginatedResponse_JobEventResponse_: {
+            /** Has More */
+            readonly has_more: boolean;
+            /** Items */
+            items: components["schemas"]["JobEventResponse"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** PaginatedResponse[OpeningResponse] */
         PaginatedResponse_OpeningResponse_: {
             /** Has More */
@@ -2202,6 +2815,23 @@ export interface components {
             dominant_color: string | null;
             /** Palette */
             palette: string;
+        };
+        /** PaymentBody */
+        PaymentBody: {
+            /** Amount Cents */
+            amount_cents?: number | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Payment Method Id
+             * Format: uuid
+             */
+            payment_method_id: string;
+            /** Reference */
+            reference?: string | null;
         };
         /** PaymentBrief */
         PaymentBrief: {
@@ -2575,6 +3205,47 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * ReceiveBody
+         * @description Recibir: con `booking_id` (el turno) o un ingreso sin turno.
+         *
+         *     Sin turno: el tamaño y al menos un servicio; el auto, por `vehicle_id` o por `plate` (sin
+         *     ninguno se crea uno anónimo); el cliente, por `customer_id` o por nombre y/o teléfono (sin
+         *     nada, el job queda sin cliente). `channel` por defecto `CALLE`.
+         */
+        ReceiveBody: {
+            /** Booking Id */
+            booking_id?: string | null;
+            channel?: components["schemas"]["Channel"] | null;
+            /** Customer Id */
+            customer_id?: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
+            /** Customer Phone */
+            customer_phone?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Plate */
+            plate?: string | null;
+            /** Quote Id */
+            quote_id?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /**
+             * Service Ids
+             * @default []
+             */
+            service_ids: string[];
+            /** Vehicle Id */
+            vehicle_id?: string | null;
+            /** Vehicle Size Id */
+            vehicle_size_id?: string | null;
+        };
         /** RefundBody */
         RefundBody: {
             /** Amount Cents */
@@ -2670,6 +3341,56 @@ export interface components {
             name?: string | null;
             /** Sort Order */
             sort_order?: number | null;
+        };
+        /** RetroPaymentBody */
+        RetroPaymentBody: {
+            /** Amount Cents */
+            amount_cents?: number | null;
+            /**
+             * Payment Method Id
+             * Format: uuid
+             */
+            payment_method_id: string;
+            /** Reference */
+            reference?: string | null;
+        };
+        /**
+         * RetrospectiveBody
+         * @description Un trabajo ya hecho (D6-3): horas reales, ambas en el pasado y `finished_at >= started_at`.
+         *
+         *     `payment: null` = cobro pendiente (el job queda `FINALIZADO` y "debe"). El cliente puede ser
+         *     "sin nombre" y la patente es opcional.
+         */
+        RetrospectiveBody: {
+            channel?: components["schemas"]["Channel"] | null;
+            /** Customer Name */
+            customer_name?: string | null;
+            /** Customer Phone */
+            customer_phone?: string | null;
+            /**
+             * Finished At
+             * Format: date-time
+             */
+            finished_at: string;
+            /** Notes */
+            notes?: string | null;
+            payment?: components["schemas"]["RetroPaymentBody"] | null;
+            /** Plate */
+            plate?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Service Ids */
+            service_ids: string[];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Vehicle Size Id
+             * Format: uuid
+             */
+            vehicle_size_id: string;
         };
         /**
          * Role
@@ -3365,6 +4086,16 @@ export interface components {
             /** Sort Order */
             sort_order?: number | null;
         };
+        /** VoidPaymentBody */
+        VoidPaymentBody: {
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -3639,6 +4370,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_day_v1_agenda_day_get: {
+        parameters: {
+            query: {
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayResponse"];
+                };
             };
             /** @description Unauthorized */
             401: {
@@ -4366,6 +5164,77 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_manual_booking_v1_bookings_manual_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualBookingBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualBookingResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5692,6 +6561,797 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_job_v1_jobs_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retrospective_v1_jobs_retrospective_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrospectiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_job_v1_jobs__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_delay_v1_jobs__id__cancel_delay_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelDelayBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_events_v1_jobs__id__events_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_JobEventResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    finish_job_v1_jobs__id__finish_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OccurredBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    record_inspection_v1_jobs__id__inspection_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InspectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    record_payment_v1_jobs__id__payments_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    void_payment_v1_jobs__id__payments__payment_id__void_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidPaymentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pick_up_job_v1_jobs__id__pick_up_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OccurredBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_job_v1_jobs__id__start_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OccurredBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

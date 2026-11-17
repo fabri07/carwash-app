@@ -33,5 +33,6 @@ def test_la_bandeja_tiene_la_autorizacion_del_contrato():
             ruta.path,
         )
         vistas += 1
-    # turnos: lista, contador, detalle + 7 acciones; marca (anular); cancelaciones: lista, resolver
-    assert vistas == 3 + 7 + 1 + 2
+    # turnos: lista, contador, detalle + 7 acciones + el turno a mano (F6); marca (anular);
+    # cancelaciones: lista, resolver
+    assert vistas == 3 + 7 + 1 + 1 + 2

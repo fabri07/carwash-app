@@ -21,6 +21,7 @@ from app.application.services import (
     CustomerService,
     DepositResolutionService,
     JobService,
+    OperationService,
     PaymentInput,
     QuoteService,
     VehicleService,
@@ -81,6 +82,10 @@ class Lavadero:
     @property
     def jobs(self) -> JobService:
         return JobService(self.session, self.tenant_id, self.owner_id)
+
+    @property
+    def operacion(self) -> OperationService:
+        return OperationService(self.session, self.tenant_id, self.owner_id)
 
     @property
     def cotizaciones(self) -> QuoteService:

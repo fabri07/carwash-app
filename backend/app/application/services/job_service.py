@@ -22,12 +22,18 @@ cancelar por demora).
 
 Orden de locks: job → turno. `receive` toma el turno y crea el job (no hay job que bloquear).
 
+**Carga retrospectiva** (FASE-6-CONTRATO §3.3, D6-3): `record_retrospective` compone los mismos
+métodos de arriba (recibir, iniciar, finalizar, cobrar) con las horas reales que tipeó el operador;
+mientras corre, el job nace `RETROSPECTIVA` y cada evento lleva `{"manual_entry": true}`. No hay
+una segunda máquina de estados: las transiciones y las guardas son las de siempre.
+
 Transacción: del llamador. Ante cualquier excepción, rollback; el servicio no deja nada a medias
 a propósito, pero tampoco lo deshace.
 """
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, NamedTuple
 
@@ -45,6 +51,7 @@ from app.application.services._items import catalog_items
 from app.application.services._payments import PaymentInput, create_payment, void_payment_row
 from app.application.services.errors import (
     IdempotencyKeyReusedError,
+    NotFoundError,
     QuoteAlreadyUsedError,
 )
 from app.domain.booking_state import BookingAction, next_booking_status
@@ -53,6 +60,7 @@ from app.domain.deposit import balance_due, net_paid, total_agreed
 from app.domain.enums import (
     Channel,
     DirtLevel,
+    JobEntryMode,
     JobEventType,
     JobStatus,
     PaymentKind,
@@ -125,6 +133,15 @@ def retained_key(key: str) -> str:
     return f"{key}:retained"
 
 
+@dataclass(frozen=True, slots=True)
+class RetroPayment:
+    """El cobro de una carga retrospectiva. `amount_cents` `None` = el saldo completo."""
+
+    payment_method_id: uuid.UUID
+    amount_cents: int | None = None
+    reference: str | None = None
+
+
 class _Line(NamedTuple):
     """Una línea del job: snapshot del turno o del catálogo, con la modalidad del servicio."""
 
@@ -144,6 +161,8 @@ class JobService(ServiceBase):
         self._events = JobEventRepository(session)
         self._bookings = BookingRepository(session)
         self._payments = PaymentRepository(session)
+        #: Solo `record_retrospective` lo enciende, y solo mientras corre.
+        self._manual = False
 
     # ── Lectura ───────────────────────────────────────────────────────────────
 
@@ -188,6 +207,13 @@ class JobService(ServiceBase):
             raise IdempotencyKeyReusedError(key)
         return event
 
+    def _with_manual(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
+        """Marca el evento como carga manual cuando corre una carga retrospectiva (D6-3)."""
+        merged = dict(metadata or {})
+        if self._manual:
+            merged["manual_entry"] = True
+        return merged
+
     async def _record(
         self,
         job: Job,
@@ -213,7 +239,7 @@ class JobService(ServiceBase):
             occurred_at=occurred_at,
             actor_user_id=self._actor(),
             idempotency_key=key,
-            event_metadata=metadata or {},
+            event_metadata=self._with_manual(metadata),
         )
         try:
             async with guarded_savepoint(self._session, _EVENT_KEY):
@@ -493,7 +519,7 @@ class JobService(ServiceBase):
                 occurred_at=arrived_at,
                 actor_user_id=self._actor(),
                 idempotency_key=key,
-                event_metadata=metadata,
+                event_metadata=self._with_manual(metadata),
             )
         )
 
@@ -563,6 +589,7 @@ class JobService(ServiceBase):
             base_price_cents=sum(line.price_cents for line in lines),
             arrived_at=arrived_at,
             notes=notes,
+            entry_mode=JobEntryMode.RETROSPECTIVA if self._manual else JobEntryMode.EN_VIVO,
         )
         try:
             async with guarded_savepoint(self._session, first_match(_EVENT_KEY, _QUOTE)):
@@ -887,6 +914,7 @@ class JobService(ServiceBase):
         occurred_at: datetime,
         reason: str,
         void_reason: VoidReason = VoidReason.ERROR_DE_CARGA,
+        job_id: uuid.UUID | None = None,
     ) -> Payment:
         """Anula un pago de un job: `VoidableMixin` + `PAYMENT_VOIDED` con motivo y actor.
 
@@ -894,12 +922,17 @@ class JobService(ServiceBase):
         `COBRADO`/`RETIRADO` se puede anular aunque deje saldo > 0. El job **no se reabre**
         (si no, cualquier usuario podría manipular lo cobrado): el estado queda y la diferencia
         es deuda derivada. La anulación es un registro aparte; qué roles anulan es F4.
+
+        `job_id` (la ruta `/jobs/{id}/payments/{pid}/void`): si se pasa, el pago tiene que ser de
+        ese job; si no, es `NotFoundError` (404 uniforme, nunca "es de otro job").
         """
         await self._enter()
         key = require_key(idempotency_key)
         require_instant(occurred_at)
         cleaned = require_reason(reason)
         target = await self._require(self._payments, payment_id, include_voided=True)
+        if job_id is not None and target.job_id != job_id:
+            raise NotFoundError("payments", payment_id)
         if target.job_id is None:
             raise GuardFailedError("only a job payment is voided here")
         job = await self._lock_job(target.job_id)
@@ -972,6 +1005,86 @@ class JobService(ServiceBase):
         )
         await self._settle_if_paid(job, key, occurred_at)
         await self._session.flush()
+        return job
+
+    # ── Carga retrospectiva (D6-3) ────────────────────────────────────────────
+
+    async def record_retrospective(
+        self,
+        *,
+        idempotency_key: str,
+        started_at: datetime,
+        finished_at: datetime,
+        now: datetime,
+        vehicle_id: uuid.UUID | None,
+        vehicle_size_id: uuid.UUID,
+        service_ids: Sequence[uuid.UUID],
+        customer_id: uuid.UUID | None = None,
+        channel: Channel = Channel.CARGA_MANUAL,
+        resource_id: uuid.UUID | None = None,
+        responsible_user_id: uuid.UUID | None = None,
+        notes: str | None = None,
+        payment: RetroPayment | None = None,
+    ) -> Job:
+        """Un trabajo ya hecho, de una sola vez: recibir, iniciar, finalizar y (si hay) cobrar.
+
+        Las horas son las reales (`started_at` es también la llegada): `finished_at >= started_at`
+        y ninguna en el futuro (`now` lo pone el llamador, así el reloj es testeable). El job nace
+        `RETROSPECTIVA` y cada evento lleva `manual_entry`. Sin `payment` queda `FINALIZADO` con
+        el saldo completo ("debe"); con un cobro parcial, con el resto; con el total, `COBRADO`
+        (encadenado, como siempre). El puesto se registra si se informa, pero **no** se valida
+        contra la ocupación: es historia, no agenda futura.
+
+        Idempotente por `idempotency_key`: un reenvío devuelve el job ya cargado, sin tocar nada
+        (por eso `vehicle_id` puede ir `None` en un reenvío; en la primera vez, sin auto, es
+        `GuardFailedError`, como en un walk-in).
+        Las claves de cada paso derivan de la del llamador (`:received`, `:started`, `:finished`
+        y `:paid`), así la operación entera se puede reintentar entera ante un corte.
+        """
+        await self._enter()
+        key = require_key(idempotency_key)
+        require_instant(started_at)
+        require_instant(finished_at)
+        require_instant(now)
+        replayed = await self._replayed_receive(f"{key}:received")
+        if replayed is not None:
+            return replayed
+        if finished_at < started_at:
+            raise GuardFailedError("finished_at cannot be before started_at")
+        if finished_at > now:
+            raise GuardFailedError("a retrospective job must be in the past")
+        self._manual = True
+        try:
+            job = await self.receive(
+                idempotency_key=f"{key}:received",
+                arrived_at=started_at,
+                vehicle_id=vehicle_id,
+                vehicle_size_id=vehicle_size_id,
+                service_ids=service_ids,
+                customer_id=customer_id,
+                channel=channel,
+                resource_id=resource_id,
+                responsible_user_id=responsible_user_id,
+                notes=notes,
+            )
+            await self.start(job.id, idempotency_key=f"{key}:started", occurred_at=started_at)
+            await self.finish(job.id, idempotency_key=f"{key}:finished", occurred_at=finished_at)
+            if payment is not None:
+                amount = payment.amount_cents
+                if amount is None:
+                    amount = await self._balance(job)
+                await self.record_payment(
+                    job.id,
+                    PaymentInput(
+                        amount_cents=amount,
+                        payment_method_id=payment.payment_method_id,
+                        idempotency_key=f"{key}:paid",
+                        occurred_at=finished_at,
+                        reference=payment.reference,
+                    ),
+                )
+        finally:
+            self._manual = False
         return job
 
     # ── Inspección (opcional, D-007) ──────────────────────────────────────────

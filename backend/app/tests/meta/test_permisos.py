@@ -275,8 +275,8 @@ def test_la_agenda_tiene_la_autorizacion_del_contrato():
             ruta.path,
         )
         vistas += 1
-    # bloqueos y aperturas x (lista, alta, anular) + disponibilidad
-    assert vistas == 2 * 3 + 1
+    # bloqueos y aperturas x (lista, alta, anular) + disponibilidad + la agenda del día (F6)
+    assert vistas == 2 * 3 + 1 + 1
 
 
 def _mini_app(*dependencias: Callable[..., Any]) -> FastAPI:

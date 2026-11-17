@@ -34,6 +34,8 @@ class ErrorCode(StrEnum):
     SLOT_TAKEN = "SLOT_TAKEN"
     #: Un bloqueo de agenda pisa el horario pedido (D5-10: el dueño no se sale de un bloqueo).
     BLOCKED = "BLOCKED"
+    #: La acción no está permitida desde el estado actual del job (FASE-6-CONTRATO §3.2, A3).
+    INVALID_TRANSITION = "INVALID_TRANSITION"
     VALIDATION_ERROR = "VALIDATION_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"

@@ -215,6 +215,7 @@ class BookingService(ServiceBase):
         terms_version: str | None = None,
         terms_accepted_at: datetime | None = None,
         for_review: bool = False,
+        enforce_advance: bool = True,
     ) -> Booking:
         """Alta de un turno con estado, precio, duración y seña **snapshot** del catálogo.
 
@@ -233,7 +234,9 @@ class BookingService(ServiceBase):
           sin hold y sin seña** (`deposit_required_cents = 0`; se recalcula al aprobar, §3.5).
           No admite un ítem `A_COTIZAR`.
 
-        Reservar con menos de `min_advance_min` de anticipación es `GuardFailedError`. Un choque
+        Reservar con menos de `min_advance_min` de anticipación es `GuardFailedError`, salvo con
+        `enforce_advance=False` (el dueño que carga un turno "solo a mano", FASE-6-CONTRATO §3.3:
+        la anticipación mínima es del turnero público, no de la agenda interna). Un choque
         del `EXCLUDE` es `SlotTakenError`; un código repetido, `AlreadyExistsError`.
         """
         await self._enter()
@@ -245,7 +248,7 @@ class BookingService(ServiceBase):
         if vehicle_id is not None:
             await self._require(VehicleRepository(self._session), vehicle_id)
         settings = await self._settings()
-        if anticipation_min(start_at, now) < settings.min_advance_min:
+        if enforce_advance and anticipation_min(start_at, now) < settings.min_advance_min:
             raise GuardFailedError(
                 f"a booking needs at least {settings.min_advance_min} min of advance notice"
             )
