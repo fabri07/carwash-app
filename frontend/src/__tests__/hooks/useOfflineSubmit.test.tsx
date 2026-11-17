@@ -423,7 +423,7 @@ describe("useOfflineSubmit.flush", () => {
     expect(result.current.failed.map((f) => f.id)).toEqual(["casi"]);
   });
 
-  it("un error que no es HTTP (bug del handler) no gasta intento ni corta a los demás", async () => {
+  it("un error que no es HTTP (bug del handler) gasta un intento, no corta a los demás y al tope pasa a fallidos", async () => {
     useOfflineQueueStore.setState({ items: [item("a"), item("b")] });
     const post = jest
       .fn()
@@ -432,7 +432,7 @@ describe("useOfflineSubmit.flush", () => {
     const { result } = setup({ dummy: { post } });
     await act(() => result.current.flush());
     expect(useOfflineQueueStore.getState().items).toEqual([
-      expect.objectContaining({ id: "a", attempts: 0, lastError: "Error desconocido" }),
+      expect.objectContaining({ id: "a", attempts: 1, lastError: "Error desconocido" }),
     ]);
   });
 

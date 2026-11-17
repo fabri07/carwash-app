@@ -238,11 +238,53 @@ export function useOnlineStatus(): boolean {
   return online;
 }
 
+/** Backoff de los reintentos automáticos: 2 s, 4 s, 8 s… con tope y jitter. */
+export const RETRY_BASE_MS = 2000;
+export const RETRY_MAX_MS = 5 * 60_000;
+/** Tras tantos reintentos programados seguidos se deja de insistir (sin bucle infinito). */
+export const RETRY_MAX_SCHEDULED = 8;
+
+let consecutiveFailures = 0;
+let nextAllowedAt = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function backoffDelay(failures: number): number {
+  const base = Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS);
+  return Math.round(base * (1 + Math.random() * 0.2)); // jitter 0-20 %
+}
+
+/** Las acciones de un mismo job comparten lo que sigue al primer ":" de la dedupeKey. */
+function targetOf(dedupeKey: string): string | null {
+  const i = dedupeKey.indexOf(":");
+  return i >= 0 && i < dedupeKey.length - 1 ? dedupeKey.slice(i + 1) : null;
+}
+
+/**
+ * Claves reservadas cuando encolar falló (storage lleno): el reintento del
+ * usuario sobre la misma acción reusa la Idempotency-Key y la hora del toque,
+ * porque el servidor pudo haber guardado la primera.
+ */
+const reservedByDedupe = new Map<string, { id: string; occurredAt: string }>();
+
+function logStorageFailure(e: unknown) {
+  // El storage falló al escribir (cuota, modo privado): la memoria ya quedó bien.
+  console.warn("offlineQueue: fallo de almacenamiento", e);
+}
+
+/** Corre una escritura del store sin dejar que un storage roto aborte el vaciado. */
+function safely(fn: () => void) {
+  try {
+    fn();
+  } catch (e) {
+    logStorageFailure(e);
+  }
+}
+
 /**
  * Submit resiliente a cortes de internet. `submit` intenta el POST con una
  * Idempotency-Key (el id del item); si falla por red, encola y sincroniza al
  * volver online. `autoSync: true` (montado una vez por página) registra el
- * listener `online` y dispara el flush inicial.
+ * listener `online`, dispara el flush inicial y reintenta con backoff.
  */
 export function useOfflineSubmit(opts: {
   handlers: OfflineHandlers;
@@ -259,19 +301,31 @@ export function useOfflineSubmit(opts: {
   onItemFailedRef.current = opts.onItemFailed;
   const onItemConflictRef = useRef(opts.onItemConflict);
   onItemConflictRef.current = opts.onItemConflict;
+  const autoSyncRef = useRef(opts.autoSync);
+  autoSyncRef.current = opts.autoSync;
+  const autoFlushRef = useRef<() => Promise<void>>(async () => undefined);
 
-  const flush = useCallback(async () => {
-    if (flushing) return;
-    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+  /** Devuelve `true` si el vaciado terminó por una falla transitoria. */
+  const runFlush = useCallback(async (): Promise<boolean> => {
+    if (flushing) return false;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return false;
     flushing = true;
+    let hadTransient = false;
     try {
       await withFlushLock(async () => {
         // Solo lo del usuario y tenant de la sesión actual (tablet compartida).
         // Se lee DENTRO del lock: la cola puede haber cambiado en otra pestaña.
+        const owner = currentOwner();
         const items = pendingForCurrentUser();
         const queue = useOfflineQueueStore.getState;
         // FIFO: el orden de la cola es el orden de los toques (iniciar antes de finalizar).
         for (const item of [...items]) {
+          // La sesión pudo cambiar durante un POST en vuelo: la carga de A no
+          // se manda con las cookies de B.
+          const now = currentOwner();
+          if (!owner || !now || now.userId !== owner.userId || now.tenantId !== owner.tenantId) {
+            break;
+          }
           const handler = handlersRef.current[item.kind];
           // Sin handler en este montaje (otra pantalla lo encoló): se deja para
           // quien sí sepa mandarlo. No se descarta ni se gasta intento.
@@ -280,45 +334,93 @@ export function useOfflineSubmit(opts: {
             await handler.post(item.payload, item.id, {
               occurredAt: item.occurredAt ?? item.createdAt,
             });
-            queue().remove(item.id);
+            if (item.dedupeKey) reservedByDedupe.delete(item.dedupeKey);
+            safely(() => queue().remove(item.id));
             invalidate(queryClient, handler);
           } catch (e) {
             const kind = classifyFlushError(e);
+            if (item.dedupeKey && kind !== "transient" && kind !== "unauthenticated") {
+              reservedByDedupe.delete(item.dedupeKey);
+            }
             if (kind === "duplicate") {
-              queue().remove(item.id);
+              safely(() => queue().remove(item.id));
               invalidate(queryClient, handler);
             } else if (kind === "conflict") {
               // La acción ya no vale desde el estado actual: no se reintenta,
               // pero tampoco se pierde el aviso (queda en `conflicts`).
-              queue().moveToConflict(item.id, errorMessage(e), 409);
+              safely(() => queue().moveToConflict(item.id, errorMessage(e), 409));
               invalidate(queryClient, handler);
               const conflict = queue().conflicts.find((f) => f.id === item.id);
               if (conflict) onItemConflictRef.current?.(conflict);
+            } else if (kind === "transient" && !axios.isAxiosError(e)) {
+              // Bug del handler (TypeError…): no corta a los demás, pero un ítem
+              // veneno no queda "pendiente" para siempre: tras N intentos, `failed`.
+              hadTransient = true;
+              if (item.attempts + 1 >= MAX_FLUSH_ATTEMPTS) {
+                safely(() => queue().moveToFailed(item.id, errorMessage(e)));
+                const failed = queue().failed.find((f) => f.id === item.id);
+                if (failed) onItemFailedRef.current?.(failed);
+              } else {
+                safely(() => queue().markFailed(item.id, errorMessage(e)));
+              }
             } else if (kind === "transient") {
               // Red caída, backend caído o sobrecargado: los ítems siguientes
               // fallarían igual. Se anota el motivo, no se gasta intento y se
-              // corta; el próximo flush (online, montaje) reintenta.
-              queue().noteTransient(item.id, errorMessage(e));
-              if (axios.isAxiosError(e)) break;
+              // corta; el reintento programado o el próximo `online` sigue.
+              hadTransient = true;
+              safely(() => queue().noteTransient(item.id, errorMessage(e)));
+              break;
             } else if (kind === "unauthenticated") {
               // El interceptor ya intentó el refresh y falló: sin sesión no
               // tiene sentido seguir. El ítem queda atado a su dueño.
-              queue().noteTransient(item.id, "Sesión vencida: se enviará al volver a entrar");
+              safely(() =>
+                queue().noteTransient(item.id, "Sesión vencida: se enviará al volver a entrar"),
+              );
               break;
             } else {
               // 4xx permanente: reintentar el mismo payload no lo arregla.
               const status = axios.isAxiosError(e) ? e.response?.status : undefined;
-              queue().moveToFailed(item.id, errorMessage(e), status);
+              safely(() => queue().moveToFailed(item.id, errorMessage(e), status));
               const failed = queue().failed.find((f) => f.id === item.id);
               if (failed) onItemFailedRef.current?.(failed);
             }
           }
         }
       });
+    } catch (e) {
+      logStorageFailure(e);
     } finally {
       flushing = false;
     }
+    return hadTransient;
   }, [queryClient]);
+
+  /** Vaciado automático (online, montaje, timer): respeta el backoff y lo programa. */
+  const autoFlush = useCallback(async () => {
+    if (Date.now() < nextAllowedAt) return; // ráfaga de `online`: se coalesce
+    const transient = await runFlush();
+    if (!transient) {
+      consecutiveFailures = 0;
+      nextAllowedAt = 0;
+      return;
+    }
+    consecutiveFailures += 1;
+    if (consecutiveFailures > RETRY_MAX_SCHEDULED || !autoSyncRef.current) return;
+    const delay = backoffDelay(consecutiveFailures);
+    nextAllowedAt = Date.now() + delay;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void autoFlushRef.current().catch(logStorageFailure);
+    }, delay);
+  }, [runFlush]);
+  autoFlushRef.current = autoFlush;
+
+  /** Vaciado manual: no espera el backoff. Si falla transitoriamente, lo programa. */
+  const flush = useCallback(async () => {
+    nextAllowedAt = 0;
+    await autoFlush();
+  }, [autoFlush]);
 
   const submit = useCallback(
     async (kind: QueuedKind, payload: unknown, cb?: SubmitCallbacks): Promise<void> => {
@@ -331,24 +433,79 @@ export function useOfflineSubmit(opts: {
         return;
       }
       const dedupeKey = cb?.dedupeKey;
+      let behindPending = false;
       if (dedupeKey) {
-        const pending = pendingForCurrentUser().some((i) => i.dedupeKey === dedupeKey);
+        const pendingItems = pendingForCurrentUser();
         // Mismo toque repetido: ya está pendiente o en vuelo. No se manda otro.
-        if (pending || inflightKeys.has(dedupeKey)) {
-          if (pending) cb?.onQueued?.();
+        if (pendingItems.some((i) => i.dedupeKey === dedupeKey)) {
+          cb?.onQueued?.();
           return;
         }
+        if (inflightKeys.has(dedupeKey)) return;
+        // Otra acción del MISMO job sigue pendiente: esta va detrás (FIFO por
+        // job), no se manda directo y adelantada.
+        const target = targetOf(dedupeKey);
+        behindPending =
+          target !== null &&
+          pendingItems.some((i) => i.dedupeKey && targetOf(i.dedupeKey) === target);
       }
-      const id = crypto.randomUUID();
+      const reserved = dedupeKey ? reservedByDedupe.get(dedupeKey) : undefined;
+      const id = reserved?.id ?? crypto.randomUUID();
       // La hora del toque se fija ACÁ, antes de cualquier intento.
-      const occurredAt = new Date().toISOString();
+      const occurredAt = reserved?.occurredAt ?? new Date().toISOString();
+
+      const enqueue = (): boolean => {
+        // Persistencia best-effort: si encolar falla (storage lleno o purgado
+        // por iOS), NO se confirma como guardado → onError, el form no se
+        // resetea y la carga no se pierde.
+        try {
+          useOfflineQueueStore.getState().enqueue({
+            id,
+            ...owner,
+            kind,
+            payload,
+            createdAt: occurredAt,
+            occurredAt,
+            dedupeKey,
+            attempts: 0,
+          });
+          if (dedupeKey) reservedByDedupe.delete(dedupeKey);
+          return true;
+        } catch {
+          // zustand actualiza la memoria ANTES de escribir el storage: si el
+          // storage tiró, el ítem quedó en la cola en memoria. Hay que sacarlo,
+          // o el flush lo mandaría con esta key mientras el usuario reintenta
+          // con otra, y el lavado se registraría dos veces.
+          try {
+            useOfflineQueueStore.getState().remove(id);
+          } catch {
+            // El remove también escribe el storage; la memoria ya quedó limpia.
+          }
+          // El reintento del usuario reusa esta clave (el servidor pudo guardarla).
+          if (dedupeKey) reservedByDedupe.set(dedupeKey, { id, occurredAt });
+          return false;
+        }
+      };
+
+      if (behindPending) {
+        if (enqueue()) {
+          cb?.onQueued?.();
+          void autoFlushRef.current().catch(logStorageFailure);
+        } else {
+          cb?.onError?.();
+        }
+        return;
+      }
+
       if (dedupeKey) inflightKeys.add(dedupeKey);
       try {
         await handler.post(payload, id, { occurredAt });
+        if (dedupeKey) reservedByDedupe.delete(dedupeKey);
         invalidate(queryClient, handler);
         cb?.onSuccess?.();
       } catch (e) {
         if (isDuplicate(e)) {
+          if (dedupeKey) reservedByDedupe.delete(dedupeKey);
           invalidate(queryClient, handler);
           cb?.onSuccess?.();
         } else if (
@@ -358,33 +515,8 @@ export function useOfflineSubmit(opts: {
           // Red caída o backend caído/sobrecargado (5xx, 408, 425, 429): la
           // carga se encola con la misma Idempotency-Key, así que si el
           // servidor llegó a guardarla, el reintento vuelve como duplicado.
-          // Persistencia best-effort: si encolar falla (storage lleno o purgado
-          // por iOS), NO se confirma como guardado → onError, el form no se
-          // resetea y la carga no se pierde.
-          try {
-            useOfflineQueueStore.getState().enqueue({
-              id,
-              ...owner,
-              kind,
-              payload,
-              createdAt: occurredAt,
-              occurredAt,
-              dedupeKey,
-              attempts: 0,
-            });
-            cb?.onQueued?.();
-          } catch {
-            // zustand actualiza la memoria ANTES de escribir el storage: si el
-            // storage tiró, el ítem quedó en la cola en memoria. Hay que sacarlo,
-            // o el flush lo mandaría con esta key mientras el usuario reintenta
-            // con otra, y el lavado se registraría dos veces.
-            try {
-              useOfflineQueueStore.getState().remove(id);
-            } catch {
-              // El remove también escribe el storage; la memoria ya quedó limpia.
-            }
-            cb?.onError?.();
-          }
+          if (enqueue()) cb?.onQueued?.();
+          else cb?.onError?.();
         } else if (isInvalidTransition(e) && cb?.onConflict) {
           invalidate(queryClient, handler);
           cb.onConflict();
@@ -400,13 +532,19 @@ export function useOfflineSubmit(opts: {
 
   useEffect(() => {
     if (!opts.autoSync) return;
-    void flush();
+    void autoFlushRef.current().catch(logStorageFailure);
     function onOnline() {
-      void flush();
+      void autoFlushRef.current().catch(logStorageFailure);
     }
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [opts.autoSync, flush]);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+  }, [opts.autoSync]);
 
   return { submit, flush };
 }

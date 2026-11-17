@@ -9,7 +9,7 @@ export const TOUCH_TARGET_CLASS = "min-h-11 min-w-11";
 
 /** Controles que el usuario toca. */
 export const INTERACTIVE_SELECTOR =
-  'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="checkbox"], [role="switch"], [role="menuitem"]';
+  'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="checkbox"], [role="switch"], [role="menuitem"], [role="radio"], [role="link"], [role="option"], [role="slider"], [role="spinbutton"], summary';
 
 const PX_PER_UNIT = 4; // escala de Tailwind: 1 unidad = 0.25rem = 4 px
 
@@ -21,6 +21,11 @@ const PX_PER_UNIT = 4; // escala de Tailwind: 1 unidad = 0.25rem = 4 px
 export function classMinPx(className: string, axis: "h" | "w"): number | null {
   let best: number | null = null;
   for (const token of className.split(/\s+/)) {
+    // Ocupa todo el ancho disponible: en el eje horizontal no hay un chico posible.
+    if (axis === "w" && (token === "w-full" || token === "flex-1" || token === "w-screen")) {
+      best = Math.max(best ?? 0, MIN_TOUCH_TARGET_PX);
+      continue;
+    }
     const m = /^(?:min-)?(?:(h|w)|size)-(?:(\d+(?:\.\d+)?)|\[(\d+(?:\.\d+)?)(px|rem)\])$/.exec(
       token,
     );
@@ -33,11 +38,24 @@ export function classMinPx(className: string, axis: "h" | "w"): number | null {
 }
 
 function styleMinPx(el: HTMLElement, axis: "h" | "w"): number | null {
-  const raw =
-    axis === "h" ? el.style.minHeight || el.style.height : el.style.minWidth || el.style.width;
-  const m = /^(\d+(?:\.\d+)?)(px|rem)$/.exec(raw);
-  if (!m) return null;
-  return Number(m[1]) * (m[2] === "rem" ? 16 : 1);
+  const raws =
+    axis === "h" ? [el.style.minHeight, el.style.height] : [el.style.minWidth, el.style.width];
+  let best: number | null = null;
+  for (const raw of raws) {
+    const m = /^(\d+(?:\.\d+)?)(px|rem)$/.exec(raw);
+    if (!m) continue;
+    const px = Number(m[1]) * (m[2] === "rem" ? 16 : 1);
+    best = best === null ? px : Math.max(best, px);
+  }
+  return best;
+}
+
+function isHidden(el: HTMLElement): boolean {
+  return (
+    el.hidden ||
+    el.getAttribute("aria-hidden") === "true" ||
+    (el.getAttribute("class") ?? "").split(/\s+/).includes("hidden")
+  );
 }
 
 /**
@@ -48,9 +66,11 @@ function styleMinPx(el: HTMLElement, axis: "h" | "w"): number | null {
 export function findSmallTouchTargets(root: ParentNode): HTMLElement[] {
   const small: HTMLElement[] = [];
   root.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR).forEach((el) => {
-    if (el.hasAttribute("data-touch-exempt")) return;
-    // Un input dentro de un <label> grande lo toca el label.
-    const hit = el.closest("label") ?? el;
+    if (el.hasAttribute("data-touch-exempt") || isHidden(el)) return;
+    // Un checkbox/radio dentro de un <label> grande lo toca el label; un botón
+    // chico dentro de un label sigue siendo chico.
+    const isToggle = el instanceof HTMLInputElement && el.type !== "text";
+    const hit = (isToggle ? el.closest("label") : null) ?? el;
     for (const axis of ["h", "w"] as const) {
       const cls = hit.getAttribute("class") ?? "";
       const px = Math.max(classMinPx(cls, axis) ?? 0, styleMinPx(hit, axis) ?? 0);

@@ -21,7 +21,8 @@ describe("touchTargets", () => {
     expect(classMinPx("size-12", "w")).toBe(48);
     expect(classMinPx("h-[44px]", "h")).toBe(44);
     expect(classMinPx("min-h-[2.75rem]", "h")).toBe(44);
-    expect(classMinPx("w-full p-2", "w")).toBeNull();
+    expect(classMinPx("w-full p-2", "w")).toBe(44);
+    expect(classMinPx("p-2", "w")).toBeNull();
     expect(classMinPx("h-12", "w")).toBeNull();
   });
 

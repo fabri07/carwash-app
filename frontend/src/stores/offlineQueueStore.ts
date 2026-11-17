@@ -90,16 +90,35 @@ export function itemsOwnedBy<T extends QueuedItem>(
   return items.filter((i) => i.userId === owner.userId && i.tenantId === owner.tenantId);
 }
 
+const STORAGE_NAME = "carwash_offline_queue";
+
+/** Ítems guardados en el storage (los de todas las pestañas); `[]` si no se puede leer. */
+function storedItems(): QueuedItem[] {
+  try {
+    const storage = useOfflineQueueStore.persist.getOptions().storage;
+    const value = storage?.getItem(STORAGE_NAME);
+    const stored = value instanceof Promise ? undefined : value;
+    const items = (stored?.state as { items?: QueuedItem[] } | undefined)?.items;
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
 export const useOfflineQueueStore = create<OfflineQueueState>()(
   persist(
     (set) => ({
       items: [],
       enqueue: (item) =>
         set((s) => {
+          // Otra pestaña pudo encolar desde que cargó esta: se relee el storage
+          // y se une por id, para que la última en escribir no pise a la otra.
+          const known = new Set(s.items.map((i) => i.id));
+          const base = [...s.items, ...storedItems().filter((i) => !known.has(i.id))];
           // Mismo toque repetido (modo avión, doble tap): una sola entrada.
           if (
             item.dedupeKey &&
-            s.items.some(
+            base.some(
               (i) =>
                 i.dedupeKey === item.dedupeKey &&
                 i.userId === item.userId &&
@@ -108,7 +127,7 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
           ) {
             return {};
           }
-          return { items: [...s.items, item] };
+          return { items: [...base, item] };
         }),
       remove: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
       failed: [],
@@ -158,6 +177,18 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
           if (!f) return {};
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { failedAt, status, ...item } = f;
+          // Un toque más nuevo de la misma acción ya está en la cola: no se duplica.
+          if (
+            item.dedupeKey &&
+            s.items.some(
+              (i) =>
+                i.dedupeKey === item.dedupeKey &&
+                i.userId === item.userId &&
+                i.tenantId === item.tenantId,
+            )
+          ) {
+            return {};
+          }
           return {
             failed: s.failed.filter((i) => i.id !== id),
             items: [...s.items, { ...item, attempts: 0 }],
@@ -166,7 +197,7 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
       dismissFailed: (id) => set((s) => ({ failed: s.failed.filter((i) => i.id !== id) })),
     }),
     {
-      name: "carwash_offline_queue",
+      name: STORAGE_NAME,
       version: 4,
       // v1 no tenía dueño. No se borran (serían cargas perdidas), pero sin
       // dueño no coinciden con ninguna sesión y nunca se mandan a ciegas.
@@ -191,3 +222,10 @@ export const useOfflineQueueStore = create<OfflineQueueState>()(
     },
   ),
 );
+
+// Otra pestaña escribió la cola: se toma su versión (ya incluye lo de las dos).
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE_NAME) void useOfflineQueueStore.persist.rehydrate();
+  });
+}
