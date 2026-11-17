@@ -182,3 +182,89 @@ hiciste. Además cargás un lavado de ayer con su hora real y aparece en la agen
 - Arrastrar y soltar turnos en la agenda: se mueve con "Reprogramar" de la bandeja de la Fase 5.
 - Quién movió qué en la agenda (auditoría visible) y el botón de seña tras perder el horario
   (`record_deposit_after_slot_lost`): diferidos desde 5.3 (adenda §14), entran acá solo si el dueño los pide.
+
+---
+
+## 12. Adenda del PR 6.1 (backend) — decisiones al construir
+
+Lo que el contrato dejó abierto o contradecía el código, resuelto con lo conservador. Nada de esto
+cambia las decisiones del dueño (§0).
+
+**12.1 Base.** La migración `0011_operacion_f6` solo agrega `jobs.entry_mode` (enum `job_entry_mode`,
+`NOT NULL`, default `EN_VIVO`). No hizo falta nada más: ni tablas, ni índices, ni relleno (los jobs
+existentes quedan `EN_VIVO` por el default), así que la subida no necesita `NO FORCE`. La bajada sí
+lo usa para contar y **corta** si hay jobs `RETROSPECTIVA` vivos. Diferido: un índice por
+`jobs(tenant_id, arrived_at)` para la agenda del día; con decenas de jobs por día no hace falta, y
+se agrega cuando una medición lo pida.
+
+**12.2 Cancelar por demora: `>`, no `≥` (§5).** El contrato dice "ahora − scheduled_at ≥
+tolerance_min", pero la guarda que ya existe (`check_delay_cancellation`) exige que la demora, en
+minutos enteros (floor), **supere** la tolerancia. Se mantiene la guarda (más estricta): el botón
+aparece a `tolerance_min + 1` minutos del turno. La API lo informa en `cancel_delay_from` (en `GET
+/jobs/{id}` y en cada renglón de `GET /agenda/day`) para que la pantalla no recalcule la regla.
+**Reloj del servidor:** `POST /jobs/{id}/cancel-delay` usa `min(occurred_at del cliente, ahora del
+servidor)`: un `occurred_at` del futuro no adelanta la tolerancia, y uno legítimamente anterior
+(tocado sin señal) se respeta. No hay ningún camino automático.
+
+**12.3 Códigos de error.** Se suma `INVALID_TRANSITION` al catálogo `ErrorCode` (409): la acción no
+está permitida desde el estado actual y **no cambia nada**. Una clave de idempotencia usada por otra
+operación es 409 `CONFLICT` (nunca `DUPLICATE_IDEMPOTENT`: la cola offline lo cuenta como éxito y
+perdería el toque). Las guardas del dominio (demora que no supera la tolerancia, retirar con deuda un
+cliente nuevo, cobrar de más, horas inválidas) son 422 `VALIDATION_ERROR` con el mensaje de sistema,
+como en la bandeja. El choque de un turno a mano es 409 `SLOT_TAKEN`.
+
+**12.4 Idempotencia por ruta.** Las acciones del job reusan la de `JobService` (la clave vive en
+`job_events`): el reenvío devuelve **200 con el mismo resultado** y sin efectos. `POST /jobs` y
+`POST /jobs/retrospective` devuelven 201 también en el reenvío. `POST /bookings/manual` usa
+`claim_idempotency_key` como el resto de la bandeja: el reenvío es 409 `DUPLICATE_IDEMPOTENT`.
+`Idempotency-Key` es **obligatoria** en todas (422 si falta) y `occurred_at` también, con zona.
+
+**12.5 Carga retrospectiva.** `JobService.record_retrospective` compone recibir, iniciar, finalizar y
+cobrar con las horas reales (no reescribe la máquina de estados): `started_at` es también la
+llegada y `finished_at` la hora del cobro. Mientras corre, el job nace `RETROSPECTIVA` y cada evento
+(también el `JOB_SETTLED` encadenado) lleva `manual_entry: true`; la marca se apaga al terminar, así
+un toque en vivo posterior sobre ese job (retirarlo) no la hereda. Las claves de cada paso derivan de
+la del llamador (`:received`, `:started`, `:finished`, `:paid`): reenviar la carga entera devuelve el
+job sin tocar nada, aun con el reloj atrasado. Reglas: `finished_at >= started_at`, ninguna en el
+futuro (el servidor pone `now`), servicio a cotizar no se carga (422), el puesto se registra sin
+validar ocupación. El servicio y su precio salen del **catálogo de hoy** (no hay forma de cargar el
+precio de aquel día). Cobro: `payment: null` = pendiente (queda `FINALIZADO`, "debe"); sin `amount_cents`
+= el total; parcial queda `FINALIZADO` con el resto. Cargar el cobro exige además `COBROS_REGISTRAR`
+(403 si falta).
+
+**12.6 Cliente y auto por nombre, teléfono y patente.** No existen rutas de clientes ni de
+vehículos y la pantalla no tiene `customer_id`/`vehicle_id`: `POST /jobs` (sin turno),
+`/jobs/retrospective` y `/bookings/manual` reciben `customer_name`, `customer_phone` y `plate`.
+`OperationService` los resuelve con `CustomerService`/`VehicleService` (el teléfono identifica al
+cliente; la patente, al auto). Sin nombre ni teléfono el **job** queda sin cliente y el **turno** a
+mano queda a nombre de "Sin nombre"; sin patente, un job crea un auto anónimo (el job exige auto) y un
+turno no lleva auto. Un reenvío de la clave **no** crea clientes ni autos de más. Recibir un turno que
+vino de la web sin patente crea el auto anónimo en ese momento.
+
+**12.7 Turno "solo a mano" (§3.3).** Fuente `AGENDA_INTERNA`, canal `CARGA_MANUAL` por defecto, código
+`INT-XXXXXX` (mismo alfabeto que `TUR-`, pero `normalize_booking_code` no lo reconoce: el cliente no
+lo consulta ni cancela por la web). `BookingService.create` suma `enforce_advance=False`: la
+anticipación mínima es del turnero, no de la agenda interna; el turno sí tiene que ser **a futuro**
+(lo pasado es carga retrospectiva). `deposit` registra la seña ya cobrada con `confirm_deposit` (clave
+`:deposit`) y deja el turno `CONFIRMADO`; sin él, si el negocio pide seña, queda `PENDIENTE_SEÑA` con su
+hold. Una seña en un turno que no la pide es 422; cargarla exige `COBROS_REGISTRAR`.
+
+**12.8 Cobrar en 2 toques.** El contrato habla del "medio de pago preferido del negocio", pero ese
+dato no existe en la base y §2 pide una migración mínima: la API pide `payment_method_id` y la pantalla
+(6.2) elige el default de su lista de medios. Sin `amount_cents` cobra el saldo completo. Si dos
+dispositivos cobran "el saldo" a la vez, uno gana y el otro recibe 422 (no hay sobrecobro).
+
+**12.9 Agenda del día (§3.1).** `GET /agenda/day?date=` devuelve `resources` (una columna por puesto,
+en el orden del negocio) y `entries` planas con `resource_id` (nulo = "sin puesto"): los **jobs** del
+día más los **turnos que todavía no tienen job** en `CONFIRMADO`, `PENDIENTE_SEÑA`,
+`PENDIENTE_COTIZACION` y `NO_ASISTIO`; un turno con job se muestra una sola vez, como job. Cancelados,
+vencidos y lista de espera no son operación (siguen en la bandeja). El día de un job es el de su turno
+(`scheduled_at`) o, sin turno, el de su llegada: por eso una carga retrospectiva cae en su fecha. No se
+pagina (un día es una pantalla): tope de 500 por tipo y `truncated: true` si se pasa. Los renglones traen
+nombre y teléfono del cliente y la patente (el permiso `AGENDA_VER` de la ruta); `GET /jobs/{id}/events`
+sí es paginado (ADR-0006). Las respuestas de las acciones devuelven el job completo (con saldo y
+cobros), así la pantalla no necesita otro pedido.
+
+**12.10 Permisos.** Como §1. Detalle: recibir y la recepción opcional son `JOBS_OPERAR`; ver el job y
+su línea de tiempo, `AGENDA_VER`. La tabla ruta → permiso está congelada en
+`tests/meta/test_permisos_operacion.py`.
