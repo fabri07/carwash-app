@@ -82,7 +82,13 @@ const stamp = {
   created_at: "2026-11-05T00:00:00Z",
   updated_at: "2026-11-05T00:00:00Z",
 };
-const page = <T,>(items: T[]) => ({ items, total: items.length, limit: 200, offset: 0, has_more: false });
+const page = <T,>(items: T[]) => ({
+  items,
+  total: items.length,
+  limit: 200,
+  offset: 0,
+  has_more: false,
+});
 const method = (id: string, code: string, label: string): PaymentMethod =>
   ({
     id,
@@ -100,7 +106,9 @@ const puestos = [
   { id: "r1", name: "Puesto 1", sort_order: 0, ...stamp },
   { id: "r2", name: "Puesto 2", sort_order: 1, ...stamp },
 ];
-const tamanos = [{ id: "s1", code: "AUTO", label: "Auto", sort_order: 0, ...stamp }] as VehicleSize[];
+const tamanos = [
+  { id: "s1", code: "AUTO", label: "Auto", sort_order: 0, ...stamp },
+] as VehicleSize[];
 const servicio = {
   id: "sv1",
   name: "Lavado completo",
@@ -522,7 +530,7 @@ describe("Pantalla operativa: estados, permisos y errores", () => {
   it("anula un cobro con motivo (COBROS_ANULAR)", async () => {
     const pago = {
       id: "pay1",
-      kind: "SALDO",
+      kind: "SALDO" as const,
       amount_cents: 2_000_000,
       occurred_at: "2030-11-25T14:30:00Z",
       payment_method_id: "m1",
@@ -913,16 +921,28 @@ describe("Targets táctiles ≥ 44 px (A8)", () => {
 
   it("la agenda, el job (con cobro abierto y diálogos), las cargas y la recepción cumplen", async () => {
     const mounted: [string, React.ReactElement, () => Promise<unknown>][] = [
-      ["agenda", <AgendaPageClient key="a" />, () => screen.findByRole("region", { name: /Puesto 1/ })],
+      [
+        "agenda",
+        <AgendaPageClient key="a" />,
+        () => screen.findByRole("region", { name: /Puesto 1/ }),
+      ],
       [
         "job",
         <JobPageClient key="j" id="j1" />,
         () => screen.findByRole("button", { name: "INICIAR" }),
       ],
       ["walk-in", <WalkInForm key="w" />, () => screen.findByText("Tamaño del vehículo")],
-      ["turno a mano", <ManualBookingForm key="m" />, () => screen.findByText("Tamaño del vehículo")],
+      [
+        "turno a mano",
+        <ManualBookingForm key="m" />,
+        () => screen.findByText("Tamaño del vehículo"),
+      ],
       ["retrospectiva", <RetrospectiveForm key="r" />, () => screen.findByLabelText("Fin")],
-      ["recepción", <InspectionPageClient key="i" id="j1" />, () => screen.findByLabelText("Suciedad")],
+      [
+        "recepción",
+        <InspectionPageClient key="i" id="j1" />,
+        () => screen.findByLabelText("Suciedad"),
+      ],
     ];
     for (const [name, ui, ready] of mounted) {
       const { unmount } = renderUi(ui);

@@ -6,6 +6,7 @@
  */
 export const RESERVED_SLUGS: readonly string[] = [
   "admin",
+  "agenda",
   "api",
   "app",
   "auth",
@@ -19,6 +20,7 @@ export const RESERVED_SLUGS: readonly string[] = [
   "login",
   "logout",
   "onboarding",
+  "operacion",
   "ready",
   "register",
   "registro",
