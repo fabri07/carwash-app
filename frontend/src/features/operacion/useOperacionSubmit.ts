@@ -1,7 +1,7 @@
 "use client";
 
 import axios from "axios";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import {
@@ -54,6 +54,13 @@ export type OperacionKind = (typeof KINDS)[keyof typeof KINDS];
  */
 type Payload = { jobId?: string; paymentId?: string; body: never };
 
+/**
+ * Resultado y error de CADA run, por la identidad del objeto `payload` que se le pasó a la cola (no
+ * viaja ni se guarda nada extra). Un handler que ejecuta un flush en segundo plano trabaja con OTRO
+ * payload y no puede pisar lo de un run en curso: LLEGÓ nunca redirige a un job ajeno.
+ */
+const runResults = new WeakMap<object, { data?: unknown; error?: unknown }>();
+
 /** Resultado de un envío: guardado, encolado sin conexión, o rechazado (con el error original). */
 export type Outcome =
   | { status: "ok"; data?: unknown }
@@ -69,11 +76,7 @@ function looksLikeJob(data: unknown): data is Job {
   );
 }
 
-function buildHandlers(
-  qc: QueryClient,
-  onResult: (data: unknown) => void,
-  onError: (e: unknown) => void,
-): OfflineHandlers {
+function buildHandlers(qc: QueryClient): OfflineHandlers {
   const wrap =
     (call: (p: Payload, key: string) => Promise<unknown>, withTime: boolean) =>
     async (raw: unknown, key: string, meta?: OfflinePostMeta) => {
@@ -82,11 +85,13 @@ function buildHandlers(
         const at = meta?.occurredAt ?? new Date().toISOString();
         const body = (withTime ? { ...(p.body as object), occurred_at: at } : p.body) as never;
         const data = await call({ ...p, body }, key);
-        onResult(data);
+        const result = runResults.get(raw as object);
+        if (result) result.data = data;
         if (looksLikeJob(data)) qc.setQueryData(operacionKeys.job(data.id), data);
         return data;
       } catch (e) {
-        onError(e);
+        const result = runResults.get(raw as object);
+        if (result) result.error = e;
         throw e;
       }
     };
@@ -123,21 +128,7 @@ function buildHandlers(
  */
 export function useOperacionSubmit() {
   const qc = useQueryClient();
-  const lastError = useRef<unknown>(null);
-  const lastData = useRef<unknown>(undefined);
-  const handlers = useMemo(
-    () =>
-      buildHandlers(
-        qc,
-        (data) => {
-          lastData.current = data;
-        },
-        (e) => {
-          lastError.current = e;
-        },
-      ),
-    [qc],
-  );
+  const handlers = useMemo(() => buildHandlers(qc), [qc]);
   const { submit, flush } = useOfflineSubmit({ handlers, autoSync: true });
 
   const run = useCallback(
@@ -147,22 +138,30 @@ export function useOperacionSubmit() {
       dedupeKey: string,
     ): Promise<Outcome> =>
       new Promise((resolve) => {
-        lastError.current = null;
-        lastData.current = undefined;
-        void submit(kind, payload, {
-          onSuccess: () => resolve({ status: "ok", data: lastData.current }),
-          onQueued: () =>
-            resolve({
-              status: "queued",
-              // Un 5xx guardó el toque en la cola, pero NO es falta de señal: se dice distinto.
-              httpError:
-                axios.isAxiosError(lastError.current) && Boolean(lastError.current.response),
-            }),
-          onError: () => resolve({ status: "error", error: lastError.current }),
-          // 409 INVALID_TRANSITION en línea: se muestra como error (el estado cambió).
-          onConflict: () => resolve({ status: "error", error: lastError.current }),
-          dedupeKey,
-        });
+        const result: { data?: unknown; error?: unknown } = {};
+        const owned = { ...payload };
+        runResults.set(owned, result);
+        const done = (outcome: Outcome) => {
+          runResults.delete(owned);
+          resolve(outcome);
+        };
+        void submit(
+          kind,
+          owned,
+          {
+            onSuccess: () => done({ status: "ok", data: result.data }),
+            onQueued: () =>
+              done({
+                status: "queued",
+                // Un 5xx guardó el toque en la cola, pero NO es falta de señal: se dice distinto.
+                httpError: axios.isAxiosError(result.error) && Boolean(result.error.response),
+              }),
+            onError: () => done({ status: "error", error: result.error }),
+            // 409 INVALID_TRANSITION en línea: se muestra como error (el estado cambió).
+            onConflict: () => done({ status: "error", error: result.error }),
+            dedupeKey,
+          },
+        );
       }),
     [submit],
   );

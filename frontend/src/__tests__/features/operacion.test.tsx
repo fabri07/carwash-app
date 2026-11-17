@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import {
   AxiosError,
@@ -808,6 +808,223 @@ describe("H7/H8/H1 en las cargas", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cargar trabajo" }));
     expect(await screen.findByText(/Importe no válido/)).toBeInTheDocument();
     expect(sv.recordRetrospective).not.toHaveBeenCalled();
+  });
+});
+
+describe("Última ronda de revisión", () => {
+  it("1. COBRAR se ofrece con saldo en RETIRADO, COBRADO y en proceso, y no en CANCELADO_DEMORA", async () => {
+    for (const [status, visible] of [
+      ["RETIRADO", true],
+      ["COBRADO", true],
+      ["CANCELADO_DEMORA", false],
+    ] as const) {
+      sv.getJob.mockResolvedValue(job({ status }));
+      const { unmount } = renderUi(<JobPageClient id="j1" />);
+      await screen.findByText("Cliente Demo · AA000AA");
+      expect(!!screen.queryByRole("button", { name: /^COBRAR/ })).toBe(visible);
+      unmount();
+    }
+  });
+
+  it("2. la clave de deduplicación del formulario es estable: tocar de nuevo no encola un segundo trabajo", async () => {
+    sv.receiveJob.mockRejectedValue(networkError());
+    renderUi(<WalkInForm />);
+    await screen.findByText("Tamaño del vehículo");
+    await userEvent.selectOptions(screen.getByLabelText("Tamaño del vehículo"), "s1");
+    await userEvent.click(screen.getByRole("button", { name: "Lavado completo" }));
+    await userEvent.click(screen.getByRole("button", { name: "LLEGÓ" }));
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(1));
+    await userEvent.click(screen.getByRole("button", { name: "LLEGÓ" }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useOfflineQueueStore.getState().items).toHaveLength(1);
+    expect(useOfflineQueueStore.getState().items[0]!.dedupeKey).toMatch(/^llego-sin-turno:/);
+  });
+
+  it("3. la acción pendiente se sigue viendo aunque un refetch traiga datos viejos; N de cobrar no vuelve atrás", async () => {
+    sv.getJob.mockResolvedValue(job({ status: "FINALIZADO" }));
+    sv.recordPayment.mockRejectedValue(networkError());
+    renderUi(<JobPageClient id="j1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /^COBRAR/ }));
+    const field = screen.getByLabelText("Importe");
+    await userEvent.clear(field);
+    await userEvent.type(field, "5.000");
+    await userEvent.click(screen.getByRole("button", { name: /CONFIRMAR COBRO/ }));
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(1));
+    expect(await screen.findByText(/Debe \$ 15\.000,00/)).toBeInTheDocument();
+    // Un refetch (volver a la app) trae el job viejo: lo pendiente sigue aplicado.
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(sv.getJob.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByText(/Debe \$ 15\.000,00/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^COBRAR/ }));
+    await userEvent.click(screen.getByRole("button", { name: /CONFIRMAR COBRO/ }));
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(2));
+    expect(useOfflineQueueStore.getState().items.map((i) => i.dedupeKey)).toEqual([
+      "cobrar#0:j1",
+      "cobrar#1:j1",
+    ]);
+  });
+
+  it("4. LLEGÓ sin red al cargar el turno: 'Sin conexión' con Reintentar, y LLEGÓ al volver", async () => {
+    sv.getDay.mockRejectedValueOnce(networkError());
+    sv.getDay.mockResolvedValue(
+      day([entry({ kind: "BOOKING", job_id: null, job_status: null, booking_id: "b1" })]),
+    );
+    searchParams = new URLSearchParams("date=2030-11-25");
+    renderUi(<BookingArrivalClient bookingId="b1" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Sin conexión/);
+    expect(screen.queryByText(/No se encontró el turno/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("button", { name: "LLEGÓ" })).toBeInTheDocument();
+  });
+
+  it("5. 'Hoy' vuelve a seguir al reloj: después de medianoche la agenda cambia de día", async () => {
+    jest.useFakeTimers({
+      doNotFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setImmediate",
+        "clearImmediate",
+        "nextTick",
+        "queueMicrotask",
+        "performance",
+      ],
+    });
+    jest.setSystemTime(new Date("2026-11-18T02:59:30Z")); // 23:59:30 en Córdoba
+    try {
+      renderUi(<AgendaPageClient />);
+      await screen.findByRole("region", { name: "Puesto Puesto 1" });
+      fireEvent.click(screen.getByRole("button", { name: "Ayer" }));
+      fireEvent.click(screen.getByRole("button", { name: "Hoy" }));
+      await act(async () => {
+        jest.advanceTimersByTime(5 * 60_000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(sv.getDay).toHaveBeenLastCalledWith("2026-11-18"));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("6. anular sin señal deja la anulación pendiente y el aviso; con otra acción en vuelo el diálogo no se cierra", async () => {
+    const payment = {
+      id: "pay1",
+      kind: "SALDO" as const,
+      amount_cents: 2_000_000,
+      occurred_at: "2030-11-25T14:30:00Z",
+      payment_method_id: "m1",
+      voided: false,
+    };
+    sv.getJob.mockResolvedValue(
+      job({ status: "COBRADO", balance_due_cents: 0, paid_cents: 2_000_000, payments: [payment] }),
+    );
+    sv.voidPayment.mockRejectedValue(networkError());
+    renderUi(<JobPageClient id="j1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Anular cobro" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Motivo"), "Error");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Anular cobro" }));
+    expect(await screen.findByText("Anulación pendiente")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("status")
+        .map((n) => n.textContent)
+        .join(" "),
+    ).toMatch(/Sin conexión/);
+  });
+
+  it("6b. con otra acción en vuelo, anular no cierra el diálogo ni pierde el motivo", async () => {
+    const payment = {
+      id: "pay1",
+      kind: "SALDO" as const,
+      amount_cents: 2_000_000,
+      occurred_at: "2030-11-25T14:30:00Z",
+      payment_method_id: "m1",
+      voided: false,
+    };
+    sv.getJob.mockResolvedValue(
+      job({ status: "COBRADO", balance_due_cents: 0, paid_cents: 2_000_000, payments: [payment] }),
+    );
+    let release: (j: Job) => void = () => undefined;
+    sv.pickUpJob.mockReturnValue(new Promise<Job>((r) => (release = r)));
+    renderUi(<JobPageClient id="j1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Anular cobro" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Motivo"), "Otro");
+    fireEvent.click(screen.getByRole("button", { name: "RETIRAR", hidden: true }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Anular cobro" }));
+    expect(await within(dialog).findByText(/otra acción en curso/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Motivo")).toHaveValue("Otro");
+    expect(sv.voidPayment).not.toHaveBeenCalled();
+    release(job({ status: "RETIRADO" }));
+  });
+
+  it("7. LLEGÓ nunca redirige a un job ajeno aunque un flush en segundo plano termine en medio", async () => {
+    useOfflineQueueStore.setState({
+      items: [
+        {
+          id: "seed",
+          userId: "u1",
+          tenantId: "t1",
+          kind: "operacion.receive",
+          payload: { body: { booking_id: "bOtro" } },
+          createdAt: "2030-11-25T12:00:00.000Z",
+          occurredAt: "2030-11-25T12:00:00.000Z",
+          dedupeKey: "llego:bOtro",
+          attempts: 0,
+        },
+      ] as never,
+    });
+    sv.receiveJob.mockImplementation(async (body) =>
+      body.booking_id === "bOtro" ? job({ id: "jAjeno" }) : job({ id: "j1" }),
+    );
+    sv.getDay.mockResolvedValue(
+      day([entry({ kind: "BOOKING", job_id: null, job_status: null, booking_id: "b1" })]),
+    );
+    searchParams = new URLSearchParams("date=2030-11-25");
+    renderUi(<BookingArrivalClient bookingId="b1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "LLEGÓ" }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/operacion/j1"));
+    expect(replace).not.toHaveBeenCalledWith("/operacion/jAjeno");
+  });
+
+  it("8. una corrección de la recepción no se pierde; el doble toque idéntico sí se deduplica", async () => {
+    sv.recordInspection.mockRejectedValue(networkError());
+    renderUi(<InspectionPageClient id="j1" />);
+    const damage = await screen.findByLabelText("Daños previos");
+    await userEvent.type(damage, "Rayón");
+    await userEvent.click(screen.getByRole("button", { name: "Guardar recepción" }));
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(1));
+    await userEvent.click(screen.getByRole("button", { name: "Guardar recepción" }));
+    expect(useOfflineQueueStore.getState().items).toHaveLength(1); // idéntica: deduplicada
+    await userEvent.type(damage, " en la puerta");
+    await userEvent.click(screen.getByRole("button", { name: "Guardar recepción" }));
+    await waitFor(() => expect(useOfflineQueueStore.getState().items).toHaveLength(2));
+    const keys = useOfflineQueueStore.getState().items.map((i) => i.dedupeKey!);
+    expect(keys[0]).toMatch(/^recepcion#\w+:j1$/);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("9. el banner muestra la hora del toque en la zona del negocio", async () => {
+    useOfflineQueueStore.setState({
+      conflicts: [
+        {
+          id: "q9",
+          userId: "u1",
+          tenantId: "t1",
+          kind: "operacion.finish",
+          payload: { jobId: "j1", body: {} },
+          createdAt: "2030-11-25T13:00:00.000Z",
+          occurredAt: "2030-11-25T13:00:00.000Z",
+          attempts: 0,
+          failedAt: "2030-11-25T13:05:00.000Z",
+        },
+      ] as never,
+    });
+    renderUi(<JobPageClient id="j1" />);
+    expect(await screen.findByText(/la finalización de las 25\/11 10:00/)).toBeInTheDocument();
   });
 });
 

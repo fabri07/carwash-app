@@ -15,6 +15,7 @@ import { Guard } from "./Guard";
 import { QueueBanner } from "./QueueBanner";
 import { useBusinessTimeZone, useDay } from "./queries";
 import { useNow } from "./useNow";
+import { useOperacionSubmit } from "./useOperacionSubmit";
 import { TOUCH_TARGET } from "./touch";
 
 /** "lunes 23/11" de un `YYYY-MM-DD` (el día calendario no tiene zona: se arma en UTC). */
@@ -39,6 +40,8 @@ export function AgendaPageClient({ initialDate }: { initialDate?: string }) {
 
 function Agenda({ initialDate }: { initialDate?: string }) {
   const can = useCan();
+  // Un solo `useOperacionSubmit` por pantalla: hace el flush de la cola al volver la señal.
+  useOperacionSubmit();
   const timeZone = useBusinessTimeZone();
   // "Hoy" se recalcula con el reloj: al cruzar la medianoche la agenda cambia de día sola.
   const now = useNow(30_000);
@@ -92,7 +95,7 @@ function Agenda({ initialDate }: { initialDate?: string }) {
         >
           Ayer
         </Button>
-        <Button variant={date === today ? "default" : "outline"} onClick={() => setPicked(today)}>
+        <Button variant={date === today ? "default" : "outline"} onClick={() => setPicked(null)}>
           Hoy
         </Button>
         <Button

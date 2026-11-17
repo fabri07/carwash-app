@@ -13,6 +13,7 @@ import { orNull, walkInSchema, type WalkInInput } from "./schemas";
 import { BIG_ACTION } from "./touch";
 import type { Job, ReceiveBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
+import { useStableKey } from "./useStableKey";
 
 /**
  * Ingreso sin turno: cliente, vehículo y servicio, y LLEGÓ (un toque). Crea el job (`POST /jobs`
@@ -22,6 +23,7 @@ export function WalkInForm() {
   const router = useRouter();
   const { run } = useOperacionSubmit();
   const data = useCargaData();
+  const dedupe = useStableKey("llego-sin-turno");
   const form = useForm<WalkInInput>({
     resolver: zodResolver(walkInSchema),
     defaultValues: {
@@ -43,8 +45,9 @@ export function WalkInForm() {
       resource_id: v.resource_id || null,
       channel: "CALLE",
     };
-    const out = await run(KINDS.receive, { body }, `llego-sin-turno:${crypto.randomUUID()}`);
+    const out = await run(KINDS.receive, { body }, dedupe.key);
     settle(out, "receive", "Llegada registrada");
+    if (out.status === "ok") dedupe.renew();
     const job = out.status === "ok" ? (out.data as Job | undefined) : undefined;
     router.push(job ? `/operacion/${job.id}` : "/agenda");
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import axios from "axios";
 import Link from "next/link";
 
@@ -14,16 +14,16 @@ import { cn } from "@/lib/utils";
 import { operacionErrorMessage } from "./errors";
 import { Guard } from "./Guard";
 import { JobTimeline } from "./JobTimeline";
-import { applyOptimistic, PENDING_PREFIX, type OptimisticAction } from "./optimistic";
+import { applyPending, PENDING_PREFIX } from "./optimistic";
+import { usePendingForJob } from "./pending";
 import { PayPanel } from "./PayPanel";
 import { useNow } from "./useNow";
 import { QueueBanner } from "./QueueBanner";
 import { useBusinessTimeZone, useJob, usePaymentMethods } from "./queries";
 import { JOB_STATUS } from "./status";
-import { formatStamp, tapTime } from "./time";
+import { formatStamp } from "./time";
 import { BIG_ACTION, TOUCH_TARGET } from "./touch";
-import type { Job } from "./types";
-import { QUEUED_NOTICE, useActionRunner } from "./useActionRunner";
+import { useActionRunner } from "./useActionRunner";
 import { KINDS } from "./useOperacionSubmit";
 
 /** Cada cuánto se revisa si ya se cumplió la tolerancia (aparece "Cancelar por demora"). */
@@ -48,15 +48,13 @@ function JobScreen({ id }: { id: string }) {
   const timeZone = useBusinessTimeZone();
   const jobQuery = useJob(id);
   const methods = usePaymentMethods();
-  const { exec, busy, notice, setNotice } = useActionRunner();
+  const { exec, busy, notice } = useActionRunner();
   const now = useNow(TICK_MS);
-  const [local, setLocal] = useState<Job | null>(null);
   const [paying, setPaying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [voiding, setVoiding] = useState<string | null>(null);
 
-  // Lo que dice el servidor reemplaza al estado optimista apenas se vuelve a leer el job.
-  useEffect(() => setLocal(null), [jobQuery.dataUpdatedAt]);
+  const pending = usePendingForJob(id);
 
   // Sin datos todavía: cargando, sin red (consulta pausada o error de red) o un 404/403 real.
   if (!jobQuery.data) {
@@ -84,7 +82,8 @@ function JobScreen({ id }: { id: string }) {
       </div>
     );
   }
-  const job = local ?? jobQuery.data;
+  // El job del servidor más lo que sigue pendiente en la cola (se ve hasta que sincroniza).
+  const { job, voidPending } = applyPending(jobQuery.data, pending);
   const stale = jobQuery.isError || jobQuery.fetchStatus === "paused";
   const status = JOB_STATUS[job.status];
   const canOperate = can("JOBS_OPERAR");
@@ -95,41 +94,28 @@ function JobScreen({ id }: { id: string }) {
     job.cancel_delay_from !== null &&
     now >= Date.parse(job.cancel_delay_from);
 
-  /** Manda una acción del job. Con la cola offline el estado se adelanta en pantalla. */
-  async function act(
+  /**
+   * Manda una acción del job. `occurred_at` lo pone la cola al tocar; acá solo va lo necesario para
+   * reenviar. Si queda en la cola, el estado pendiente se ve por `applyPending`.
+   */
+  function act(
     kind: (typeof KINDS)[keyof typeof KINDS],
     action: Parameters<typeof operacionErrorMessage>[1],
     dedupe: string,
     body: Record<string, unknown>,
-    optimistic: OptimisticAction,
   ) {
-    // `occurred_at` lo pone la cola al tocar; acá solo va lo necesario para reenviar.
-    const out = await exec(kind, action, { jobId: id, body }, `${dedupe}:${id}`);
-    if (out?.status === "queued") setLocal(applyOptimistic(job, optimistic));
-    return out;
+    return exec(kind, action, { jobId: id, body }, `${dedupe}:${id}`);
   }
 
-  const start = () => {
-    const at = tapTime();
-    void act(KINDS.start, "start", "iniciar", {}, { kind: "start", at });
-  };
-  const finish = () => {
-    const at = tapTime();
-    void act(KINDS.finish, "finish", "finalizar", {}, { kind: "finish", at });
-  };
-  const pickUp = () => {
-    const at = tapTime();
-    void act(KINDS.pickUp, "pickUp", "retirar", {}, { kind: "pickUp", at });
-  };
+  const start = () => void act(KINDS.start, "start", "iniciar", {});
+  const finish = () => void act(KINDS.finish, "finish", "finalizar", {});
+  const pickUp = () => void act(KINDS.pickUp, "pickUp", "retirar", {});
   const pay = async (methodId: string, amountCents: number | undefined) => {
-    const at = tapTime();
-    const out = await act(
-      KINDS.pay,
-      "pay",
-      `cobrar#${job.payments.length}`,
-      { payment_method_id: methodId, ...(amountCents ? { amount_cents: amountCents } : {}) },
-      { kind: "pay", at, amountCents: amountCents ?? job.balance_due_cents },
-    );
+    // N = cobros del servidor + pendientes: un doble toque comparte N, el segundo cobro legítimo no.
+    const out = await act(KINDS.pay, "pay", `cobrar#${job.payments.length}`, {
+      payment_method_id: methodId,
+      ...(amountCents ? { amount_cents: amountCents } : {}),
+    });
     if (out && out.status !== "error") setPaying(false);
   };
 
@@ -187,11 +173,6 @@ function JobScreen({ id }: { id: string }) {
           {notice.text}
         </p>
       )}
-      {local && !notice && (
-        <p role="status" className="rounded-md border border-sky-300 p-3 text-sm">
-          {QUEUED_NOTICE}
-        </p>
-      )}
 
       {canOperate && (
         <div className="space-y-3">
@@ -218,7 +199,8 @@ function JobScreen({ id }: { id: string }) {
         </div>
       )}
 
-      {job.status === "FINALIZADO" && canCharge && job.balance_due_cents > 0 && (
+      {/* Cobrar vale con saldo en FINALIZADO, RETIRADO con deuda y COBRADO con saldo por un cobro anulado. */}
+      {canCharge && job.status !== "CANCELADO_DEMORA" && job.balance_due_cents > 0 && (
         <div className="space-y-3">
           {!paying ? (
             <Button
@@ -279,6 +261,8 @@ function JobScreen({ id }: { id: string }) {
               </span>
               {p.voided ? (
                 <span className="text-xs text-muted-foreground">Anulado</span>
+              ) : voidPending.has(p.id) ? (
+                <span className="text-xs font-medium">Anulación pendiente</span>
               ) : (
                 canVoid &&
                 p.kind === "SALDO" &&
@@ -317,15 +301,10 @@ function JobScreen({ id }: { id: string }) {
         confirmLabel="Sí, cancelar por demora"
         variant="destructive"
         onConfirm={async () => {
-          const at = tapTime();
-          const out = await act(
-            KINDS.cancelDelay,
-            "cancelDelay",
-            "cancel-delay",
-            {},
-            { kind: "cancelDelay", at },
-          );
-          if (out?.status === "error")
+          const out = await act(KINDS.cancelDelay, "cancelDelay", "cancel-delay", {});
+          if (out === null)
+            throw new Error("Hay otra acción en curso. Probá de nuevo en un momento.");
+          if (out.status === "error")
             throw new Error(operacionErrorMessage(out.error, "cancelDelay"));
         }}
       />
@@ -344,8 +323,10 @@ function JobScreen({ id }: { id: string }) {
             { jobId: id, paymentId: voiding ?? undefined, body: { reason } },
             `anular#${voiding}:${id}`,
           );
-          if (out?.status === "error") throw new Error(operacionErrorMessage(out.error, "void"));
-          setNotice(null);
+          // Otra acción en vuelo: el diálogo NO se cierra (no se perdió el motivo escrito).
+          if (out === null)
+            throw new Error("Hay otra acción en curso. Probá de nuevo en un momento.");
+          if (out.status === "error") throw new Error(operacionErrorMessage(out.error, "void"));
         }}
       />
     </section>

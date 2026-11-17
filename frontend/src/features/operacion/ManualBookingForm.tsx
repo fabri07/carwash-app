@@ -18,6 +18,7 @@ import { manualBookingSchema, moneyCents, orNull, type ManualBookingInput } from
 import { BIG_ACTION } from "./touch";
 import type { ManualBookingBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
+import { useStableKey } from "./useStableKey";
 
 /**
  * Turno "solo a mano" (`POST /bookings/manual`): lo que no pasó por el turnero. Puede llevar la
@@ -29,6 +30,7 @@ export function ManualBookingForm() {
   const { run } = useOperacionSubmit();
   const timeZone = useBusinessTimeZone();
   const data = useCargaData();
+  const dedupe = useStableKey("turno-a-mano");
   // La seña cobrada pide COBROS_REGISTRAR: sin él no se ofrece (el servidor respondería 403).
   const canCharge = useCan()("COBROS_REGISTRAR");
   const form = useForm<ManualBookingInput>({
@@ -65,11 +67,9 @@ export function ManualBookingForm() {
             }
           : null,
     };
-    settle(
-      await run(KINDS.manualBooking, { body }, `turno-a-mano:${crypto.randomUUID()}`),
-      "manualBooking",
-      "Turno cargado",
-    );
+    const out = await run(KINDS.manualBooking, { body }, dedupe.key);
+    settle(out, "manualBooking", "Turno cargado");
+    if (out.status === "ok") dedupe.renew();
     router.push("/agenda");
   });
 

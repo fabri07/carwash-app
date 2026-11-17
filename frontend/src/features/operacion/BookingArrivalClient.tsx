@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import axios from "axios";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -48,7 +49,30 @@ function Arrival({ bookingId }: { bookingId: string }) {
     if (jobId) router.replace(`/operacion/${jobId}`);
   }, [jobId, router]);
 
-  if (day.isLoading) return <p className="text-sm text-muted-foreground">Cargando…</p>;
+  if (!day.data) {
+    // Sin datos: cargando, sin red (consulta pausada o error de red) o un 404 real.
+    const httpStatus = axios.isAxiosError(day.error) ? day.error.response?.status : undefined;
+    if (httpStatus !== 404 && day.isFetching && day.fetchStatus !== "paused") {
+      return <p className="text-sm text-muted-foreground">Cargando…</p>;
+    }
+    return (
+      <div className="space-y-3">
+        <p role="alert" className="text-sm text-destructive">
+          {httpStatus === 404
+            ? "No se encontró la agenda de ese día."
+            : "Sin conexión: no se pudo cargar el turno."}{" "}
+          <Link href="/agenda" className={cn(TOUCH_TARGET, "inline-flex items-center underline")}>
+            Volver a la agenda
+          </Link>
+        </p>
+        {httpStatus !== 404 && (
+          <Button variant="outline" onClick={() => void day.refetch()}>
+            Reintentar
+          </Button>
+        )}
+      </div>
+    );
+  }
   if (!entry) {
     return (
       <p role="alert" className="text-sm text-destructive">

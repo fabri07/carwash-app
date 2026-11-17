@@ -16,6 +16,7 @@ import { inspectionSchema, orNull, type InspectionInput } from "./schemas";
 import { TOUCH_TARGET } from "./touch";
 import type { DirtLevel, InspectionBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
+import { shortHash } from "./useStableKey";
 
 const DIRT: { value: DirtLevel | ""; label: string }[] = [
   { value: "", label: "Sin indicar" },
@@ -54,7 +55,13 @@ function InspectionForm({ id }: { id: string }) {
       pre_existing_damage: orNull(v.pre_existing_damage),
     };
     settle(
-      await run(KINDS.inspection, { jobId: id, body }, `recepcion:${id}`),
+      // El hash del contenido va en la ACCIÓN (no en el id del job): una corrección distinta no se
+      // descarta, pero el doble toque idéntico sí se deduplica.
+      await run(
+        KINDS.inspection,
+        { jobId: id, body },
+        `recepcion#${shortHash(JSON.stringify(body))}:${id}`,
+      ),
       "inspection",
       "Recepción guardada",
     );

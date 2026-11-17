@@ -24,6 +24,7 @@ import {
 import { BIG_ACTION } from "./touch";
 import type { RetrospectiveBody } from "./types";
 import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
+import { useStableKey } from "./useStableKey";
 
 /**
  * Carga retrospectiva (`POST /jobs/retrospective`, D6-3): un trabajo ya hecho, con cliente (puede
@@ -36,6 +37,7 @@ export function RetrospectiveForm() {
   const { run } = useOperacionSubmit();
   const timeZone = useBusinessTimeZone();
   const data = useCargaData();
+  const dedupe = useStableKey("carga-retro");
   // Cargar el cobro pide COBROS_REGISTRAR: sin él la carga es "pendiente" y no se ofrece "Cobrado".
   const canCharge = useCan()("COBROS_REGISTRAR");
   const form = useForm<RetrospectiveInput>({
@@ -75,11 +77,9 @@ export function RetrospectiveForm() {
             }
           : null,
     };
-    settle(
-      await run(KINDS.retrospective, { body }, `carga-retro:${crypto.randomUUID()}`),
-      "retrospective",
-      "Trabajo cargado",
-    );
+    const out = await run(KINDS.retrospective, { body }, dedupe.key);
+    settle(out, "retrospective", "Trabajo cargado");
+    if (out.status === "ok") dedupe.renew();
     router.push(`/agenda?date=${v.date}`);
   });
 

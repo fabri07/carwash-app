@@ -3,7 +3,9 @@
 import { Button } from "@/components/ui/button";
 import { useOfflineQueueStatus } from "@/lib/useOfflineQueueStatus";
 import { useOfflineQueueStore, type FailedItem } from "@/stores/offlineQueueStore";
-import { KINDS, useOperacionSubmit } from "./useOperacionSubmit";
+import { useBusinessTimeZone } from "./queries";
+import { formatStamp } from "./time";
+import { KINDS } from "./useOperacionSubmit";
 
 const ACTION_LABELS: Record<string, string> = {
   [KINDS.receive]: "la llegada",
@@ -18,12 +20,16 @@ const ACTION_LABELS: Record<string, string> = {
   [KINDS.manualBooking]: "la carga del turno",
 };
 
-const label = (i: FailedItem) => ACTION_LABELS[i.kind] ?? "una acción";
-const hora = (i: FailedItem) =>
-  new Date(i.occurredAt ?? i.createdAt).toLocaleTimeString("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const actionLabel = (i: FailedItem) => ACTION_LABELS[i.kind] ?? "una acción";
+/** Hora del toque en la zona del negocio, como el resto de las pantallas. */
+const timeLabel = (i: FailedItem, timeZone: string) =>
+  formatStamp(i.occurredAt ?? i.createdAt, timeZone);
+
+/**
+ * Pide un flush a la pantalla: el `useOperacionSubmit` que ya está montado (uno por pantalla,
+ * con `autoSync`) escucha `online` y vacía la cola. No se monta otro hook solo para esto.
+ */
+const requestFlush = () => window.dispatchEvent(new Event("online"));
 
 /**
  * Estado de la cola offline para la agenda y la pantalla del job: cuántos toques esperan señal, y
@@ -33,7 +39,7 @@ const hora = (i: FailedItem) =>
  */
 export function QueueBanner() {
   const { pending, failed, conflicts, online } = useOfflineQueueStatus();
-  const { flush } = useOperacionSubmit();
+  const timeZone = useBusinessTimeZone();
   const store = useOfflineQueueStore.getState;
   if (pending === 0 && failed.length === 0 && conflicts.length === 0) return null;
 
@@ -53,8 +59,8 @@ export function QueueBanner() {
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-400 bg-amber-50 p-3 text-sm"
         >
           <span>
-            No se aplicó {label(c)} de las {hora(c)}: el trabajo ya había cambiado de estado (otro
-            dispositivo se adelantó). Revisá cómo quedó.
+            No se aplicó {actionLabel(c)} de las {timeLabel(c, timeZone)}: el trabajo ya había
+            cambiado de estado (otro dispositivo se adelantó). Revisá cómo quedó.
           </span>
           <Button variant="outline" onClick={() => store().dismissConflict(c.id)}>
             Entendido
@@ -68,15 +74,15 @@ export function QueueBanner() {
           className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive p-3 text-sm"
         >
           <span>
-            No se pudo enviar {label(f)} de las {hora(f)}: el servidor la rechazó. Podés
-            reintentarla o descartarla.
+            No se pudo enviar {actionLabel(f)} de las {timeLabel(f, timeZone)}: el servidor la
+            rechazó. Podés reintentarla o descartarla.
           </span>
           <span className="flex gap-2">
             <Button
               variant="outline"
               onClick={() => {
                 store().retryFailed(f.id);
-                void flush();
+                requestFlush();
               }}
             >
               Reintentar
