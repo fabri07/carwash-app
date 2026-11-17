@@ -145,23 +145,19 @@ export function useOperacionSubmit() {
           runResults.delete(owned);
           resolve(outcome);
         };
-        void submit(
-          kind,
-          owned,
-          {
-            onSuccess: () => done({ status: "ok", data: result.data }),
-            onQueued: () =>
-              done({
-                status: "queued",
-                // Un 5xx guardó el toque en la cola, pero NO es falta de señal: se dice distinto.
-                httpError: axios.isAxiosError(result.error) && Boolean(result.error.response),
-              }),
-            onError: () => done({ status: "error", error: result.error }),
-            // 409 INVALID_TRANSITION en línea: se muestra como error (el estado cambió).
-            onConflict: () => done({ status: "error", error: result.error }),
-            dedupeKey,
-          },
-        );
+        void submit(kind, owned, {
+          onSuccess: () => done({ status: "ok", data: result.data }),
+          onQueued: () =>
+            done({
+              status: "queued",
+              // Un 5xx guardó el toque en la cola, pero NO es falta de señal: se dice distinto.
+              httpError: axios.isAxiosError(result.error) && Boolean(result.error.response),
+            }),
+          onError: () => done({ status: "error", error: result.error }),
+          // 409 INVALID_TRANSITION en línea: se muestra como error (el estado cambió).
+          onConflict: () => done({ status: "error", error: result.error }),
+          dedupeKey,
+        });
       }),
     [submit],
   );
