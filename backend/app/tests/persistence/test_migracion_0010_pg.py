@@ -50,7 +50,10 @@ def _modulo():
 
 def test_la_migracion_congela_lo_mismo_que_el_dominio():
     m = _modulo()
-    assert set(m.RESERVED_SLUGS) == RESERVED_SLUGS
+    # La migración congela la lista vigente en 0010; el dominio puede sumar reservados después
+    # (F6 suma `agenda` y `operacion`), así que la congelada tiene que ser un subconjunto.
+    assert set(m.RESERVED_SLUGS) <= RESERVED_SLUGS
+    assert RESERVED_SLUGS - set(m.RESERVED_SLUGS) <= {"agenda", "operacion"}
     assert tuple(v.value for v in ServiceBookingMode) == m.BOOKING_MODES
     assert tuple(v.value for v in list(BookingStatus)[-2:]) == m.BOOKING_STATUS_ADDED
 
