@@ -40,6 +40,8 @@ export const PROTECTED_PREFIXES = [
   "/onboarding",
   "/cambiar-clave",
   "/turnos",
+  "/agenda",
+  "/operacion",
 ];
 const AUTH_PAGES = ["/login", "/register"];
 

@@ -25,6 +25,7 @@ _SLUG_RE = re.compile(SLUG_PATTERN)
 RESERVED_SLUGS: frozenset[str] = frozenset(
     {
         "admin",
+        "agenda",
         "api",
         "app",
         "auth",
@@ -38,6 +39,7 @@ RESERVED_SLUGS: frozenset[str] = frozenset(
         "login",
         "logout",
         "onboarding",
+        "operacion",
         "ready",
         "register",
         "registro",

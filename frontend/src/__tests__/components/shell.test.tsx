@@ -126,11 +126,18 @@ describe("activeItem", () => {
   it("Catálogo y Negocio los ve el dueño o quien edita el catálogo", () => {
     const labels = (role: "OWNER" | "STAFF", perms: Parameters<typeof visibleNavItems>[2]) =>
       visibleNavItems(NAV_ITEMS, { role }, perms).map((i) => i.label);
-    expect(labels("OWNER", [])).toEqual(["Inicio", "Turnos", "Catálogo", "Negocio", "Equipo"]);
+    expect(labels("OWNER", [])).toEqual([
+      "Inicio",
+      "Agenda",
+      "Turnos",
+      "Catálogo",
+      "Negocio",
+      "Equipo",
+    ]);
     expect(labels("STAFF", ["CATALOGO_EDITAR"])).toEqual(["Inicio", "Catálogo", "Negocio"]);
     // Con permisos de agenda entra a "Bloqueos y aperturas" (adenda 5.1-12).
     // Y a la bandeja de turnos (PR 5.3), que pide AGENDA_VER.
-    expect(labels("STAFF", ["AGENDA_VER"])).toEqual(["Inicio", "Turnos", "Negocio"]);
+    expect(labels("STAFF", ["AGENDA_VER"])).toEqual(["Inicio", "Agenda", "Turnos", "Negocio"]);
     expect(labels("STAFF", ["TURNOS_GESTIONAR"])).toEqual(["Inicio", "Negocio"]);
     expect(labels("STAFF", ["PRECIOS_EDITAR"])).toEqual(["Inicio", "Catálogo"]);
   });
@@ -194,6 +201,7 @@ describe("Sidebar", () => {
     ]);
     expect(visibleNavItems(items, { role: "OWNER" }, []).map((i) => i.label)).toEqual([
       "Inicio",
+      "Agenda",
       "Turnos",
       "Catálogo",
       "Negocio",

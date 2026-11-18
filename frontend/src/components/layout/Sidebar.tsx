@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarClock,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Droplets,
@@ -49,6 +50,8 @@ export interface NavItem {
 // Cada fase agrega acá sus pantallas, con el permiso que las habilita.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Inicio", href: "/dashboard", icon: LayoutDashboard },
+  // Agenda del día y operación rápida (PR 6.2).
+  { label: "Agenda", href: "/agenda", icon: CalendarDays, permission: "AGENDA_VER" },
   // Bandeja del dueño (PR 5.3): lo que espera una decisión lleva su número al lado.
   {
     label: "Turnos",
