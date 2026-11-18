@@ -15,6 +15,15 @@ describe("touchTargets", () => {
     expect(classMinPx(TOUCH_TARGET_CLASS, "w")).toBe(44);
   });
 
+  it("reconoce el token touch del tema (h/min-h/w/min-w/size)", () => {
+    expect(classMinPx("min-h-touch", "h")).toBe(44);
+    expect(classMinPx("min-h-touch", "w")).toBeNull();
+    expect(classMinPx("min-w-touch", "w")).toBe(44);
+    expect(classMinPx("h-touch w-touch", "w")).toBe(44);
+    expect(classMinPx("size-touch", "h")).toBe(44);
+    expect(classMinPx("size-touch", "w")).toBe(44);
+  });
+
   it("lee h-N, min-h-N, size-N y valores arbitrarios", () => {
     expect(classMinPx("h-10", "h")).toBe(40);
     expect(classMinPx("h-14 min-h-11", "h")).toBe(56);
