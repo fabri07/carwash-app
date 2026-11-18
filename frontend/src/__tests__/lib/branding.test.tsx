@@ -107,12 +107,12 @@ describe("variables de marca", () => {
 
   it("la barra lateral se tiñe con el tono del primario y sigue oscura", () => {
     expect(sidebarVariables("165 60% 30%")).toEqual({
-      "--sidebar": "165 45% 11%",
-      "--sidebar-accent": "165 45% 20%",
-      "--sidebar-border": "165 45% 22%",
+      "--sidebar": "165 60% 17%",
+      "--sidebar-accent": "165 60% 27%",
+      "--sidebar-border": "165 60% 30%",
       "--sidebar-highlight": "165 60% 68%",
     });
-    expect(sidebarVariables("260 4% 20%")["--sidebar"]).toBe("260 4% 11%");
+    expect(sidebarVariables("260 4% 20%")["--sidebar"]).toBe("260 4% 17%");
     expect(sidebarVariables("roto")).toEqual({});
   });
 

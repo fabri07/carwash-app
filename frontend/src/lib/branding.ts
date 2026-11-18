@@ -68,18 +68,18 @@ export function hexToHsl(hex: string): string | null {
 
 /**
  * La barra lateral es la zona de color más grande y siempre es oscura: se tiñe con el tono del
- * primario de la paleta (saturación acotada, luminosidad fija) para que la marca se note sin
+ * primario de la paleta (saturación hasta 70 %, luminosidad fija) para que la marca se note sin
  * perder contraste con el texto claro. `hsl` es el triplet del primario (`"199 89% 37%"`).
  */
 export function sidebarVariables(hsl: string): BrandVars {
   const m = /^(\d+) (\d+)% (\d+)%$/.exec(hsl);
   if (!m) return {};
   const h = m[1];
-  const s = Math.min(Number(m[2]), 45);
+  const s = Math.min(Number(m[2]), 70);
   return {
-    "--sidebar": `${h} ${s}% 11%`,
-    "--sidebar-accent": `${h} ${s}% 20%`,
-    "--sidebar-border": `${h} ${s}% 22%`,
+    "--sidebar": `${h} ${s}% 17%`,
+    "--sidebar-accent": `${h} ${s}% 27%`,
+    "--sidebar-border": `${h} ${s}% 30%`,
     "--sidebar-highlight": `${h} ${Math.max(s, 60)}% 68%`,
   };
 }
