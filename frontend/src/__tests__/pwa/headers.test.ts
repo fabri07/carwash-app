@@ -31,4 +31,9 @@ describe("cabeceras de next.config.ts", () => {
     expect(csp).toMatch(/connect-src 'self' \S+/);
     expect(get("/:path*", "X-Content-Type-Options")).toBe("nosniff");
   });
+
+  it("img-src permite el bucket público de R2 (logos)", () => {
+    const csp = get("/:path*", "Content-Security-Policy");
+    expect(csp).toMatch(/img-src 'self' data: blob: https:\/\/media\.carwashdetailapp\.com(;|$)/);
+  });
 });

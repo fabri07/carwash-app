@@ -10,6 +10,16 @@ import { withSentryConfig } from "@sentry/nextjs/config";
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /**
+ * Origen público del bucket de R2 (logos). Sin él en `img-src` el navegador
+ * bloquea el `<img>` del logo aunque la subida y el CORS estén bien. Es el mismo
+ * dominio que el backend usa en `R2_PUBLIC_BASE_URL`; se puede pisar con
+ * `NEXT_PUBLIC_MEDIA_URL` (p. ej. un `pub-<hash>.r2.dev`).
+ */
+const MEDIA_ORIGIN = (
+  process.env.NEXT_PUBLIC_MEDIA_URL ?? "https://media.carwashdetailapp.com"
+).replace(/\/+$/, "");
+
+/**
  * CSP de la aplicación. Vive acá y no en `vercel.json` (que es del agente
  * `deploy`): el manifiesto de portado asigna las cabeceras de aplicación al
  * frontend, para que no haya dos archivos mandando la misma cabecera.
@@ -27,7 +37,7 @@ const CSP = [
   "form-action 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob: ${MEDIA_ORIGIN}`,
   "font-src 'self' data:",
   `connect-src 'self' ${API_ORIGIN} https://*.sentry.io`,
   "manifest-src 'self'",
