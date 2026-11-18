@@ -27,8 +27,9 @@ vehículos, personalización y wizard de alta; checkpoint en staging hecho el 20
 
 **Fase 5 completa** (contrato: `docs/adr/FASE-5-CONTRATO.md`): contrato, motor de disponibilidad y
 configuración de agenda (5.1), turnero público (5.2) y bandeja del dueño (5.3); checkpoint en staging
-hecho el 2026-11-16. **Fase 6 en curso** (contrato: `docs/adr/FASE-6-CONTRATO.md`): agenda diaria y
-operación rápida.
+hecho el 2026-11-16. **Fase 6 construida y mergeada** (contrato: `docs/adr/FASE-6-CONTRATO.md`): API de agenda y
+operación del job (6.1), cola offline endurecida (6.3) y pantallas de agenda y operación (6.2). Falta el
+checkpoint manual (T4): lavado completo en modo avión y carga retrospectiva.
 
 El **relevamiento de la planilla del 2026-11-10** sumó al MVP fidelidad y avisos por WhatsApp (F7C nueva),
 propinas (F7), reglas horarias por servicio, bloqueos y lista de espera (F5) y carga retrospectiva (F6).
