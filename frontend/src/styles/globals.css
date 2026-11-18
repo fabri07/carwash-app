@@ -30,6 +30,8 @@
     --sidebar-foreground: 210 40% 96%;
     --sidebar-accent: 217 33% 20%;
     --sidebar-border: 217 33% 22%;
+    /* Acento claro de la barra (gotita y ítem activo); sky-400 en `default`. */
+    --sidebar-highlight: 199 95% 60%;
     /* Marca del negocio (PR 4.5): `lib/branding.ts` las pisa en <html> según la paleta y la
        tipografía elegidas; estas son las de `default`. */
     --brand-secondary: oklch(80% 0.15 75);

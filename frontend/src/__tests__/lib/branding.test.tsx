@@ -12,6 +12,7 @@ import {
   applyBranding,
   BRAND_VARS,
   brandingVariables,
+  sidebarVariables,
   findPalette,
   fontStack,
   hexToHsl,
@@ -100,7 +101,19 @@ describe("variables de marca", () => {
       "--primary-foreground": "0 0% 100%",
       "--brand-secondary": "oklch(#e77b60)",
       "--font-brand": fontStack("inter"),
+      ...sidebarVariables(hexToHsl("#176a4e")!),
     });
+  });
+
+  it("la barra lateral se tiñe con el tono del primario y sigue oscura", () => {
+    expect(sidebarVariables("165 60% 30%")).toEqual({
+      "--sidebar": "165 45% 11%",
+      "--sidebar-accent": "165 45% 20%",
+      "--sidebar-border": "165 45% 22%",
+      "--sidebar-highlight": "165 60% 68%",
+    });
+    expect(sidebarVariables("260 4% 20%")["--sidebar"]).toBe("260 4% 11%");
+    expect(sidebarVariables("roto")).toEqual({});
   });
 
   it("un color roto deja el tema entero, nunca media paleta", () => {

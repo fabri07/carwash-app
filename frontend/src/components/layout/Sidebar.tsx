@@ -159,7 +159,10 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                 collapsed && "justify-center px-0",
               )}
             >
-              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <Icon
+                className={cn("h-5 w-5 shrink-0", active && "text-sidebar-highlight")}
+                aria-hidden="true"
+              />
               <span className={cn(collapsed && "sr-only")}>{label}</span>
               {Badge && <Badge collapsed={collapsed} />}
             </Link>
@@ -180,7 +183,7 @@ function Brand({ collapsed }: { collapsed: boolean }) {
         collapsed && "justify-center",
       )}
     >
-      <Droplets className="h-6 w-6 shrink-0 text-sky-400" aria-hidden="true" />
+      <Droplets className="h-6 w-6 shrink-0 text-sidebar-highlight" aria-hidden="true" />
       <span className={cn(collapsed && "sr-only")}>carwash.app</span>
     </Link>
   );
