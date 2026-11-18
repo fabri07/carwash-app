@@ -26,6 +26,13 @@ export function classMinPx(className: string, axis: "h" | "w"): number | null {
       best = Math.max(best ?? 0, MIN_TOUCH_TARGET_PX);
       continue;
     }
+    // Token del tema (`tailwind.config.ts`: spacing/minHeight/minWidth `touch` = 2.75rem).
+    if (/^(?:min-)?(?:(h|w)|size)-touch$/.test(token)) {
+      const ax = /^(?:min-)?(h|w)-touch$/.exec(token)?.[1];
+      if (ax && ax !== axis) continue;
+      best = Math.max(best ?? 0, MIN_TOUCH_TARGET_PX);
+      continue;
+    }
     const m = /^(?:min-)?(?:(h|w)|size)-(?:(\d+(?:\.\d+)?)|\[(\d+(?:\.\d+)?)(px|rem)\])$/.exec(
       token,
     );
