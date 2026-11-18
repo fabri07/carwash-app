@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { useSettings } from "@/features/configuracion/queries";
 import { InboxBadge } from "@/features/turnos/InboxBadge";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -159,7 +160,10 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                 collapsed && "justify-center px-0",
               )}
             >
-              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <Icon
+                className={cn("h-5 w-5 shrink-0", active && "text-sidebar-highlight")}
+                aria-hidden="true"
+              />
               <span className={cn(collapsed && "sr-only")}>{label}</span>
               {Badge && <Badge collapsed={collapsed} />}
             </Link>
@@ -171,6 +175,11 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
 }
 
 function Brand({ collapsed }: { collapsed: boolean }) {
+  // El logo y el nombre son los del negocio; sin logo, la gotita y el nombre (o carwash.app).
+  const settings = useSettings();
+  const tenantName = useAuthStore((s) => s.tenant?.name);
+  const logoUrl = settings.data?.logo_url;
+  const name = settings.data?.name || tenantName || "carwash.app";
   return (
     <Link
       href="/dashboard"
@@ -180,8 +189,17 @@ function Brand({ collapsed }: { collapsed: boolean }) {
         collapsed && "justify-center",
       )}
     >
-      <Droplets className="h-6 w-6 shrink-0 text-sky-400" aria-hidden="true" />
-      <span className={cn(collapsed && "sr-only")}>carwash.app</span>
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- bucket público de R2, sin optimizar
+        <img
+          src={logoUrl}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-md bg-white object-contain p-0.5"
+        />
+      ) : (
+        <Droplets className="h-6 w-6 shrink-0 text-sidebar-highlight" aria-hidden="true" />
+      )}
+      <span className={cn("truncate", collapsed && "sr-only")}>{name}</span>
     </Link>
   );
 }

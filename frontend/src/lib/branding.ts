@@ -32,6 +32,10 @@ export const BRAND_VARS = [
   "--primary",
   "--primary-foreground",
   "--ring",
+  "--sidebar",
+  "--sidebar-accent",
+  "--sidebar-border",
+  "--sidebar-highlight",
   "--brand-secondary",
   "--font-brand",
 ] as const;
@@ -62,6 +66,24 @@ export function hexToHsl(hex: string): string | null {
   return `${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
+/**
+ * La barra lateral es la zona de color más grande y siempre es oscura: se tiñe con el tono del
+ * primario de la paleta (saturación hasta 70 %, luminosidad fija) para que la marca se note sin
+ * perder contraste con el texto claro. `hsl` es el triplet del primario (`"199 89% 37%"`).
+ */
+export function sidebarVariables(hsl: string): BrandVars {
+  const m = /^(\d+) (\d+)% (\d+)%$/.exec(hsl);
+  if (!m) return {};
+  const h = m[1];
+  const s = Math.min(Number(m[2]), 70);
+  return {
+    "--sidebar": `${h} ${s}% 17%`,
+    "--sidebar-accent": `${h} ${s}% 27%`,
+    "--sidebar-border": `${h} ${s}% 30%`,
+    "--sidebar-highlight": `${h} ${Math.max(s, 60)}% 68%`,
+  };
+}
+
 /** Valor de `font-family` para un código del catálogo. Desconocido o `default`: el sistema. */
 export function fontStack(code: string | null | undefined): string {
   const variable = code ? FONT_VARS[code] : undefined;
@@ -86,6 +108,7 @@ export function brandingVariables(
       vars["--ring"] = primary;
       vars["--primary-foreground"] = onPrimary;
       vars["--brand-secondary"] = palette.secondary.oklch;
+      Object.assign(vars, sidebarVariables(primary));
     }
   }
   if (fontCode && FONT_VARS[fontCode]) vars["--font-brand"] = fontStack(fontCode);

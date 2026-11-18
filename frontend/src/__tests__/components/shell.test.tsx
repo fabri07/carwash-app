@@ -35,6 +35,10 @@ jest.mock("@/lib/sw-register", () => ({
   clearSwCaches: jest.fn(async () => undefined),
 }));
 // El contador de la bandeja (PR 5.3) pide `/bookings/counts`: se prueba en `turnos.test.tsx`.
+jest.mock("@/services/config.service", () => ({
+  ...jest.requireActual("@/services/config.service"),
+  getSettings: jest.fn().mockResolvedValue({ name: "Lavadero Demo", logo_url: null }),
+}));
 jest.mock("@/features/turnos/InboxBadge", () => ({ InboxBadge: () => null }));
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn(), info: jest.fn(), warning: jest.fn() },
@@ -144,9 +148,26 @@ describe("activeItem", () => {
 });
 
 describe("Sidebar", () => {
+  it("muestra el logo y el nombre del negocio; sin logo, la gotita", async () => {
+    const { getSettings } = jest.requireMock("@/services/config.service");
+    getSettings.mockResolvedValueOnce({
+      name: "Lavadero Demo",
+      logo_url: "https://media.example.com/logo.png",
+    });
+    const { container } = renderWithClient(
+      <Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />,
+    );
+    await waitFor(() =>
+      expect(
+        container.querySelector('img[src="https://media.example.com/logo.png"]'),
+      ).not.toBeNull(),
+    );
+    expect(await screen.findAllByText("Lavadero Demo")).not.toHaveLength(0);
+  });
+
   it("marca el ítem activo y colapsa en escritorio", async () => {
     nav.pathname = "/dashboard";
-    render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
+    renderWithClient(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
     const desktop = screen.getByTestId("sidebar-desktop");
     const link = within(desktop).getByRole("link", { name: "Inicio" });
     expect(link).toHaveAttribute("aria-current", "page");
@@ -161,7 +182,7 @@ describe("Sidebar", () => {
 
   it("en móvil abre un cajón que se cierra al navegar", async () => {
     const onChange = jest.fn();
-    render(<Sidebar mobileOpen onMobileOpenChange={onChange} />);
+    renderWithClient(<Sidebar mobileOpen onMobileOpenChange={onChange} />);
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("link", { name: "Inicio" }));
     expect(onChange).toHaveBeenCalledWith(false);
@@ -170,7 +191,9 @@ describe("Sidebar", () => {
   it("Configuración → Equipo solo para el OWNER; el filtro por permiso queda listo", async () => {
     nav.pathname = "/configuracion/equipo";
     useAuthStore.setState({ ...session, permissions: [] });
-    const { unmount } = render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
+    const { unmount } = renderWithClient(
+      <Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />,
+    );
     const desktop = screen.getByTestId("sidebar-desktop");
     expect(within(desktop).getByText("Configuración")).toBeInTheDocument();
     expect(within(desktop).getByRole("link", { name: "Equipo" })).toHaveAttribute(
@@ -183,7 +206,7 @@ describe("Sidebar", () => {
       user: { ...session.user, role: "STAFF" },
       permissions: ["CAJA_VER"],
     });
-    render(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
+    renderWithClient(<Sidebar mobileOpen={false} onMobileOpenChange={jest.fn()} />);
     expect(screen.queryByRole("link", { name: "Equipo" })).toBeNull();
     expect(screen.queryByText("Configuración")).toBeNull();
 

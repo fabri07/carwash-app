@@ -61,6 +61,7 @@ const config: Config = {
           foreground: "hsl(var(--sidebar-foreground))",
           accent: "hsl(var(--sidebar-accent))",
           border: "hsl(var(--sidebar-border))",
+          highlight: "hsl(var(--sidebar-highlight))",
         },
       },
       borderRadius: {
